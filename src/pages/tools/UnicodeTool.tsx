@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ToolPanel } from "./ToolPanel";
@@ -32,22 +32,16 @@ export function UnicodeTool() {
       }
       onSwap={() => result.ok && setInput(result.value)}
       actions={
-        <div className="inline-flex rounded-md border border-border p-1">
-          <Button
-            variant={mode === "encode" ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setMode("encode")}
-          >
-            编码
-          </Button>
-          <Button
-            variant={mode === "decode" ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setMode("decode")}
-          >
-            解码
-          </Button>
-        </div>
+        <SegmentedControl
+          size="sm"
+          aria-label="编码模式"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "encode", label: "编码" },
+            { value: "decode", label: "解码" },
+          ]}
+        />
       }
       options={
         mode === "encode" ? (

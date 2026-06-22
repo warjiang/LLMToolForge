@@ -62,15 +62,17 @@ export function VolcengineProviders() {
   };
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border pb-4">
         <p className="text-label-13 text-muted-foreground">
           录入 AK/SK，自动拉取已开通的模型与 Ark API Key，用于在 Playground 中测试。
         </p>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          新建凭证
-        </Button>
+        {items.length > 0 && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            新建凭证
+          </Button>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -86,14 +88,14 @@ export function VolcengineProviders() {
           }
         />
       ) : (
-        <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-          <div className="flex flex-col gap-2">
+        <div className="flex min-h-0 flex-1 gap-4 pt-4">
+          <div className="flex w-[260px] shrink-0 flex-col gap-2 overflow-y-auto pr-1">
             {items.map((c) => (
               <button
                 key={c.id}
                 onClick={() => setSelectedId(c.id)}
                 className={cn(
-                  "group flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors",
+                  "group flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-all duration-200 ease-geist active:scale-[0.99]",
                   c.id === selectedId
                     ? "border-foreground/20 bg-secondary"
                     : "border-border hover:bg-secondary/50"
@@ -121,7 +123,9 @@ export function VolcengineProviders() {
             ))}
           </div>
 
-          {selected && <CredentialDetail credential={selected} />}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            {selected && <CredentialDetail credential={selected} />}
+          </div>
         </div>
       )}
 

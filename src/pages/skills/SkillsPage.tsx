@@ -3,6 +3,7 @@ import { Boxes, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { Reveal } from "@/components/common/Reveal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -39,10 +40,12 @@ export function SkillsPage() {
         title="Skills"
         description="为大模型注册可复用的技能/工具能力，并控制启用状态。"
         actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            新建 Skill
-          </Button>
+          items.length > 0 ? (
+            <Button onClick={openCreate}>
+              <Plus className="h-4 w-4" />
+              新建 Skill
+            </Button>
+          ) : undefined
         }
       />
 
@@ -60,8 +63,9 @@ export function SkillsPage() {
         />
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {items.map((item) => (
-            <Card key={item.id} className="flex flex-col p-5">
+          {items.map((item, i) => (
+            <Reveal key={item.id} index={i} className="flex">
+              <Card className="flex flex-1 flex-col p-5 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:shadow-geist-md">
               <div className="flex items-start justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground">
@@ -101,7 +105,8 @@ export function SkillsPage() {
                   onCheckedChange={(v) => edit(item.id, { enabled: v })}
                 />
               </div>
-            </Card>
+              </Card>
+            </Reveal>
           ))}
         </div>
       )}

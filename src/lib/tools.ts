@@ -178,7 +178,7 @@ export function jsonPreview(
   let parsed = tryParse(raw);
 
   // If direct parse fails, the payload may be an escaped JSON string
-  // (e.g. {\"a\":1}) — wrap & parse once to strip the escaping.
+  // (e.g. {\"a\":1}); wrap & parse once to strip the escaping.
   if (parsed === undefined) {
     const unescaped = tryParse(`"${raw.replace(/\\?"/g, '\\"')}"`);
     if (typeof unescaped === "string") {

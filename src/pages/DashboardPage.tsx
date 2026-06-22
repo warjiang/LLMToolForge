@@ -4,6 +4,7 @@ import { ArrowRight, Boxes, KeyRound, Server } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import type { ComponentType } from "react";
 import { PageHeader } from "@/components/common/PageHeader";
+import { Reveal } from "@/components/common/Reveal";
 import { Card } from "@/components/ui/card";
 import { useApiKeyStore, useMcpStore, useSkillStore } from "@/store";
 
@@ -30,40 +31,48 @@ export function DashboardPage() {
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <StatCard
-          to="/providers"
-          icon={KeyRound}
-          label="模型接入"
-          value={apiKeys.items.length}
-          hint="已配置的密钥"
-        />
-        <StatCard
-          to="/skills"
-          icon={Boxes}
-          label="Skills"
-          value={skills.items.length}
-          hint={`${activeSkills} 个已启用`}
-        />
-        <StatCard
-          to="/mcp"
-          icon={Server}
-          label="MCP Servers"
-          value={mcp.items.length}
-          hint={`${activeMcp} 个已启用`}
-        />
+        <Reveal index={0}>
+          <StatCard
+            to="/providers"
+            icon={KeyRound}
+            label="模型接入"
+            value={apiKeys.items.length}
+            hint="已配置的密钥"
+          />
+        </Reveal>
+        <Reveal index={1}>
+          <StatCard
+            to="/skills"
+            icon={Boxes}
+            label="Skills"
+            value={skills.items.length}
+            hint={`${activeSkills} 个已启用`}
+          />
+        </Reveal>
+        <Reveal index={2}>
+          <StatCard
+            to="/mcp"
+            icon={Server}
+            label="MCP Servers"
+            value={mcp.items.length}
+            hint={`${activeMcp} 个已启用`}
+          />
+        </Reveal>
       </div>
 
-      <Card className="mt-6 p-6">
-        <h3 className="text-heading-16">快速开始</h3>
-        <p className="mt-1 text-copy-14 text-muted-foreground">
-          从左侧导航选择一个模块开始配置。所有数据当前保存在本地设备。
-        </p>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <QuickLink to="/providers" label="添加 API Key" />
-          <QuickLink to="/skills" label="创建 Skill" />
-          <QuickLink to="/mcp" label="接入 MCP Server" />
-        </div>
-      </Card>
+      <Reveal index={3} className="mt-6">
+        <Card className="p-5">
+          <h3 className="text-heading-16">快速开始</h3>
+          <p className="mt-1 text-copy-14 text-muted-foreground">
+            从左侧导航选择一个模块开始配置。所有数据当前保存在本地设备。
+          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <QuickLink to="/providers" label="添加 API Key" />
+            <QuickLink to="/skills" label="创建 Skill" />
+            <QuickLink to="/mcp" label="接入 MCP Server" />
+          </div>
+        </Card>
+      </Reveal>
     </div>
   );
 }
@@ -83,7 +92,7 @@ function StatCard({
 }) {
   return (
     <Link to={to}>
-      <Card className="group p-5 transition-colors hover:border-muted-foreground/30">
+      <Card className="group p-5 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:shadow-geist-md">
         <div className="flex items-center justify-between">
           <div className="flex h-9 w-9 items-center justify-center rounded-md bg-secondary text-muted-foreground">
             <Icon className="h-4 w-4" />

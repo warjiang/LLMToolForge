@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToolPanel } from "./ToolPanel";
 import { jsonEscape, jsonUnescape } from "@/lib/tools";
 
@@ -27,22 +27,16 @@ export function EscapeTool() {
       }
       onSwap={() => result.ok && setInput(result.value)}
       actions={
-        <div className="inline-flex rounded-md border border-border p-1">
-          <Button
-            variant={mode === "escape" ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setMode("escape")}
-          >
-            转义
-          </Button>
-          <Button
-            variant={mode === "unescape" ? "primary" : "ghost"}
-            size="sm"
-            onClick={() => setMode("unescape")}
-          >
-            去转义
-          </Button>
-        </div>
+        <SegmentedControl
+          size="sm"
+          aria-label="转义模式"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: "escape", label: "转义" },
+            { value: "unescape", label: "去转义" },
+          ]}
+        />
       }
     />
   );

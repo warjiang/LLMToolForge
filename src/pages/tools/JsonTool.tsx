@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { ToolPanel } from "./ToolPanel";
@@ -40,18 +41,16 @@ export function JsonTool() {
               递归解开嵌套/转义字段
             </Label>
           </div>
-          <div className="inline-flex rounded-md border border-border p-1">
-            {[2, 4].map((n) => (
-              <Button
-                key={n}
-                variant={indent === n ? "primary" : "ghost"}
-                size="sm"
-                onClick={() => setIndent(n)}
-              >
-                {n} 空格
-              </Button>
-            ))}
-          </div>
+          <SegmentedControl
+            size="sm"
+            aria-label="缩进空格"
+            value={String(indent)}
+            onChange={(v) => setIndent(Number(v))}
+            options={[
+              { value: "2", label: "2 空格" },
+              { value: "4", label: "4 空格" },
+            ]}
+          />
         </div>
       }
     />
