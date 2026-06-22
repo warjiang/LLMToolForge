@@ -99,6 +99,7 @@ export function PlaygroundPage() {
         accessKey: credential.accessKey,
         secretKey: credential.secretKey,
         region: credential.region,
+        project: credential.project,
       });
       setModels(list);
       if (list.length > 0) setModelId(list[0].id);

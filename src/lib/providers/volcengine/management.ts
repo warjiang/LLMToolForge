@@ -15,11 +15,14 @@ const MGMT_HOST = "open.volcengineapi.com";
 const SERVICE = "ark";
 const VERSION = "2024-01-01";
 const DEFAULT_REGION = "cn-beijing";
+const DEFAULT_PROJECT = "default";
 
 export interface VolcAkSk {
   accessKey: string;
   secretKey: string;
   region?: string;
+  /** Ark project name; required by ListApiKeys. Defaults to "default". */
+  project?: string;
 }
 
 interface ArkResponse<T> {
@@ -103,6 +106,7 @@ interface ListEndpointsResult {
 
 /** Fetch all deployed endpoints, mapped to normalized ModelInfo. */
 export async function listEndpoints(cred: VolcAkSk): Promise<ModelInfo[]> {
+  const project = cred.project || DEFAULT_PROJECT;
   const out: ModelInfo[] = [];
   let page = 1;
   const pageSize = 100;
@@ -110,7 +114,7 @@ export async function listEndpoints(cred: VolcAkSk): Promise<ModelInfo[]> {
   for (let i = 0; i < 50; i++) {
     const result = await callArk<ListEndpointsResult>(
       "ListEndpoints",
-      { PageNumber: page, PageSize: pageSize },
+      { PageNumber: page, PageSize: pageSize, ProjectName: project },
       cred
     );
     const items = result?.Items ?? [];
@@ -167,7 +171,7 @@ interface ListApiKeysResult {
 export async function listApiKeys(cred: VolcAkSk): Promise<ArkApiKeySummary[]> {
   const result = await callArk<ListApiKeysResult>(
     "ListApiKeys",
-    { Filter: { AllowAll: true } },
+    { ProjectName: cred.project || DEFAULT_PROJECT, Filter: { AllowAll: true } },
     cred
   );
   return (result?.Items ?? [])

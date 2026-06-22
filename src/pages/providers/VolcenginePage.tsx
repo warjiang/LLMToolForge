@@ -164,6 +164,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
       accessKey: credential.accessKey,
       secretKey: credential.secretKey,
       region: credential.region,
+      project: credential.project,
     }),
     [credential]
   );

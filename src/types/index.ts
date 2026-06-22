@@ -48,9 +48,13 @@ export interface VolcCredential extends BaseEntity {
   accessKey: string;
   secretKey: string;
   region: string;
+  /** Ark project the keys/endpoints live under (default: "default"). */
+  project: string;
   /** Saved Ark API keys usable for inference. */
   apiKeys: ArkApiKeyRef[];
 }
+
+export const VOLC_DEFAULT_PROJECT = "default";
 
 export const VOLC_REGIONS = ["cn-beijing", "ap-southeast-1"] as const;
 
