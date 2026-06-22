@@ -1,5 +1,37 @@
 import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { extendTailwindMerge } from "tailwind-merge";
+
+// The design system defines custom font-size utilities (text-heading-*,
+// text-copy-*, text-label-*). tailwind-merge doesn't know these are font sizes,
+// so by default it treats e.g. `text-label-14` as a text *color* and drops a
+// real color class like `text-primary-foreground` that appears before it. That
+// made primary buttons render dark-on-dark (invisible label + icon). Registering
+// them in the font-size group keeps size and color classes from conflicting.
+const twMerge = extendTailwindMerge({
+  extend: {
+    classGroups: {
+      "font-size": [
+        {
+          text: [
+            "heading-72",
+            "heading-48",
+            "heading-32",
+            "heading-24",
+            "heading-20",
+            "heading-16",
+            "heading-14",
+            "copy-16",
+            "copy-14",
+            "copy-13",
+            "label-14",
+            "label-13",
+            "label-12",
+          ],
+        },
+      ],
+    },
+  },
+});
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));

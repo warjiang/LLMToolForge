@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useVolcCredentialStore } from "@/store";
+import { useVolcCredentialStore, useGatewayStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
@@ -37,11 +37,25 @@ import type {
   WireFormat,
 } from "@/lib/providers/types";
 import { listEndpoints } from "@/lib/providers/volcengine";
+import { PROVIDER_METAS, type VolcCredential, type GatewayConnection } from "@/types";
 
 interface UiMessage {
   role: "user" | "assistant";
   content: string;
   image?: string;
+}
+
+/** A selectable connection, unifying volcengine credentials and gateways. */
+interface ConnOption {
+  /** Composite key: "volc:<id>" or "gw:<id>". */
+  key: string;
+  name: string;
+  kind: "volc" | "gateway";
+  provider: string;
+}
+
+function providerLabel(provider: string): string {
+  return PROVIDER_METAS.find((p) => p.id === provider)?.label ?? provider;
 }
 
 const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
@@ -50,8 +64,9 @@ const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
 ];
 
 export function PlaygroundPage() {
-  const { items, loaded, load } = useVolcCredentialStore();
-  const [credId, setCredId] = useState<string | null>(null);
+  const volc = useVolcCredentialStore();
+  const gateway = useGatewayStore();
+  const [connKey, setConnKey] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [modelId, setModelId] = useState<string>("");
@@ -71,35 +86,90 @@ export function PlaygroundPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
-    if (!loaded) load();
-  }, [loaded, load]);
+  const loaded = volc.loaded && gateway.loaded;
 
   useEffect(() => {
-    if (!credId && items.length > 0) setCredId(items[0].id);
-  }, [items, credId]);
+    if (!volc.loaded) volc.load();
+    if (!gateway.loaded) gateway.load();
+  }, [volc, gateway]);
 
-  const credential = items.find((c) => c.id === credId) ?? null;
+  const options = useMemo<ConnOption[]>(() => {
+    const volcOpts: ConnOption[] = volc.items.map((c) => ({
+      key: `volc:${c.id}`,
+      name: c.name,
+      kind: "volc",
+      provider: "volcengine",
+    }));
+    const gwOpts: ConnOption[] = gateway.items.map((c) => ({
+      key: `gw:${c.id}`,
+      name: c.name,
+      kind: "gateway",
+      provider: c.provider,
+    }));
+    return [...volcOpts, ...gwOpts];
+  }, [volc.items, gateway.items]);
+
+  useEffect(() => {
+    if (!options.some((o) => o.key === connKey)) {
+      setConnKey(options[0]?.key ?? null);
+    }
+  }, [options, connKey]);
+
+  const volcCred = useMemo<VolcCredential | null>(
+    () =>
+      connKey?.startsWith("volc:")
+        ? volc.items.find((c) => `volc:${c.id}` === connKey) ?? null
+        : null,
+    [connKey, volc.items]
+  );
+  const gwConn = useMemo<GatewayConnection | null>(
+    () =>
+      connKey?.startsWith("gw:")
+        ? gateway.items.find((c) => `gw:${c.id}` === connKey) ?? null
+        : null,
+    [connKey, gateway.items]
+  );
+  const isVolc = !!volcCred;
+  const provider = volcCred ? "volcengine" : gwConn?.provider ?? null;
+
   const usableKeys = useMemo(
-    () => (credential?.apiKeys ?? []).filter((k) => k.key),
-    [credential]
+    () => (volcCred?.apiKeys ?? []).filter((k) => k.key),
+    [volcCred]
   );
   const selectedModel = models.find((m) => m.id === modelId) ?? null;
+
+  useEffect(() => {
+    setModels([]);
+    setModelId("");
+    if (isVolc) setWireFormat("openai-chat");
+  }, [connKey, isVolc]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages]);
 
   const fetchModels = async () => {
-    if (!credential) return;
     setError(null);
     setModelsLoading(true);
     try {
-      const list = await listEndpoints({
-        accessKey: credential.accessKey,
-        secretKey: credential.secretKey,
-        region: credential.region,
-      });
+      let list: ModelInfo[] = [];
+      if (volcCred) {
+        list = await listEndpoints({
+          accessKey: volcCred.accessKey,
+          secretKey: volcCred.secretKey,
+          region: volcCred.region,
+          project: volcCred.project,
+        });
+      } else if (gwConn) {
+        const adapter = getAdapter(gwConn.provider);
+        if (!adapter) throw new Error(`未找到适配器: ${gwConn.provider}`);
+        list = await adapter.listModels({
+          baseUrl: gwConn.baseUrl,
+          apiKey: gwConn.apiKey,
+        });
+      } else {
+        return;
+      }
       setModels(list);
       if (list.length > 0) setModelId(list[0].id);
     } catch (e) {
@@ -136,10 +206,20 @@ export function PlaygroundPage() {
 
   const send = async () => {
     if (sending) return;
-    if (!credential) return setError("请先选择凭证");
+    if (!volcCred && !gwConn) return setError("请先选择连接");
     if (!modelId) return setError("请先拉取并选择模型");
-    const key = usableKeys[Number(keyIdx)]?.key;
-    if (!key) return setError("没有可用的 Ark API Key，请先在 Providers 页拉取");
+    if (!provider) return setError("无法识别 provider");
+
+    let cred: ProviderCredential;
+    if (volcCred) {
+      const key = usableKeys[Number(keyIdx)]?.key;
+      if (!key) return setError("没有可用的 Ark API Key，请先在 Providers 页拉取");
+      cred = { apiKey: key, region: volcCred.region };
+    } else if (gwConn) {
+      cred = { baseUrl: gwConn.baseUrl, apiKey: gwConn.apiKey };
+    } else {
+      return;
+    }
     if (!input.trim() && !image) return;
 
     setError(null);
@@ -154,8 +234,7 @@ export function PlaygroundPage() {
     setImage(null);
     setSending(true);
 
-    const adapter = getAdapter("volcengine")!;
-    const cred: ProviderCredential = { apiKey: key, region: credential.region };
+    const adapter = getAdapter(provider)!;
     const controller = new AbortController();
     abortRef.current = controller;
     const req = {
@@ -165,7 +244,7 @@ export function PlaygroundPage() {
         temperature: Number(temperature),
         maxTokens: Number(maxTokens),
       },
-      wireFormat,
+      wireFormat: isVolc ? wireFormat : "openai-chat",
       signal: controller.signal,
     };
 
@@ -203,14 +282,14 @@ export function PlaygroundPage() {
 
   const stop = () => abortRef.current?.abort();
 
-  if (loaded && items.length === 0) {
+  if (loaded && options.length === 0) {
     return (
       <div>
         <PageHeader title="Playground" description="选择模型进行对话测试。" />
         <EmptyState
           icon={Bot}
-          title="还没有可用的凭证"
-          description="请先在 Volcengine 页添加 AK/SK 并拉取 API Key。"
+          title="还没有可用的连接"
+          description="请先在 Providers 页添加凭证（火山引擎）或网关连接（New API / LiteLLM）。"
         />
       </div>
     );
@@ -224,15 +303,18 @@ export function PlaygroundPage() {
         {/* Config panel */}
         <Card className="flex flex-col gap-4 overflow-y-auto p-4">
           <div className="grid gap-1.5">
-            <Label>凭证</Label>
-            <Select value={credId ?? ""} onValueChange={setCredId}>
+            <Label>连接</Label>
+            <Select value={connKey ?? ""} onValueChange={setConnKey}>
               <SelectTrigger>
-                <SelectValue placeholder="选择凭证" />
+                <SelectValue placeholder="选择连接" />
               </SelectTrigger>
               <SelectContent>
-                {items.map((c) => (
-                  <SelectItem key={c.id} value={c.id}>
-                    {c.name}
+                {options.map((o) => (
+                  <SelectItem key={o.key} value={o.key}>
+                    {o.name}
+                    <span className="ml-1.5 text-muted-foreground">
+                      · {providerLabel(o.provider)}
+                    </span>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -246,7 +328,7 @@ export function PlaygroundPage() {
                 size="sm"
                 variant="ghost"
                 onClick={fetchModels}
-                disabled={modelsLoading || !credential}
+                disabled={modelsLoading || (!volcCred && !gwConn)}
               >
                 {modelsLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -275,40 +357,44 @@ export function PlaygroundPage() {
             {selectedModel && <ModelFeatureBadges model={selectedModel} />}
           </div>
 
-          <div className="grid gap-1.5">
-            <Label>Ark API Key</Label>
-            <Select value={keyIdx} onValueChange={setKeyIdx}>
-              <SelectTrigger>
-                <SelectValue placeholder="无可用 Key" />
-              </SelectTrigger>
-              <SelectContent>
-                {usableKeys.map((k, i) => (
-                  <SelectItem key={k.arkId ?? i} value={String(i)}>
-                    {k.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isVolc && (
+            <div className="grid gap-1.5">
+              <Label>Ark API Key</Label>
+              <Select value={keyIdx} onValueChange={setKeyIdx}>
+                <SelectTrigger>
+                  <SelectValue placeholder="无可用 Key" />
+                </SelectTrigger>
+                <SelectContent>
+                  {usableKeys.map((k, i) => (
+                    <SelectItem key={k.arkId ?? i} value={String(i)}>
+                      {k.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          <div className="grid gap-1.5">
-            <Label>请求格式</Label>
-            <Select
-              value={wireFormat}
-              onValueChange={(v) => setWireFormat(v as WireFormat)}
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {WIRE_FORMATS.map((f) => (
-                  <SelectItem key={f.value} value={f.value}>
-                    {f.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {isVolc && (
+            <div className="grid gap-1.5">
+              <Label>请求格式</Label>
+              <Select
+                value={wireFormat}
+                onValueChange={(v) => setWireFormat(v as WireFormat)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {WIRE_FORMATS.map((f) => (
+                    <SelectItem key={f.value} value={f.value}>
+                      {f.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
           <div className="grid gap-1.5">
             <Label htmlFor="pg-system">System Prompt</Label>
@@ -404,11 +490,13 @@ export function PlaygroundPage() {
             <Button
               size="icon"
               variant="secondary"
-              disabled={!selectedModel?.supportsVision}
+              disabled={!selectedModel}
               title={
-                selectedModel?.supportsVision
-                  ? "添加图片"
-                  : "当前模型不支持图片输入"
+                !selectedModel
+                  ? "请先拉取并选择模型"
+                  : selectedModel.supportsVision
+                    ? "添加图片"
+                    : "该模型未标记支持图片，仍可尝试发送"
               }
               onClick={() => fileRef.current?.click()}
             >

@@ -18,7 +18,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useVolcCredentialStore } from "@/store";
-import { VOLC_REGIONS, type VolcCredential } from "@/types";
+import {
+  VOLC_DEFAULT_PROJECT,
+  VOLC_REGIONS,
+  type VolcCredential,
+} from "@/types";
 
 interface Props {
   open: boolean;
@@ -31,6 +35,7 @@ const empty = {
   accessKey: "",
   secretKey: "",
   region: VOLC_REGIONS[0] as string,
+  project: VOLC_DEFAULT_PROJECT,
 };
 
 export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
@@ -49,6 +54,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
               accessKey: editing.accessKey,
               secretKey: editing.secretKey,
               region: editing.region,
+              project: editing.project || VOLC_DEFAULT_PROJECT,
             }
           : empty
       );
@@ -65,6 +71,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
       accessKey: form.accessKey.trim(),
       secretKey: form.secretKey.trim(),
       region: form.region,
+      project: form.project.trim() || VOLC_DEFAULT_PROJECT,
     };
 
     if (editing) await edit(editing.id, payload);
@@ -135,6 +142,20 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="vc-project">项目 Project</Label>
+            <Input
+              id="vc-project"
+              placeholder="default"
+              autoComplete="off"
+              value={form.project}
+              onChange={(e) => setForm({ ...form, project: e.target.value })}
+            />
+            <p className="text-label-12 text-muted-foreground">
+              Ark 资源所属项目，拉取 API Key 时必填，一般为 default。
+            </p>
           </div>
 
           {error && <p className="text-label-13 text-destructive">{error}</p>}

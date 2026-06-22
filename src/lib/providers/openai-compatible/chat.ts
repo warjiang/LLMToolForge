@@ -1,12 +1,11 @@
 /**
- * Volcengine Ark inference (chat) adapter.
+ * Chat client for OpenAI-compatible gateways (new-api / litellm).
  *
- * Talks to the runtime API at ark.cn-beijing.volces.com/api/v3 with a Bearer
- * Ark API Key. Supports the OpenAI-compatible /chat/completions endpoint and the
- * OpenAI Responses-compatible /responses endpoint, with SSE streaming.
+ * Talks to `{baseUrl}/chat/completions` with a Bearer API key, supporting the
+ * OpenAI Chat format and SSE streaming. The base URL is expected to already
+ * include the API version segment (e.g. `https://host/v1`).
  */
 
-import { httpFetch } from "@/lib/http";
 import type {
   ChatMessage,
   ChatRequest,
@@ -14,21 +13,21 @@ import type {
   ChatStreamChunk,
   ContentPart,
   ProviderCredential,
-  WireFormat,
 } from "@/lib/providers/types";
-
-const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
+import {
+  authHeader,
+  endpoint,
+  gatewayFetch,
+  normalizeBaseUrl,
+} from "./request";
 
 function baseUrl(cred: ProviderCredential): string {
-  return (cred.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return normalizeBaseUrl(cred);
 }
 
 function requireKey(cred: ProviderCredential): string {
-  if (!cred.apiKey) throw new Error("缺少 Ark API Key");
-  return cred.apiKey;
+  return authHeader(cred);
 }
-
-// ---- message conversion ----
 
 function toOpenAIContent(content: string | ContentPart[]) {
   if (typeof content === "string") return content;
@@ -60,48 +59,16 @@ function buildChatBody(req: ChatRequest, stream: boolean) {
   return body;
 }
 
-/** Build the Responses API "input" array, preserving multimodal parts. */
-function buildResponsesBody(req: ChatRequest, stream: boolean) {
-  const input = req.messages.map((m) => {
-    const isAssistant = m.role === "assistant";
-    const textType = isAssistant ? "output_text" : "input_text";
-    const content =
-      typeof m.content === "string"
-        ? [{ type: textType, text: m.content }]
-        : m.content.map((p) =>
-            p.type === "text"
-              ? { type: textType, text: p.text }
-              : { type: "input_image", image_url: p.url }
-          );
-    return { role: m.role, content };
-  });
-  const body: Record<string, unknown> = {
-    model: req.model,
-    input,
-    stream,
-  };
-  if (req.params?.temperature != null)
-    body.temperature = req.params.temperature;
-  if (req.params?.maxTokens != null)
-    body.max_output_tokens = req.params.maxTokens;
-  return body;
-}
-
-function endpointFor(format: WireFormat): string {
-  return format === "openai-responses" ? "/responses" : "/chat/completions";
-}
-
-async function postJson(
+async function postChat(
   cred: ProviderCredential,
-  path: string,
   body: unknown,
   signal?: AbortSignal
 ): Promise<Response> {
-  return httpFetch(`${baseUrl(cred)}${path}`, {
+  return gatewayFetch(endpoint(baseUrl(cred), "chat/completions"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${requireKey(cred)}`,
+      Authorization: requireKey(cred),
     },
     body: JSON.stringify(body),
     signal,
@@ -115,31 +82,11 @@ async function ensureOk(res: Response, label: string) {
   }
 }
 
-// ---- non-streaming ----
-
 export async function chat(
   req: ChatRequest,
   cred: ProviderCredential
 ): Promise<ChatResult> {
-  const format = req.wireFormat ?? "openai-chat";
-  if (format === "openai-responses") {
-    const res = await postJson(
-      cred,
-      "/responses",
-      buildResponsesBody(req, false),
-      req.signal
-    );
-    await ensureOk(res, "Responses");
-    const json = await res.json();
-    return { content: extractResponsesText(json), raw: json };
-  }
-
-  const res = await postJson(
-    cred,
-    endpointFor(format),
-    buildChatBody(req, false),
-    req.signal
-  );
+  const res = await postChat(cred, buildChatBody(req, false), req.signal);
   await ensureOk(res, "Chat");
   const json = await res.json();
   const choice = json?.choices?.[0]?.message?.content ?? "";
@@ -156,37 +103,13 @@ export async function chat(
   };
 }
 
-function extractResponsesText(json: unknown): string {
-  const j = json as {
-    output_text?: string;
-    output?: { content?: { type?: string; text?: string }[] }[];
-  };
-  if (typeof j.output_text === "string") return j.output_text;
-  const parts = j.output?.flatMap((o) => o.content ?? []) ?? [];
-  return parts
-    .filter((p) => p.type === "output_text" || p.text)
-    .map((p) => p.text ?? "")
-    .join("");
-}
-
-// ---- streaming ----
-
 export async function* chatStream(
   req: ChatRequest,
   cred: ProviderCredential
 ): AsyncGenerator<ChatStreamChunk, void, unknown> {
-  const format = req.wireFormat ?? "openai-chat";
-  const isResponses = format === "openai-responses";
-  const res = await postJson(
-    cred,
-    endpointFor(format),
-    isResponses ? buildResponsesBody(req, true) : buildChatBody(req, true),
-    req.signal
-  );
+  const res = await postChat(cred, buildChatBody(req, true), req.signal);
   await ensureOk(res, "Chat(stream)");
-  if (!res.body) {
-    throw new Error("流式响应缺少 body");
-  }
+  if (!res.body) throw new Error("流式响应缺少 body");
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
@@ -217,9 +140,7 @@ export async function* chatStream(
       } catch {
         continue;
       }
-      const chunk = isResponses
-        ? parseResponsesChunk(parsed)
-        : parseChatChunk(parsed);
+      const chunk = parseChatChunk(parsed);
       if (chunk) yield chunk;
     }
   }
@@ -245,12 +166,4 @@ function parseChatChunk(parsed: unknown): ChatStreamChunk | null {
     : undefined;
   if (!delta && !usage) return null;
   return { delta, done: false, usage };
-}
-
-function parseResponsesChunk(parsed: unknown): ChatStreamChunk | null {
-  const p = parsed as { type?: string; delta?: string };
-  if (p.type === "response.output_text.delta" && p.delta) {
-    return { delta: p.delta, done: false };
-  }
-  return null;
 }

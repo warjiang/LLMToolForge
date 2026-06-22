@@ -26,6 +26,22 @@ export interface CatalogEntry {
 export const VOLC_MODEL_CATALOG: CatalogEntry[] = [
   // Vision-capable Doubao
   {
+    prefix: "doubao-1-5-thinking-vision",
+    label: "Doubao 1.5 Thinking Vision",
+    contextWindow: 128000,
+    supportsFunctionCall: true,
+    supportsVision: true,
+    tags: ["vision", "thinking", "reasoning"],
+  },
+  {
+    prefix: "doubao-1-5-ui-tars",
+    label: "Doubao 1.5 UI-TARS",
+    contextWindow: 128000,
+    supportsFunctionCall: true,
+    supportsVision: true,
+    tags: ["vision", "agent"],
+  },
+  {
     prefix: "doubao-1-5-vision",
     label: "Doubao 1.5 Vision",
     contextWindow: 32768,
@@ -161,6 +177,10 @@ export function lookupCatalog(
   foundationModelName: string | undefined | null
 ): CatalogEntry | undefined {
   if (!foundationModelName) return undefined;
-  const name = foundationModelName.toLowerCase();
-  return VOLC_MODEL_CATALOG.find((e) => name.startsWith(e.prefix));
+  // Normalize separators so "doubao-1.5-vision" / "doubao_1_5_vision" all match
+  // the dash-based catalog prefixes.
+  const name = foundationModelName.toLowerCase().replace(/[._]/g, "-");
+  return VOLC_MODEL_CATALOG.find((e) =>
+    name.startsWith(e.prefix.toLowerCase().replace(/[._]/g, "-"))
+  );
 }

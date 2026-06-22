@@ -15,7 +15,7 @@ import { cn } from "@/lib/utils";
 const navItems = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/api-keys", label: "API Keys", icon: KeyRound },
-  { to: "/providers/volcengine", label: "Volcengine", icon: Cloud },
+  { to: "/providers", label: "Providers", icon: Cloud },
   { to: "/playground", label: "Playground", icon: MessageSquare },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
