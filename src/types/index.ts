@@ -1,3 +1,5 @@
+import type { ModelInfo } from "@/lib/providers/types";
+
 export interface BaseEntity {
   id: string;
   createdAt: string;
@@ -10,6 +12,8 @@ export interface ApiKey extends BaseEntity {
   key: string;
   baseUrl?: string;
   note?: string;
+  /** Manually configured model ids usable in the Playground. */
+  models?: string[];
 }
 
 export type SkillStatus = "enabled" | "disabled";
@@ -52,6 +56,8 @@ export interface VolcCredential extends BaseEntity {
   project: string;
   /** Saved Ark API keys usable for inference. */
   apiKeys: ArkApiKeyRef[];
+  /** Last fetched models (endpoints), persisted for reuse. */
+  models?: ModelInfo[];
 }
 
 export const VOLC_DEFAULT_PROJECT = "default";
@@ -70,10 +76,12 @@ export interface GatewayConnection extends BaseEntity {
   provider: GatewayProvider;
   baseUrl: string;
   apiKey: string;
+  /** Last fetched models, persisted for reuse. */
+  models?: ModelInfo[];
 }
 
 /** Kind of provider, used to drive the unified Providers page. */
-export type ProviderKind = "volcengine" | GatewayProvider;
+export type ProviderKind = "volcengine" | "manual" | GatewayProvider;
 
 export interface ProviderMeta {
   /** Provider id, also the adapter key. */
@@ -81,7 +89,7 @@ export interface ProviderMeta {
   label: string;
   description: string;
   /** Whether the provider uses the OpenAI-compatible gateway model. */
-  kind: "volc" | "gateway";
+  kind: "volc" | "gateway" | "manual";
 }
 
 export const PROVIDER_METAS: ProviderMeta[] = [
@@ -108,6 +116,12 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     label: "DMXAPI",
     description: "OpenAI 兼容聚合平台，Base URL + API Key",
     kind: "gateway",
+  },
+  {
+    id: "manual",
+    label: "自定义 / OpenAI 兼容",
+    description: "手动录入 API Key 与可用模型，OpenAI 兼容调用",
+    kind: "manual",
   },
 ];
 

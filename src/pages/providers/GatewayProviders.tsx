@@ -150,14 +150,15 @@ export function GatewayProviders({
 }
 
 function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const edit = useGatewayStore((s) => s.edit);
+  const [models, setModels] = useState<ModelInfo[]>(connection.models ?? []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    setModels([]);
+    setModels(connection.models ?? []);
     setError(null);
-  }, [connection.id]);
+  }, [connection.id, connection.models]);
 
   const fetchModels = async () => {
     setError(null);
@@ -165,12 +166,12 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
     try {
       const adapter = getAdapter(connection.provider);
       if (!adapter) throw new Error(`未找到适配器: ${connection.provider}`);
-      setModels(
-        await adapter.listModels({
-          baseUrl: connection.baseUrl,
-          apiKey: connection.apiKey,
-        })
-      );
+      const list = await adapter.listModels({
+        baseUrl: connection.baseUrl,
+        apiKey: connection.apiKey,
+      });
+      setModels(list);
+      await edit(connection.id, { models: list });
     } catch (e) {
       setError(e instanceof Error ? e.message : "拉取模型失败");
     } finally {

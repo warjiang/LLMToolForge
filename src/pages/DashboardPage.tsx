@@ -31,9 +31,9 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <StatCard
-          to="/api-keys"
+          to="/providers"
           icon={KeyRound}
-          label="API Keys"
+          label="模型接入"
           value={apiKeys.items.length}
           hint="已配置的密钥"
         />
@@ -59,7 +59,7 @@ export function DashboardPage() {
           从左侧导航选择一个模块开始配置。所有数据当前保存在本地设备。
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <QuickLink to="/api-keys" label="添加 API Key" />
+          <QuickLink to="/providers" label="添加 API Key" />
           <QuickLink to="/skills" label="创建 Skill" />
           <QuickLink to="/mcp" label="接入 MCP Server" />
         </div>

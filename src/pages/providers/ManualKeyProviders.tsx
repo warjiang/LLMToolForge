@@ -1,6 +1,12 @@
 import { useEffect, useState } from "react";
-import { Copy, KeyRound, MoreHorizontal, Pencil, Plus, Trash2 } from "lucide-react";
-import { PageHeader } from "@/components/common/PageHeader";
+import {
+  Copy,
+  KeyRound,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+  Trash2,
+} from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -16,14 +22,14 @@ import {
 import { useApiKeyStore } from "@/store";
 import type { ApiKey } from "@/types";
 import { formatDate, maskSecret } from "@/lib/utils";
-import { ApiKeyDialog } from "./ApiKeyDialog";
+import { ApiKeyDialog } from "@/pages/api-keys/ApiKeyDialog";
 
-export function ApiKeysPage() {
+export function ManualKeyProviders() {
   const { items, loaded, load } = useApiKeyStore();
+  const remove = useApiKeyStore((s) => s.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<ApiKey | null>(null);
   const [deleting, setDeleting] = useState<ApiKey | null>(null);
-  const remove = useApiKeyStore((s) => s.remove);
 
   useEffect(() => {
     if (!loaded) load();
@@ -40,22 +46,21 @@ export function ApiKeysPage() {
 
   return (
     <div>
-      <PageHeader
-        title="API Keys"
-        description="管理大模型提供商的访问密钥，供工具调用时使用。"
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            新建 Key
-          </Button>
-        }
-      />
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-label-13 text-muted-foreground">
+          手动录入 API Key 与可用模型（OpenAI 兼容），可直接在 Playground 中使用。
+        </p>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4" />
+          新建 Key
+        </Button>
+      </div>
 
       {items.length === 0 ? (
         <EmptyState
           icon={KeyRound}
           title="还没有 API Key"
-          description="添加你的第一个提供商密钥，开始为大模型工具供能。"
+          description="添加你的第一个提供商密钥，并配置可用模型。"
           action={
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
@@ -79,6 +84,11 @@ export function ApiKeysPage() {
                     {item.name}
                   </span>
                   <Badge variant="outline">{item.provider}</Badge>
+                  {item.models && item.models.length > 0 && (
+                    <Badge variant="accent">
+                      {item.models.length} 模型
+                    </Badge>
+                  )}
                 </div>
                 <div className="mt-0.5 flex items-center gap-2 text-label-12 text-muted-foreground">
                   <code className="font-mono">{maskSecret(item.key)}</code>

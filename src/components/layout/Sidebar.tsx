@@ -1,7 +1,6 @@
 import { NavLink } from "react-router-dom";
 import {
   LayoutDashboard,
-  KeyRound,
   Boxes,
   Server,
   Wrench,
@@ -14,8 +13,7 @@ import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
-  { to: "/api-keys", label: "API Keys", icon: KeyRound },
-  { to: "/providers", label: "Providers", icon: Cloud },
+  { to: "/providers", label: "模型接入", icon: Cloud },
   { to: "/playground", label: "Playground", icon: MessageSquare },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
