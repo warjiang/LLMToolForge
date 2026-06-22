@@ -11,7 +11,9 @@
       "allow": [
         { "url": "https://open.volcengineapi.com/*" },
         { "url": "https://*.volces.com/*" },
-        { "url": "https://*.volcengineapi.com/*" }
+        { "url": "https://*.volcengineapi.com/*" },
+        { "url": "http://**" },
+        { "url": "https://**" }
       ]
     }
   ]
