@@ -5,8 +5,13 @@
  * API key and maps the result to normalized ModelInfo.
  */
 
-import { httpFetch } from "@/lib/http";
 import type { ModelInfo, ProviderCredential } from "@/lib/providers/types";
+import {
+  authHeader,
+  endpoint,
+  gatewayFetch,
+  normalizeBaseUrl,
+} from "./request";
 
 interface OpenAIModel {
   id?: string;
@@ -22,14 +27,14 @@ export async function listModels(
   provider: string,
   cred: ProviderCredential
 ): Promise<ModelInfo[]> {
-  if (!cred.baseUrl) throw new Error("缺少 Base URL");
-  if (!cred.apiKey) throw new Error("缺少 API Key");
-  const url = `${cred.baseUrl.replace(/\/+$/, "")}/models`;
+  const base = normalizeBaseUrl(cred);
+  const authorization = authHeader(cred);
+  const url = endpoint(base, "models");
 
-  const res = await httpFetch(url, {
+  const res = await gatewayFetch(url, {
     method: "GET",
     headers: {
-      Authorization: `Bearer ${cred.apiKey}`,
+      Authorization: authorization,
     },
   });
 

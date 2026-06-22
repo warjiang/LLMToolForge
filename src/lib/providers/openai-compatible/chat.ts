@@ -6,7 +6,6 @@
  * include the API version segment (e.g. `https://host/v1`).
  */
 
-import { httpFetch } from "@/lib/http";
 import type {
   ChatMessage,
   ChatRequest,
@@ -15,15 +14,19 @@ import type {
   ContentPart,
   ProviderCredential,
 } from "@/lib/providers/types";
+import {
+  authHeader,
+  endpoint,
+  gatewayFetch,
+  normalizeBaseUrl,
+} from "./request";
 
 function baseUrl(cred: ProviderCredential): string {
-  if (!cred.baseUrl) throw new Error("缺少 Base URL");
-  return cred.baseUrl.replace(/\/+$/, "");
+  return normalizeBaseUrl(cred);
 }
 
 function requireKey(cred: ProviderCredential): string {
-  if (!cred.apiKey) throw new Error("缺少 API Key");
-  return cred.apiKey;
+  return authHeader(cred);
 }
 
 function toOpenAIContent(content: string | ContentPart[]) {
@@ -61,11 +64,11 @@ async function postChat(
   body: unknown,
   signal?: AbortSignal
 ): Promise<Response> {
-  return httpFetch(`${baseUrl(cred)}/chat/completions`, {
+  return gatewayFetch(endpoint(baseUrl(cred), "chat/completions"), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${requireKey(cred)}`,
+      Authorization: requireKey(cred),
     },
     body: JSON.stringify(body),
     signal,
