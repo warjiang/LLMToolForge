@@ -405,11 +405,13 @@ export function PlaygroundPage() {
             <Button
               size="icon"
               variant="secondary"
-              disabled={!selectedModel?.supportsVision}
+              disabled={!selectedModel}
               title={
-                selectedModel?.supportsVision
-                  ? "添加图片"
-                  : "当前模型不支持图片输入"
+                !selectedModel
+                  ? "请先拉取并选择模型"
+                  : selectedModel.supportsVision
+                    ? "添加图片"
+                    : "该模型未标记支持图片，仍可尝试发送"
               }
               onClick={() => fileRef.current?.click()}
             >

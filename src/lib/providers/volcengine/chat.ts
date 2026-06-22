@@ -60,19 +60,21 @@ function buildChatBody(req: ChatRequest, stream: boolean) {
   return body;
 }
 
-/** Flatten messages into the Responses API "input" string. */
+/** Build the Responses API "input" array, preserving multimodal parts. */
 function buildResponsesBody(req: ChatRequest, stream: boolean) {
-  const input = req.messages
-    .map((m) => {
-      const text =
-        typeof m.content === "string"
-          ? m.content
-          : m.content
-              .map((p) => (p.type === "text" ? p.text : `[image:${p.url}]`))
-              .join("\n");
-      return `${m.role}: ${text}`;
-    })
-    .join("\n");
+  const input = req.messages.map((m) => {
+    const isAssistant = m.role === "assistant";
+    const textType = isAssistant ? "output_text" : "input_text";
+    const content =
+      typeof m.content === "string"
+        ? [{ type: textType, text: m.content }]
+        : m.content.map((p) =>
+            p.type === "text"
+              ? { type: textType, text: p.text }
+              : { type: "input_image", image_url: p.url }
+          );
+    return { role: m.role, content };
+  });
   const body: Record<string, unknown> = {
     model: req.model,
     input,
