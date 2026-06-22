@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { useVolcCredentialStore, useGatewayStore } from "@/store";
+import { useVolcCredentialStore, useGatewayStore, useApiKeyStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
@@ -37,7 +37,12 @@ import type {
   WireFormat,
 } from "@/lib/providers/types";
 import { listEndpoints } from "@/lib/providers/volcengine";
-import { PROVIDER_METAS, type VolcCredential, type GatewayConnection } from "@/types";
+import {
+  PROVIDER_METAS,
+  type VolcCredential,
+  type GatewayConnection,
+  type ApiKey,
+} from "@/types";
 
 interface UiMessage {
   role: "user" | "assistant";
@@ -45,12 +50,12 @@ interface UiMessage {
   image?: string;
 }
 
-/** A selectable connection, unifying volcengine credentials and gateways. */
+/** A selectable connection, unifying volcengine credentials, gateways and manual keys. */
 interface ConnOption {
-  /** Composite key: "volc:<id>" or "gw:<id>". */
+  /** Composite key: "volc:<id>", "gw:<id>" or "key:<id>". */
   key: string;
   name: string;
-  kind: "volc" | "gateway";
+  kind: "volc" | "gateway" | "manual";
   provider: string;
 }
 
@@ -66,6 +71,7 @@ const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
 export function PlaygroundPage() {
   const volc = useVolcCredentialStore();
   const gateway = useGatewayStore();
+  const apiKeys = useApiKeyStore();
   const [connKey, setConnKey] = useState<string | null>(null);
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -86,12 +92,13 @@ export function PlaygroundPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  const loaded = volc.loaded && gateway.loaded;
+  const loaded = volc.loaded && gateway.loaded && apiKeys.loaded;
 
   useEffect(() => {
     if (!volc.loaded) volc.load();
     if (!gateway.loaded) gateway.load();
-  }, [volc, gateway]);
+    if (!apiKeys.loaded) apiKeys.load();
+  }, [volc, gateway, apiKeys]);
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -106,8 +113,14 @@ export function PlaygroundPage() {
       kind: "gateway",
       provider: c.provider,
     }));
-    return [...volcOpts, ...gwOpts];
-  }, [volc.items, gateway.items]);
+    const keyOpts: ConnOption[] = apiKeys.items.map((c) => ({
+      key: `key:${c.id}`,
+      name: c.name,
+      kind: "manual",
+      provider: c.provider,
+    }));
+    return [...volcOpts, ...gwOpts, ...keyOpts];
+  }, [volc.items, gateway.items, apiKeys.items]);
 
   useEffect(() => {
     if (!options.some((o) => o.key === connKey)) {
@@ -129,8 +142,21 @@ export function PlaygroundPage() {
         : null,
     [connKey, gateway.items]
   );
+  const keyConn = useMemo<ApiKey | null>(
+    () =>
+      connKey?.startsWith("key:")
+        ? apiKeys.items.find((c) => `key:${c.id}` === connKey) ?? null
+        : null,
+    [connKey, apiKeys.items]
+  );
   const isVolc = !!volcCred;
-  const provider = volcCred ? "volcengine" : gwConn?.provider ?? null;
+  const provider = volcCred
+    ? "volcengine"
+    : gwConn
+      ? gwConn.provider
+      : keyConn
+        ? "manual"
+        : null;
 
   const usableKeys = useMemo(
     () => (volcCred?.apiKeys ?? []).filter((k) => k.key),
@@ -138,11 +164,34 @@ export function PlaygroundPage() {
   );
   const selectedModel = models.find((m) => m.id === modelId) ?? null;
 
+  /** Models configured on a manual API key, mapped to ModelInfo. */
+  const manualModels = useMemo<ModelInfo[]>(
+    () =>
+      (keyConn?.models ?? []).map((id) => ({
+        id,
+        name: id,
+        provider: "manual",
+      })),
+    [keyConn]
+  );
+
+  /** Last persisted models for the selected connection, reused across restarts. */
+  const storedModels = useMemo<ModelInfo[]>(() => {
+    if (volcCred) return volcCred.models ?? [];
+    if (gwConn) return gwConn.models ?? [];
+    if (keyConn) return manualModels;
+    return [];
+  }, [volcCred, gwConn, keyConn, manualModels]);
+
   useEffect(() => {
-    setModels([]);
-    setModelId("");
     if (isVolc) setWireFormat("openai-chat");
-  }, [connKey, isVolc]);
+    setModels(storedModels);
+    setModelId((prev) =>
+      storedModels.some((m) => m.id === prev)
+        ? prev
+        : storedModels[0]?.id ?? ""
+    );
+  }, [connKey, isVolc, storedModels]);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
@@ -160,6 +209,7 @@ export function PlaygroundPage() {
           region: volcCred.region,
           project: volcCred.project,
         });
+        await volc.edit(volcCred.id, { models: list });
       } else if (gwConn) {
         const adapter = getAdapter(gwConn.provider);
         if (!adapter) throw new Error(`未找到适配器: ${gwConn.provider}`);
@@ -167,6 +217,18 @@ export function PlaygroundPage() {
           baseUrl: gwConn.baseUrl,
           apiKey: gwConn.apiKey,
         });
+        await gateway.edit(gwConn.id, { models: list });
+      } else if (keyConn) {
+        if (!keyConn.baseUrl) throw new Error("该 Key 未配置 Base URL，无法拉取模型");
+        const adapter = getAdapter("manual")!;
+        list = await adapter.listModels({
+          baseUrl: keyConn.baseUrl,
+          apiKey: keyConn.key,
+        });
+        const mergedIds = [
+          ...new Set([...(keyConn.models ?? []), ...list.map((m) => m.id)]),
+        ];
+        await apiKeys.edit(keyConn.id, { models: mergedIds });
       } else {
         return;
       }
@@ -206,17 +268,21 @@ export function PlaygroundPage() {
 
   const send = async () => {
     if (sending) return;
-    if (!volcCred && !gwConn) return setError("请先选择连接");
+    if (!volcCred && !gwConn && !keyConn) return setError("请先选择连接");
     if (!modelId) return setError("请先拉取并选择模型");
     if (!provider) return setError("无法识别 provider");
 
     let cred: ProviderCredential;
     if (volcCred) {
       const key = usableKeys[Number(keyIdx)]?.key;
-      if (!key) return setError("没有可用的 Ark API Key，请先在 Providers 页拉取");
+      if (!key) return setError("没有可用的 Ark API Key，请先在模型接入页拉取");
       cred = { apiKey: key, region: volcCred.region };
     } else if (gwConn) {
       cred = { baseUrl: gwConn.baseUrl, apiKey: gwConn.apiKey };
+    } else if (keyConn) {
+      if (!keyConn.baseUrl)
+        return setError("该 Key 未配置 Base URL，无法在 Playground 中调用");
+      cred = { baseUrl: keyConn.baseUrl, apiKey: keyConn.key };
     } else {
       return;
     }
@@ -289,7 +355,7 @@ export function PlaygroundPage() {
         <EmptyState
           icon={Bot}
           title="还没有可用的连接"
-          description="请先在 Providers 页添加凭证（火山引擎）或网关连接（New API / LiteLLM）。"
+          description="请先在「模型接入」页添加凭证（火山引擎）、网关连接（New API / LiteLLM）或自定义 API Key。"
         />
       </div>
     );
@@ -328,7 +394,7 @@ export function PlaygroundPage() {
                 size="sm"
                 variant="ghost"
                 onClick={fetchModels}
-                disabled={modelsLoading || (!volcCred && !gwConn)}
+                disabled={modelsLoading || (!volcCred && !gwConn && !keyConn)}
               >
                 {modelsLoading ? (
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />

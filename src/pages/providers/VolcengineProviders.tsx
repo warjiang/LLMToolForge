@@ -145,10 +145,14 @@ export function VolcengineProviders() {
 
 function CredentialDetail({ credential }: { credential: VolcCredential }) {
   const edit = useVolcCredentialStore((s) => s.edit);
-  const [models, setModels] = useState<ModelInfo[]>([]);
+  const [models, setModels] = useState<ModelInfo[]>(credential.models ?? []);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [keysLoading, setKeysLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setModels(credential.models ?? []);
+  }, [credential.id, credential.models]);
 
   const cred = useMemo(
     () => ({
@@ -164,7 +168,9 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
     setError(null);
     setModelsLoading(true);
     try {
-      setModels(await listEndpoints(cred));
+      const list = await listEndpoints(cred);
+      setModels(list);
+      await edit(credential.id, { models: list });
     } catch (e) {
       setError(e instanceof Error ? e.message : "拉取模型失败");
     } finally {

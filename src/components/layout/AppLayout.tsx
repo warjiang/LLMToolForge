@@ -4,7 +4,8 @@ import { Topbar } from "./Topbar";
 
 const TITLES: Record<string, string> = {
   "/": "概览",
-  "/api-keys": "API Keys",
+  "/providers": "模型接入",
+  "/playground": "Playground",
   "/skills": "Skills",
   "/mcp": "MCP Servers",
   "/tools": "实用工具",

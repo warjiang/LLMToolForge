@@ -10,6 +10,7 @@ import {
 import { isLiveRequestSupported } from "@/lib/http";
 import { VolcengineProviders } from "./VolcengineProviders";
 import { GatewayProviders } from "./GatewayProviders";
+import { ManualKeyProviders } from "./ManualKeyProviders";
 
 export function ProvidersPage() {
   const [active, setActive] = useState<ProviderKind>("volcengine");
@@ -19,8 +20,8 @@ export function ProvidersPage() {
   return (
     <div>
       <PageHeader
-        title="Providers"
-        description="管理各模型 provider 的接入：火山引擎、New API、LiteLLM。新增接入时请先选择 provider。"
+        title="模型接入"
+        description="统一管理各模型 provider 的接入：火山引擎、New API、LiteLLM、DMXAPI 以及自定义 API Key。新增接入时请先选择 provider。"
       />
 
       <div className="mb-5 inline-flex rounded-md border border-border bg-background-secondary p-0.5">
@@ -48,6 +49,8 @@ export function ProvidersPage() {
 
       {activeMeta.kind === "volc" ? (
         <VolcengineProviders />
+      ) : activeMeta.kind === "manual" ? (
+        <ManualKeyProviders />
       ) : (
         <GatewayProviders
           provider={activeMeta as ProviderMeta & { id: GatewayProvider }}

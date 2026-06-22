@@ -23,6 +23,12 @@ interface Props {
 const PLACEHOLDER: Record<GatewayProvider, string> = {
   "new-api": "https://your-new-api-host/v1",
   litellm: "https://your-litellm-host/v1",
+  dmxapi: "https://www.dmxapi.cn/v1",
+};
+
+/** Default Base URL prefilled when creating a connection (host is fixed). */
+const DEFAULT_BASE_URL: Partial<Record<GatewayProvider, string>> = {
+  dmxapi: "https://www.dmxapi.cn/v1",
 };
 
 export function GatewayConnectionDialog({
@@ -46,10 +52,14 @@ export function GatewayConnectionDialog({
               baseUrl: editing.baseUrl,
               apiKey: editing.apiKey,
             }
-          : { name: "", baseUrl: "", apiKey: "" }
+          : {
+              name: "",
+              baseUrl: DEFAULT_BASE_URL[provider.id] ?? "",
+              apiKey: "",
+            }
       );
     }
-  }, [open, editing]);
+  }, [open, editing, provider.id]);
 
   const submit = async () => {
     if (!form.name.trim()) return setError("请填写名称");

@@ -7,6 +7,8 @@ export const PROVIDER_ADAPTERS: Record<string, ProviderAdapter> = {
   volcengine: volcengineAdapter,
   "new-api": createOpenAICompatibleAdapter("new-api"),
   litellm: createOpenAICompatibleAdapter("litellm"),
+  dmxapi: createOpenAICompatibleAdapter("dmxapi"),
+  manual: createOpenAICompatibleAdapter("manual"),
 };
 
 export function getAdapter(provider: string): ProviderAdapter | undefined {
