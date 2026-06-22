@@ -35,6 +35,25 @@ export interface McpServer extends BaseEntity {
   enabled: boolean;
 }
 
+export interface ArkApiKeyRef {
+  /** Numeric id from the Ark management API. */
+  arkId?: number;
+  name: string;
+  /** Raw secret value, fetched on demand via GetRawApiKey. */
+  key?: string;
+}
+
+export interface VolcCredential extends BaseEntity {
+  name: string;
+  accessKey: string;
+  secretKey: string;
+  region: string;
+  /** Saved Ark API keys usable for inference. */
+  apiKeys: ArkApiKeyRef[];
+}
+
+export const VOLC_REGIONS = ["cn-beijing", "ap-southeast-1"] as const;
+
 export const PROVIDERS = [
   "OpenAI",
   "Anthropic",
