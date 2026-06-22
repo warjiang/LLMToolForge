@@ -10,7 +10,6 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
-import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
@@ -28,7 +27,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useVolcCredentialStore } from "@/store";
 import type { ArkApiKeyRef, VolcCredential } from "@/types";
 import { cn, maskSecret } from "@/lib/utils";
-import { isLiveRequestSupported } from "@/lib/http";
 import type { ModelInfo } from "@/lib/providers/types";
 import {
   getRawApiKey,
@@ -37,7 +35,7 @@ import {
 } from "@/lib/providers/volcengine";
 import { VolcCredentialDialog } from "./VolcCredentialDialog";
 
-export function VolcenginePage() {
+export function VolcengineProviders() {
   const { items, loaded, load } = useVolcCredentialStore();
   const remove = useVolcCredentialStore((s) => s.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -65,22 +63,15 @@ export function VolcenginePage() {
 
   return (
     <div>
-      <PageHeader
-        title="Volcengine 火山引擎"
-        description="录入 AK/SK，自动拉取已开通的模型与 Ark API Key，用于在 Playground 中测试。"
-        actions={
-          <Button onClick={openCreate}>
-            <Plus className="h-4 w-4" />
-            新建凭证
-          </Button>
-        }
-      />
-
-      {!isLiveRequestSupported() && (
-        <div className="mb-4 rounded-sm border border-amber-200 bg-amber-50 px-4 py-2.5 text-label-13 text-amber-900">
-          浏览器开发模式下，跨域请求会被拦截。请在桌面应用（pnpm tauri:dev）中使用拉取功能。
-        </div>
-      )}
+      <div className="mb-4 flex items-center justify-between">
+        <p className="text-label-13 text-muted-foreground">
+          录入 AK/SK，自动拉取已开通的模型与 Ark API Key，用于在 Playground 中测试。
+        </p>
+        <Button onClick={openCreate}>
+          <Plus className="h-4 w-4" />
+          新建凭证
+        </Button>
+      </div>
 
       {items.length === 0 ? (
         <EmptyState
