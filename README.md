@@ -14,6 +14,8 @@
 
 - **概览（Dashboard）**：各模块统计与快速入口
 - **API Keys**：提供商密钥的增删改查，列表掩码展示、一键复制
+- **Volcengine（火山引擎）**：录入 AK/SK，自动拉取账号已开通的模型（推理 Endpoint）与 Ark API Key；模型按 context window / Function Call / 多模态等能力分类展示
+- **Playground**：基于已开通模型的对话测试台，支持 OpenAI Chat 与 Responses 两种请求格式、流式输出、System Prompt / 温度 / Max Tokens 参数，多模态模型可附带图片输入
 - **Skills**：技能的增删改查、启用开关、标签
 - **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关
 - **实用工具**：URL 编解码、JSON 预览（尽力解开被转义/双重编码的嵌套字段）、转义/去转义、Unicode 编解码，纯本地计算
@@ -52,10 +54,14 @@ src/
   components/
     ui/          # 基础组件（button、input、dialog…）
     layout/      # 侧边栏、顶栏、应用外壳
-    common/      # PageHeader、EmptyState、ConfirmDialog
+    common/      # PageHeader、EmptyState、ConfirmDialog、ModelFeatureBadges
   data/          # 存储适配层 + repository 抽象
   store/         # zustand 状态（集合 store 工厂、主题）
-  pages/         # 各功能页面与表单弹窗
+  pages/         # 各功能页面与表单弹窗（含 providers/、playground/）
+  lib/
+    http.ts      # Tauri/浏览器统一的 fetch（桌面端绕过 CORS）
+    volc/        # 火山引擎 OpenAPI V4 签名
+    providers/   # provider 适配层（统一类型 + volcengine 管理/推理实现）
   types/         # 数据模型
 src-tauri/       # Tauri Rust 后端
 ```

@@ -5,6 +5,14 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "store:default"
+    "store:default",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://open.volcengineapi.com/*" },
+        { "url": "https://*.volces.com/*" },
+        { "url": "https://*.volcengineapi.com/*" }
+      ]
+    }
   ]
 }

@@ -7,12 +7,16 @@ import {
   Wrench,
   Settings,
   Hammer,
+  Cloud,
+  MessageSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navItems = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/api-keys", label: "API Keys", icon: KeyRound },
+  { to: "/providers/volcengine", label: "Volcengine", icon: Cloud },
+  { to: "/playground", label: "Playground", icon: MessageSquare },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
   { to: "/tools", label: "实用工具", icon: Wrench },
