@@ -7,6 +7,7 @@ const TITLES: Record<string, string> = {
   "/api-keys": "API Keys",
   "/skills": "Skills",
   "/mcp": "MCP Servers",
+  "/tools": "实用工具",
   "/settings": "设置",
 };
 

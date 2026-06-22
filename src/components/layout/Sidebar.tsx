@@ -4,6 +4,7 @@ import {
   KeyRound,
   Boxes,
   Server,
+  Wrench,
   Settings,
   Hammer,
 } from "lucide-react";
@@ -14,6 +15,7 @@ const navItems = [
   { to: "/api-keys", label: "API Keys", icon: KeyRound },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
+  { to: "/tools", label: "实用工具", icon: Wrench },
   { to: "/settings", label: "设置", icon: Settings },
 ];
 
