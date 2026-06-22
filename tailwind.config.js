@@ -42,6 +42,10 @@ export default {
         // Semantic tokens (switch with .dark)
         background: "var(--background)",
         "background-secondary": "var(--background-secondary)",
+        chrome: {
+          DEFAULT: "var(--chrome)",
+          foreground: "var(--chrome-foreground)",
+        },
         foreground: "var(--foreground)",
         border: "var(--border)",
         input: "var(--input)",
@@ -49,6 +53,7 @@ export default {
         card: {
           DEFAULT: "var(--card)",
           foreground: "var(--card-foreground)",
+          elevated: "var(--card-elevated)",
         },
         popover: {
           DEFAULT: "var(--popover)",
@@ -69,6 +74,7 @@ export default {
         accent: {
           DEFAULT: "var(--accent)",
           foreground: "var(--accent-foreground)",
+          subtle: "var(--accent-subtle)",
         },
         destructive: {
           DEFAULT: "var(--destructive)",
@@ -116,19 +122,19 @@ export default {
         18: "72px",
       },
       fontSize: {
-        "heading-72": ["72px", { lineHeight: "72px", letterSpacing: "-4.32px", fontWeight: "600" }],
-        "heading-48": ["48px", { lineHeight: "56px", letterSpacing: "-2.88px", fontWeight: "600" }],
-        "heading-32": ["32px", { lineHeight: "40px", letterSpacing: "-1.28px", fontWeight: "600" }],
-        "heading-24": ["24px", { lineHeight: "32px", letterSpacing: "-0.96px", fontWeight: "600" }],
-        "heading-20": ["20px", { lineHeight: "26px", letterSpacing: "-0.4px", fontWeight: "600" }],
-        "heading-16": ["16px", { lineHeight: "24px", letterSpacing: "-0.32px", fontWeight: "600" }],
-        "heading-14": ["14px", { lineHeight: "20px", letterSpacing: "-0.28px", fontWeight: "600" }],
-        "copy-16": ["16px", { lineHeight: "24px" }],
-        "copy-14": ["14px", { lineHeight: "20px" }],
-        "copy-13": ["13px", { lineHeight: "18px" }],
-        "label-14": ["14px", { lineHeight: "20px" }],
-        "label-13": ["13px", { lineHeight: "16px" }],
-        "label-12": ["12px", { lineHeight: "16px" }],
+        "heading-72": ["64px", { lineHeight: "64px", letterSpacing: "-3.84px", fontWeight: "600" }],
+        "heading-48": ["40px", { lineHeight: "46px", letterSpacing: "-2.4px", fontWeight: "600" }],
+        "heading-32": ["26px", { lineHeight: "32px", letterSpacing: "-1.04px", fontWeight: "600" }],
+        "heading-24": ["20px", { lineHeight: "27px", letterSpacing: "-0.6px", fontWeight: "600" }],
+        "heading-20": ["17px", { lineHeight: "23px", letterSpacing: "-0.34px", fontWeight: "600" }],
+        "heading-16": ["14px", { lineHeight: "20px", letterSpacing: "-0.2px", fontWeight: "600" }],
+        "heading-14": ["13px", { lineHeight: "18px", letterSpacing: "-0.2px", fontWeight: "600" }],
+        "copy-16": ["14px", { lineHeight: "21px" }],
+        "copy-14": ["13px", { lineHeight: "19px" }],
+        "copy-13": ["12px", { lineHeight: "17px" }],
+        "label-14": ["13px", { lineHeight: "18px" }],
+        "label-13": ["12px", { lineHeight: "16px" }],
+        "label-12": ["11px", { lineHeight: "15px" }],
       },
       boxShadow: {
         // Geist light elevation

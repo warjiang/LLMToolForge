@@ -1,28 +1,15 @@
-import { Outlet, useLocation } from "react-router-dom";
+import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
-const TITLES: Record<string, string> = {
-  "/": "概览",
-  "/providers": "模型接入",
-  "/playground": "Playground",
-  "/skills": "Skills",
-  "/mcp": "MCP Servers",
-  "/tools": "实用工具",
-  "/settings": "设置",
-};
-
 export function AppLayout() {
-  const { pathname } = useLocation();
-  const title = TITLES[pathname] ?? "LLMToolForge";
-
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-background">
-      <Sidebar />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar title={title} />
-        <main className="flex-1 overflow-y-auto">
-          <div className="mx-auto w-full max-w-6xl px-6 py-6">
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
+      <Topbar />
+      <div className="flex min-h-0 flex-1">
+        <Sidebar />
+        <main className="min-w-0 flex-1 overflow-hidden">
+          <div className="mx-auto flex h-full w-full max-w-6xl flex-col overflow-y-auto px-6 py-6">
             <Outlet />
           </div>
         </main>

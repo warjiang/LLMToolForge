@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Bot,
   Eraser,
@@ -6,11 +7,13 @@ import {
   Loader2,
   RefreshCw,
   Send,
+  Sparkles,
   User,
   X,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
+import { TypingDots } from "@/components/common/Reveal";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -25,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Separator } from "@/components/ui/separator";
 import { useVolcCredentialStore, useGatewayStore, useApiKeyStore } from "@/store";
 import { cn } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -348,6 +352,11 @@ export function PlaygroundPage() {
 
   const stop = () => abortRef.current?.abort();
 
+  const currentConn = options.find((o) => o.key === connKey) ?? null;
+  const lastMsg = messages[messages.length - 1];
+  const awaitingFirstToken =
+    sending && lastMsg?.role === "assistant" && lastMsg.content === "";
+
   if (loaded && options.length === 0) {
     return (
       <div>
@@ -362,181 +371,253 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-7rem)] flex-col">
+    <div className="flex h-[calc(100vh-10rem)] flex-col">
       <PageHeader title="Playground" description="选择已开通的模型进行对话测试。" />
 
-      <div className="grid min-h-0 flex-1 gap-4 lg:grid-cols-[300px_1fr]">
-        {/* Config panel */}
-        <Card className="flex flex-col gap-4 overflow-y-auto p-4">
-          <div className="grid gap-1.5">
-            <Label>连接</Label>
-            <Select value={connKey ?? ""} onValueChange={setConnKey}>
-              <SelectTrigger>
-                <SelectValue placeholder="选择连接" />
-              </SelectTrigger>
-              <SelectContent>
-                {options.map((o) => (
-                  <SelectItem key={o.key} value={o.key}>
-                    {o.name}
-                    <span className="ml-1.5 text-muted-foreground">
-                      · {providerLabel(o.provider)}
-                    </span>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div className="grid gap-1.5">
-            <div className="flex items-center justify-between">
-              <Label>模型</Label>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={fetchModels}
-                disabled={modelsLoading || (!volcCred && !gwConn && !keyConn)}
-              >
-                {modelsLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                拉取
-              </Button>
-            </div>
-            <Select
-              value={modelId}
-              onValueChange={setModelId}
-              disabled={models.length === 0}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="先拉取模型" />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {selectedModel && <ModelFeatureBadges model={selectedModel} />}
-          </div>
-
-          {isVolc && (
+      <div className="grid min-h-0 flex-1 gap-5 lg:grid-cols-[300px_1fr]">
+        {/* Config rail */}
+        <Card className="flex flex-col gap-5 overflow-y-auto bg-card-elevated p-5">
+          <RailSection title="连接">
             <div className="grid gap-1.5">
-              <Label>Ark API Key</Label>
-              <Select value={keyIdx} onValueChange={setKeyIdx}>
+              <Label>连接</Label>
+              <Select value={connKey ?? ""} onValueChange={setConnKey}>
                 <SelectTrigger>
-                  <SelectValue placeholder="无可用 Key" />
+                  <SelectValue placeholder="选择连接" />
                 </SelectTrigger>
                 <SelectContent>
-                  {usableKeys.map((k, i) => (
-                    <SelectItem key={k.arkId ?? i} value={String(i)}>
-                      {k.name}
+                  {options.map((o) => (
+                    <SelectItem key={o.key} value={o.key}>
+                      {o.name}
+                      <span className="ml-1.5 text-muted-foreground">
+                        · {providerLabel(o.provider)}
+                      </span>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-          )}
 
-          {isVolc && (
             <div className="grid gap-1.5">
-              <Label>请求格式</Label>
+              <div className="flex items-center justify-between">
+                <Label>模型</Label>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={fetchModels}
+                  disabled={modelsLoading || (!volcCred && !gwConn && !keyConn)}
+                >
+                  {modelsLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-3.5 w-3.5" />
+                  )}
+                  拉取
+                </Button>
+              </div>
               <Select
-                value={wireFormat}
-                onValueChange={(v) => setWireFormat(v as WireFormat)}
+                value={modelId}
+                onValueChange={setModelId}
+                disabled={models.length === 0}
               >
                 <SelectTrigger>
-                  <SelectValue />
+                  <SelectValue placeholder="先拉取模型" />
                 </SelectTrigger>
                 <SelectContent>
-                  {WIRE_FORMATS.map((f) => (
-                    <SelectItem key={f.value} value={f.value}>
-                      {f.label}
+                  {models.map((m) => (
+                    <SelectItem key={m.id} value={m.id}>
+                      {m.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              {selectedModel && <ModelFeatureBadges model={selectedModel} />}
             </div>
-          )}
 
-          <div className="grid gap-1.5">
-            <Label htmlFor="pg-system">System Prompt</Label>
-            <Textarea
-              id="pg-system"
-              className="min-h-[64px]"
-              placeholder="可选，设定助手的角色与风格"
-              value={system}
-              onChange={(e) => setSystem(e.target.value)}
-            />
-          </div>
+            {isVolc && (
+              <div className="grid gap-1.5">
+                <Label>Ark API Key</Label>
+                <Select value={keyIdx} onValueChange={setKeyIdx}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="无可用 Key" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {usableKeys.map((k, i) => (
+                      <SelectItem key={k.arkId ?? i} value={String(i)}>
+                        {k.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
-          <div className="grid grid-cols-2 gap-3">
+            {isVolc && (
+              <div className="grid gap-1.5">
+                <Label>请求格式</Label>
+                <Select
+                  value={wireFormat}
+                  onValueChange={(v) => setWireFormat(v as WireFormat)}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {WIRE_FORMATS.map((f) => (
+                      <SelectItem key={f.value} value={f.value}>
+                        {f.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </RailSection>
+
+          <Separator />
+
+          <RailSection title="参数">
             <div className="grid gap-1.5">
-              <Label htmlFor="pg-temp">Temperature</Label>
-              <Input
-                id="pg-temp"
-                type="number"
-                step="0.1"
-                min="0"
-                max="2"
-                value={temperature}
-                onChange={(e) => setTemperature(e.target.value)}
+              <Label htmlFor="pg-system">System Prompt</Label>
+              <Textarea
+                id="pg-system"
+                className="min-h-[64px]"
+                placeholder="可选，设定助手的角色与风格"
+                value={system}
+                onChange={(e) => setSystem(e.target.value)}
               />
             </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="pg-max">Max Tokens</Label>
-              <Input
-                id="pg-max"
-                type="number"
-                min="1"
-                value={maxTokens}
-                onChange={(e) => setMaxTokens(e.target.value)}
+
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label htmlFor="pg-temp">Temperature</Label>
+                <Input
+                  id="pg-temp"
+                  type="number"
+                  step="0.1"
+                  min="0"
+                  max="2"
+                  value={temperature}
+                  onChange={(e) => setTemperature(e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label htmlFor="pg-max">Max Tokens</Label>
+                <Input
+                  id="pg-max"
+                  type="number"
+                  min="1"
+                  value={maxTokens}
+                  onChange={(e) => setMaxTokens(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between rounded-sm bg-secondary/60 px-3 py-2">
+              <Label htmlFor="pg-stream" className="cursor-pointer">
+                流式输出
+              </Label>
+              <Switch
+                id="pg-stream"
+                checked={streaming}
+                onCheckedChange={setStreaming}
               />
             </div>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <Label htmlFor="pg-stream">流式输出</Label>
-            <Switch
-              id="pg-stream"
-              checked={streaming}
-              onCheckedChange={setStreaming}
-            />
-          </div>
+          </RailSection>
         </Card>
 
-        {/* Chat panel */}
-        <Card className="flex min-h-0 flex-col">
+        {/* Conversation */}
+        <Card className="flex min-h-0 flex-col overflow-hidden">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent">
+                <Sparkles className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="truncate text-label-13 font-medium">
+                  {selectedModel?.name ?? "未选择模型"}
+                </div>
+                <div className="truncate text-label-12 text-muted-foreground">
+                  {currentConn
+                    ? `${currentConn.name} · ${providerLabel(currentConn.provider)}`
+                    : "未选择连接"}
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {messages.length > 0 && (
+                <span className="hidden text-label-12 text-muted-foreground sm:inline">
+                  {messages.length} 条消息
+                </span>
+              )}
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                onClick={() => setMessages([])}
+                disabled={messages.length === 0}
+                title="清空对话"
+              >
+                <Eraser className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+
           {!isLiveRequestSupported() && (
-            <div className="border-b border-amber-200 bg-amber-50 px-4 py-2 text-label-12 text-amber-900">
+            <div className="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-2 text-label-12 text-warning-foreground/90">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-warning" />
               浏览器模式下请求会因跨域被拦截，请在桌面应用中测试。
             </div>
           )}
-          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-5">
+
+          <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-5">
             {messages.length === 0 ? (
-              <div className="flex h-full items-center justify-center text-label-13 text-muted-foreground">
-                发送一条消息开始对话
+              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                  <Bot className="h-5 w-5" />
+                </div>
+                <div className="text-label-13 text-muted-foreground">
+                  发送一条消息开始对话
+                </div>
               </div>
             ) : (
-              messages.map((m, i) => <ChatBubble key={i} message={m} />)
+              <AnimatePresence initial={false}>
+                {messages.map((m, i) => (
+                  <ChatBubble
+                    key={i}
+                    message={m}
+                    typing={awaitingFirstToken && i === messages.length - 1}
+                    streaming={
+                      sending &&
+                      i === messages.length - 1 &&
+                      m.role === "assistant" &&
+                      m.content !== ""
+                    }
+                  />
+                ))}
+              </AnimatePresence>
             )}
           </div>
 
-          {error && (
-            <div className="mx-5 mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
-              {error}
-            </div>
-          )}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                className="mx-5 overflow-hidden"
+              >
+                <div className="mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
+                  {error}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {image && (
             <div className="mx-5 mb-2 flex items-center gap-2">
               <img
                 src={image}
                 alt="附件"
-                className="h-12 w-12 rounded-sm object-cover"
+                className="h-12 w-12 rounded-sm object-cover ring-1 ring-border"
               />
               <Button size="sm" variant="ghost" onClick={() => setImage(null)}>
                 <X className="h-3.5 w-3.5" />
@@ -545,7 +626,7 @@ export function PlaygroundPage() {
             </div>
           )}
 
-          <div className="flex items-end gap-2 border-t border-border p-3">
+          <div className="flex items-end gap-2 border-t border-border bg-background-secondary/60 p-3">
             <input
               ref={fileRef}
               type="file"
@@ -580,20 +661,18 @@ export function PlaygroundPage() {
                 }
               }}
             />
-            <Button
-              size="icon"
-              variant="ghost"
-              onClick={() => setMessages([])}
-              title="清空对话"
-            >
-              <Eraser className="h-4 w-4" />
-            </Button>
             {sending ? (
               <Button size="icon" variant="secondary" onClick={stop} title="停止">
                 <X className="h-4 w-4" />
               </Button>
             ) : (
-              <Button size="icon" onClick={send} title="发送">
+              <Button
+                size="icon"
+                variant="accent"
+                onClick={send}
+                disabled={!selectedModel || (!input.trim() && !image)}
+                title="发送"
+              >
                 <Send className="h-4 w-4" />
               </Button>
             )}
@@ -604,17 +683,57 @@ export function PlaygroundPage() {
   );
 }
 
-function ChatBubble({ message }: { message: UiMessage }) {
+function RailSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="grid gap-4">
+      <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
+        {title}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ChatBubble({
+  message,
+  typing,
+  streaming,
+}: {
+  message: UiMessage;
+  typing?: boolean;
+  streaming?: boolean;
+}) {
+  const reduce = useReducedMotion();
   const isUser = message.role === "user";
   return (
-    <div className={cn("flex gap-3", isUser && "flex-row-reverse")}>
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+    <motion.div
+      initial={reduce ? false : { opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+      className={cn("flex gap-3", isUser && "flex-row-reverse")}
+    >
+      <div
+        className={cn(
+          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
+          isUser
+            ? "bg-accent text-accent-foreground"
+            : "bg-secondary text-muted-foreground"
+        )}
+      >
         {isUser ? <User className="h-4 w-4" /> : <Bot className="h-4 w-4" />}
       </div>
       <div
         className={cn(
-          "max-w-[80%] rounded-md px-3.5 py-2.5 text-copy-14",
-          isUser ? "bg-accent text-accent-foreground" : "bg-secondary"
+          "max-w-[80%] rounded-md px-3.5 py-2.5 text-copy-14 shadow-geist-sm",
+          isUser
+            ? "rounded-tr-sm bg-accent text-accent-foreground"
+            : "rounded-tl-sm bg-secondary text-foreground"
         )}
       >
         {message.image && (
@@ -624,10 +743,17 @@ function ChatBubble({ message }: { message: UiMessage }) {
             className="mb-2 max-h-48 rounded-sm object-contain"
           />
         )}
-        <span className="whitespace-pre-wrap break-words">
-          {message.content || (isUser ? "" : "…")}
-        </span>
+        {typing ? (
+          <TypingDots />
+        ) : (
+          <span className="whitespace-pre-wrap break-words">
+            {message.content}
+            {streaming && (
+              <span className="ml-0.5 inline-block h-4 w-[2px] -translate-y-[1px] animate-pulse bg-current align-middle" />
+            )}
+          </span>
+        )}
       </div>
-    </div>
+    </motion.div>
   );
 }

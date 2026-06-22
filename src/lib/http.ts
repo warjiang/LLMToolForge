@@ -4,7 +4,7 @@
  * Inside Tauri we use the `@tauri-apps/plugin-http` `fetch`, which is issued
  * from the Rust side and therefore bypasses the WebView CORS restrictions and
  * supports streaming response bodies. In a plain browser (`pnpm dev`) we fall
- * back to the native `fetch`, which will be subject to CORS — live calls to
+ * back to the native `fetch`, which will be subject to CORS, so live calls to
  * Volcengine will fail there, but the UI still renders for development.
  */
 

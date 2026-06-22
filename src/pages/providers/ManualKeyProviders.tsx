@@ -45,15 +45,17 @@ export function ManualKeyProviders() {
   };
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-between">
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center justify-between border-b border-border pb-4">
         <p className="text-label-13 text-muted-foreground">
           手动录入 API Key 与可用模型（OpenAI 兼容），可直接在 Playground 中使用。
         </p>
-        <Button onClick={openCreate}>
-          <Plus className="h-4 w-4" />
-          新建 Key
-        </Button>
+        {items.length > 0 && (
+          <Button onClick={openCreate}>
+            <Plus className="h-4 w-4" />
+            新建 Key
+          </Button>
+        )}
       </div>
 
       {items.length === 0 ? (
@@ -69,11 +71,12 @@ export function ManualKeyProviders() {
           }
         />
       ) : (
-        <Card className="divide-y divide-border overflow-hidden">
-          {items.map((item) => (
+        <div className="min-h-0 flex-1 overflow-y-auto pt-4">
+          <Card className="divide-y divide-border overflow-hidden">
+            {items.map((item) => (
             <div
               key={item.id}
-              className="flex items-center gap-4 px-5 py-3.5 transition-colors hover:bg-secondary/40"
+              className="flex items-center gap-4 px-5 py-3.5 transition-colors duration-200 ease-geist hover:bg-secondary/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
                 <KeyRound className="h-4 w-4" />
@@ -107,7 +110,8 @@ export function ManualKeyProviders() {
               />
             </div>
           ))}
-        </Card>
+          </Card>
+        </div>
       )}
 
       <ApiKeyDialog

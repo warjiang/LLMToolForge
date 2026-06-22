@@ -12,7 +12,10 @@
   "app": {
     "windows": [
       {
-        "title": "LLMToolForge",
+        "title": "",
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "trafficLightPosition": { "x": 19, "y": 24 },
         "width": 1100,
         "height": 720,
         "minWidth": 880,

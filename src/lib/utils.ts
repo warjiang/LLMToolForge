@@ -39,7 +39,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export function formatDate(value: string | number | Date): string {
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "-";
   return d.toLocaleString(undefined, {
     year: "numeric",
     month: "short",
@@ -57,4 +57,17 @@ export function maskSecret(secret: string, visible = 4): string {
 
 export function uid(prefix = "id"): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}${Date.now().toString(36).slice(-4)}`;
+}
+
+export function isTauri(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    ("__TAURI_INTERNALS__" in window || "__TAURI__" in window)
+  );
+}
+
+export function isMacOS(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const ua = navigator.userAgent;
+  return /Mac|iPhone|iPad|iPod/.test(ua);
 }

@@ -12,8 +12,16 @@
     --background-secondary: #fafafa;
     --foreground: #171717;
 
+    /* Unified window chrome (title bar + sidebar) */
+    --chrome: #f7f7f8;
+    --chrome-foreground: #171717;
+
     --card: #ffffff;
     --card-foreground: #171717;
+    --card-elevated: #ffffff;
+
+    /* Accent at low alpha, for hover/active tints */
+    --accent-subtle: rgba(0, 107, 255, 0.08);
 
     --popover: #ffffff;
     --popover-foreground: #171717;
@@ -50,8 +58,16 @@
     --background-secondary: #000000;
     --foreground: #ededed;
 
-    --card: #0a0a0a;
+    /* Unified window chrome (title bar + sidebar) */
+    --chrome: #0e0e0f;
+    --chrome-foreground: #ededed;
+
+    --card: #141414;
     --card-foreground: #ededed;
+    --card-elevated: #181818;
+
+    /* Accent at low alpha, for hover/active tints */
+    --accent-subtle: rgba(0, 114, 245, 0.14);
 
     --popover: #161616;
     --popover-foreground: #ededed;
@@ -98,6 +114,8 @@
     @apply bg-background text-foreground antialiased;
     font-family: "Geist Variable", "Geist Sans", system-ui, sans-serif;
     font-feature-settings: "rlig" 1, "calt" 1;
+    font-size: 14px;
+    line-height: 1.5;
   }
 
   code,
