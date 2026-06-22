@@ -59,7 +59,7 @@ export const VOLC_DEFAULT_PROJECT = "default";
 export const VOLC_REGIONS = ["cn-beijing", "ap-southeast-1"] as const;
 
 /** OpenAI-compatible gateway providers (single Base URL + API Key). */
-export type GatewayProvider = "new-api" | "litellm";
+export type GatewayProvider = "new-api" | "litellm" | "dmxapi";
 
 /**
  * A connection to an OpenAI-compatible gateway (new-api / litellm).
@@ -101,6 +101,12 @@ export const PROVIDER_METAS: ProviderMeta[] = [
     id: "litellm",
     label: "LiteLLM",
     description: "OpenAI 兼容代理，Base URL + API Key",
+    kind: "gateway",
+  },
+  {
+    id: "dmxapi",
+    label: "DMXAPI",
+    description: "OpenAI 兼容聚合平台，Base URL + API Key",
     kind: "gateway",
   },
 ];
