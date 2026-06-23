@@ -22,6 +22,7 @@ import {
 import { useApiKeyStore } from "@/store";
 import { PROVIDERS, type ApiKey } from "@/types";
 import { getAdapter } from "@/lib/providers";
+import { ModelIcon, ProviderIconLabel } from "@/components/common/ProviderModelIcon";
 
 interface Props {
   open: boolean;
@@ -150,7 +151,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
               <SelectContent>
                 {PROVIDERS.map((p) => (
                   <SelectItem key={p} value={p}>
-                    {p}
+                    <ProviderIconLabel provider={p}>{p}</ProviderIconLabel>
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -219,6 +220,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {models.map((m) => (
                   <Badge key={m} variant="outline" className="gap-1 pr-1">
+                    <ModelIcon model={m} className="h-3.5 w-3.5" />
                     {m}
                     <button
                       type="button"

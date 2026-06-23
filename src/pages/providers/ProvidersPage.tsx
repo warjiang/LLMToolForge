@@ -8,6 +8,7 @@ import {
   type ProviderMeta,
 } from "@/types";
 import { isLiveRequestSupported } from "@/lib/http";
+import { ProviderIconLabel } from "@/components/common/ProviderModelIcon";
 import { VolcengineProviders } from "./VolcengineProviders";
 import { GatewayProviders } from "./GatewayProviders";
 import { ManualKeyProviders } from "./ManualKeyProviders";
@@ -29,7 +30,10 @@ export function ProvidersPage() {
           aria-label="选择 provider"
           value={active}
           onChange={setActive}
-          options={PROVIDER_METAS.map((p) => ({ value: p.id, label: p.label }))}
+          options={PROVIDER_METAS.map((p) => ({
+            value: p.id,
+            label: <ProviderIconLabel provider={p.id}>{p.label}</ProviderIconLabel>,
+          }))}
         />
 
         {!isLiveRequestSupported() && (

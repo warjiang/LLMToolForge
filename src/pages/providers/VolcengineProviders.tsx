@@ -13,6 +13,7 @@ import {
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
+import { ModelIcon, ProviderIcon } from "@/components/common/ProviderModelIcon";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -102,7 +103,7 @@ export function VolcengineProviders() {
                 )}
               >
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background text-muted-foreground">
-                  <Cloud className="h-4 w-4" />
+                  <ProviderIcon provider="volcengine" className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-label-14 font-medium">
@@ -247,6 +248,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
               {models.map((m) => (
                 <div key={m.id} className="flex flex-col gap-1.5 py-3">
                   <div className="flex items-center gap-2">
+                    <ModelIcon model={m} className="h-4 w-4" />
                     <span className="text-label-14 font-medium">{m.name}</span>
                     <code className="font-mono text-label-12 text-muted-foreground">
                       {m.id}

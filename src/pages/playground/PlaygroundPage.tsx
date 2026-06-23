@@ -29,6 +29,12 @@ import {
 import { EmptyState } from "@/components/common/EmptyState";
 import { TypingDots } from "@/components/common/Reveal";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
+import {
+  ModelIcon,
+  ModelIconLabel,
+  ProviderIcon,
+  ProviderIconLabel,
+} from "@/components/common/ProviderModelIcon";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -1238,8 +1244,13 @@ export function PlaygroundPage() {
                   {activeSession?.title ?? "新会话"}
                 </div>
                 <div className="truncate text-label-12 text-muted-foreground">
-                  {chat.messages.length} 条消息
-                  {selectedModel ? ` · ${selectedModel.name}` : " · 未选择模型"}
+                  <span className="inline-flex min-w-0 items-center gap-1.5">
+                    {selectedModel && <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />}
+                    <span className="truncate">
+                      {chat.messages.length} 条消息
+                      {selectedModel ? ` · ${selectedModel.name}` : " · 未选择模型"}
+                    </span>
+                  </span>
                 </div>
               </div>
             </div>
@@ -1363,10 +1374,14 @@ export function PlaygroundPage() {
                   <SelectContent>
                     {options.map((o) => (
                       <SelectItem key={o.key} value={o.key}>
-                        {o.name}
-                        <span className="ml-1.5 text-muted-foreground">
-                          · {providerLabel(o.provider)}
-                        </span>
+                        <ProviderIconLabel provider={o.provider}>
+                          <span className="min-w-0">
+                            <span>{o.name}</span>
+                            <span className="ml-1.5 text-muted-foreground">
+                              · {providerLabel(o.provider)}
+                            </span>
+                          </span>
+                        </ProviderIconLabel>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1384,7 +1399,9 @@ export function PlaygroundPage() {
                   <SelectContent>
                     {models.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
-                        {m.name}
+                        <ModelIconLabel model={m}>
+                          <span className="truncate">{m.name}</span>
+                        </ModelIconLabel>
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -1405,7 +1422,8 @@ export function PlaygroundPage() {
                 拉取
               </Button>
               {selectedModel && (
-                <div className="min-w-0">
+                <div className="flex min-w-0 items-center gap-2">
+                  <ProviderIcon provider={currentConn?.provider} className="h-4 w-4" />
                   <ModelFeatureBadges model={selectedModel} />
                 </div>
               )}
