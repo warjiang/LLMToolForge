@@ -5,16 +5,19 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Bot,
   Boxes,
+  Check,
   Database,
   Eraser,
   FileAudio,
   FileText,
   FileVideo,
-  ImagePlus,
   Loader2,
   MessageSquarePlus,
+  Pencil,
+  Plus,
   Play,
   RefreshCw,
+  RotateCcw,
   Send,
   Server,
   Settings2,
@@ -281,6 +284,8 @@ export function PlaygroundPage() {
   const [runningSkillId, setRunningSkillId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -391,6 +396,7 @@ export function PlaygroundPage() {
   const activeMcp = mcp.items.filter((s) =>
     settings?.enabledMcpServerIds.includes(s.id)
   );
+  const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
 
   useEffect(() => {
     setModels(storedModels);
@@ -560,6 +566,75 @@ export function PlaygroundPage() {
   const credential = (): ProviderCredential | null =>
     credentialForConnKey(settings?.connKey);
 
+  const partsFromInput = (
+    content: string,
+    inputAttachments: ChatAttachment[]
+  ): Omit<MessagePart, "messageId">[] => {
+    const parts: Omit<MessagePart, "messageId">[] = [];
+    if (content) {
+      parts.push({ id: uid("part"), kind: "text", text: content, sortOrder: 0 });
+    }
+    inputAttachments.forEach((attachment, index) => {
+      parts.push({
+        id: uid("part"),
+        kind: attachment.kind,
+        url: attachment.dataUrl,
+        attachmentId: attachment.id,
+        mime: attachment.mime,
+        name: attachment.name,
+        sortOrder: index + 1,
+      });
+    });
+    return parts;
+  };
+
+  const editedPartsForMessage = (
+    message: PersistedChatMessage,
+    content: string
+  ): Omit<MessagePart, "messageId">[] => {
+    const mediaParts = message.parts
+      .filter((part) => part.kind !== "text")
+      .map((part, index) => ({
+        id: part.id,
+        kind: part.kind,
+        text: part.text,
+        url: part.url,
+        attachmentId: part.attachmentId,
+        mime: part.mime,
+        name: part.name,
+        sortOrder: content ? index + 1 : index,
+      }));
+    return content
+      ? [
+          {
+            id: uid("part"),
+            kind: "text" as const,
+            text: content,
+            sortOrder: 0,
+          },
+          ...mediaParts,
+        ]
+      : mediaParts;
+  };
+
+  const validateGenerationInput = (
+    content: string,
+    inputAttachments: ChatAttachment[]
+  ): string | null => {
+    if (!volcCred && !gwConn && !keyConn) return "请先选择连接";
+    if (!settings?.modelId) return "请先拉取并选择模型";
+    if (!selectedModel) return "请先选择模型";
+    if (!provider) return "无法识别 provider";
+    if (!content && inputAttachments.length === 0) return "请输入消息或添加附件";
+    if (isImageGenerationModel(selectedModel) && !content) {
+      return "图像生成模型需要输入 prompt";
+    }
+    if (isVideoGenerationModel(selectedModel) && !content) {
+      return "视频生成模型需要输入 prompt";
+    }
+    return null;
+  };
+
   const appendVideoResultToMessage = async (
     message: PersistedChatMessage,
     result: VideoGenerationResult
@@ -691,42 +766,209 @@ export function PlaygroundPage() {
     }
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
-  const send = async () => {
-    if (sending || !settings) return;
-    if (!volcCred && !gwConn && !keyConn) return setError("请先选择连接");
-    if (!settings.modelId) return setError("请先拉取并选择模型");
-    if (!selectedModel) return setError("请先选择模型");
-    if (!provider) return setError("无法识别 provider");
-    if (!input.trim() && attachments.length === 0) return;
-    const content = input.trim();
-    const imageGenerationModel = isImageGenerationModel(selectedModel);
-    const videoGenerationModel = isVideoGenerationModel(selectedModel);
-    if (imageGenerationModel && !content) {
-      return setError("图像生成模型需要输入 prompt");
+  const handleGenerationError = async (e: unknown) => {
+    const msg = e instanceof Error ? e.message : "请求失败";
+    const currentMessages = useChatStore.getState().messages;
+    const last = currentMessages[currentMessages.length - 1];
+    if (last?.role === "assistant" && last.status === "pending") {
+      await chat.updateMessage(last.id, {
+        status: "error",
+        error: msg,
+        content: "",
+      });
+    } else {
+      setError(msg);
     }
-    if (videoGenerationModel && !content) {
-      return setError("视频生成模型需要输入 prompt");
-    }
+  };
 
-    setError(null);
+  const generateAssistantForUser = async ({
+    userMsg,
+    history,
+    prompt,
+    inputAttachments,
+  }: {
+    userMsg: PersistedChatMessage;
+    history: PersistedChatMessage[];
+    prompt: string;
+    inputAttachments: ChatAttachment[];
+  }) => {
+    if (!settings || !selectedModel || !provider) return;
     const adapter = getAdapter(provider)!;
     const cred = credential();
-    if (!cred) return setError("无法创建请求凭证");
-    const parts: Omit<MessagePart, "messageId">[] = [];
-    if (content) {
-      parts.push({ id: uid("part"), kind: "text", text: content, sortOrder: 0 });
-    }
-    attachments.forEach((a, index) => {
-      parts.push({
-        id: uid("part"),
-        kind: a.kind,
-        url: a.dataUrl,
-        attachmentId: a.id,
-        mime: a.mime,
-        name: a.name,
-        sortOrder: index + 1,
+    if (!cred) throw new Error("无法创建请求凭证");
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const tools = toolDefinitions();
+    const imageGenerationModel = isImageGenerationModel(selectedModel);
+    const videoGenerationModel = isVideoGenerationModel(selectedModel);
+
+    if (videoGenerationModel) {
+      if (!adapter.videoGeneration) {
+        throw new Error(`${providerLabel(provider)} 暂不支持视频生成接口`);
+      }
+      const result = await adapter.videoGeneration(
+        {
+          model: settings.modelId,
+          prompt,
+          references: videoReferencesFromInput(prompt, inputAttachments),
+          generateAudio: true,
+          ratio: "16:9",
+          duration: 5,
+          watermark: false,
+          signal: controller.signal,
+        },
+        cred
+      );
+      const statusText = result.status ? `\n状态：${result.status}` : "";
+      const taskText = result.taskId ? `\nTask ID: ${result.taskId}` : "";
+      const videoAssistant = await chat.addMessage({
+        role: "assistant",
+        content:
+          result.videos.length > 0
+            ? "已生成视频。"
+            : `视频生成任务已提交。${taskText}${statusText}`,
+        status: result.videos.length > 0 || !result.taskId ? "complete" : "pending",
+        connKey: settings.connKey ?? undefined,
+        provider,
+        modelId: settings.modelId,
+        paramsJson: jsonParams(settings),
       });
+      await chat.updateMessage(videoAssistant.id, {
+        raw: result.raw,
+      });
+      if (result.videos.length > 0) {
+        await appendVideoResultToMessage(videoAssistant, result);
+      } else if (result.taskId) {
+        void pollVideoTask({
+          taskId: result.taskId,
+          message: videoAssistant,
+          adapterProvider: provider,
+          cred,
+          signal: controller.signal,
+        });
+      }
+      return;
+    }
+
+    if (imageGenerationModel) {
+      if (!adapter.imageGeneration) {
+        throw new Error(`${providerLabel(provider)} 暂不支持图像生成接口`);
+      }
+      const result = await adapter.imageGeneration(
+        {
+          model: settings.modelId,
+          prompt,
+          responseFormat: "url",
+          size: "2K",
+          sequentialImageGeneration: "disabled",
+          watermark: true,
+          signal: controller.signal,
+        },
+        cred
+      );
+      const generatedAttachments = result.images
+        .map((image, index) =>
+          generatedImageAttachment(userMsg.sessionId, image, index)
+        )
+        .filter((attachment) => attachment.dataUrl);
+      const generatedParts: Omit<MessagePart, "messageId">[] =
+        generatedAttachments.map((attachment, index) => ({
+          id: uid("part"),
+          kind: "image",
+          url: attachment.dataUrl,
+          attachmentId: attachment.id,
+          mime: attachment.mime,
+          name: attachment.name,
+          sortOrder: index,
+        }));
+      const imageAssistant = await chat.addMessage({
+        role: "assistant",
+        content:
+          generatedAttachments.length > 1
+            ? `已生成 ${generatedAttachments.length} 张图片。`
+            : "已生成图片。",
+        status: "complete",
+        parts: generatedParts,
+        attachments: generatedAttachments,
+        connKey: settings.connKey ?? undefined,
+        provider,
+        modelId: settings.modelId,
+        paramsJson: jsonParams(settings),
+      });
+      await chat.updateMessage(imageAssistant.id, {
+        usage: result.usage,
+        raw: result.raw,
+      });
+      return;
+    }
+
+    const assistant = await chat.addMessage({
+      role: "assistant",
+      content: "",
+      status: "pending",
+      connKey: settings.connKey ?? undefined,
+      provider,
+      modelId: settings.modelId,
+      paramsJson: jsonParams(settings),
     });
+    const req: ChatRequest = {
+      model: settings.modelId,
+      messages: buildApiMessages(history),
+      params: {
+        temperature: Number(settings.temperature),
+        maxTokens: Number(settings.maxTokens),
+      },
+      tools,
+      toolChoice: tools.length > 0 ? "auto" : undefined,
+      wireFormat: isVolc ? settings.wireFormat : "openai-chat",
+      signal: controller.signal,
+    };
+
+    if (settings.streaming && adapter.chatStream && tools.length === 0) {
+      let acc = "";
+      for await (const chunk of adapter.chatStream(req, cred)) {
+        acc += chunk.delta;
+        await chat.updateMessage(assistant.id, { content: acc });
+      }
+      await chat.updateMessage(assistant.id, { content: acc, status: "complete" });
+    } else {
+      const res = await adapter.chat(req, cred);
+      await chat.updateMessage(assistant.id, {
+        content: res.content || summarizeToolCalls(res.toolCalls?.length ?? 0),
+        status: "complete",
+        usage: res.usage,
+        raw: res.raw,
+      });
+      if (res.toolCalls?.length) {
+        for (const call of res.toolCalls) {
+          await chat.recordToolCall({
+            sessionId: userMsg.sessionId,
+            messageId: assistant.id,
+            source: call.function.name.startsWith("mcp_") ? "mcp" : "skill",
+            toolName: call.function.name,
+            title: call.function.name,
+            argumentsJson: call.function.arguments || "{}",
+            resultText:
+              "模型已发起工具调用；Playground 已记录该调用，Skill 可通过右侧手动执行。",
+            status: "success",
+            startedAt: new Date().toISOString(),
+            completedAt: new Date().toISOString(),
+            durationMs: 0,
+          });
+        }
+      }
+    }
+  };
+
+  const send = async () => {
+    if (sending || !settings) return;
+    const content = input.trim();
+    const validationError = validateGenerationInput(content, attachments);
+    if (validationError) return setError(validationError);
+
+    setError(null);
+    const pendingAttachments = attachments;
+    const parts = partsFromInput(content, pendingAttachments);
     setInput("");
     setAttachments([]);
     setSending(true);
@@ -736,181 +978,16 @@ export function PlaygroundPage() {
         role: "user",
         content,
         parts,
-        attachments,
+        attachments: pendingAttachments,
       });
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const history = [...chat.messages, userMsg];
-      const tools = toolDefinitions();
-      if (videoGenerationModel) {
-        if (!adapter.videoGeneration) {
-          throw new Error(`${providerLabel(provider)} 暂不支持视频生成接口`);
-        }
-        const result = await adapter.videoGeneration(
-          {
-            model: settings.modelId,
-            prompt: content,
-            references: videoReferencesFromInput(content, attachments),
-            generateAudio: true,
-            ratio: "16:9",
-            duration: 5,
-            watermark: false,
-            signal: controller.signal,
-          },
-          cred
-        );
-        const statusText = result.status ? `\n状态：${result.status}` : "";
-        const taskText = result.taskId ? `\nTask ID: ${result.taskId}` : "";
-        const videoAssistant = await chat.addMessage({
-          role: "assistant",
-          content:
-            result.videos.length > 0
-              ? "已生成视频。"
-              : `视频生成任务已提交。${taskText}${statusText}`,
-          status: result.videos.length > 0 || !result.taskId ? "complete" : "pending",
-          connKey: settings.connKey ?? undefined,
-          provider,
-          modelId: settings.modelId,
-          paramsJson: jsonParams(settings),
-        });
-        await chat.updateMessage(videoAssistant.id, {
-          raw: result.raw,
-        });
-        if (result.videos.length > 0) {
-          await appendVideoResultToMessage(videoAssistant, result);
-        } else if (result.taskId) {
-          void pollVideoTask({
-            taskId: result.taskId,
-            message: videoAssistant,
-            adapterProvider: provider,
-            cred,
-            signal: controller.signal,
-          });
-        }
-        return;
-      }
-
-      if (imageGenerationModel) {
-        if (!adapter.imageGeneration) {
-          throw new Error(`${providerLabel(provider)} 暂不支持图像生成接口`);
-        }
-        const result = await adapter.imageGeneration(
-          {
-            model: settings.modelId,
-            prompt: content,
-            responseFormat: "url",
-            size: "2K",
-            sequentialImageGeneration: "disabled",
-            watermark: true,
-            signal: controller.signal,
-          },
-          cred
-        );
-        const generatedAttachments = result.images
-          .map((image, index) =>
-            generatedImageAttachment(userMsg.sessionId, image, index)
-          )
-          .filter((attachment) => attachment.dataUrl);
-        const generatedParts: Omit<MessagePart, "messageId">[] =
-          generatedAttachments.map((attachment, index) => ({
-            id: uid("part"),
-            kind: "image",
-            url: attachment.dataUrl,
-            attachmentId: attachment.id,
-            mime: attachment.mime,
-            name: attachment.name,
-            sortOrder: index,
-          }));
-        const imageAssistant = await chat.addMessage({
-          role: "assistant",
-          content:
-            generatedAttachments.length > 1
-              ? `已生成 ${generatedAttachments.length} 张图片。`
-              : "已生成图片。",
-          status: "complete",
-          parts: generatedParts,
-          attachments: generatedAttachments,
-          connKey: settings.connKey ?? undefined,
-          provider,
-          modelId: settings.modelId,
-          paramsJson: jsonParams(settings),
-        });
-        await chat.updateMessage(imageAssistant.id, {
-          usage: result.usage,
-          raw: result.raw,
-        });
-        return;
-      }
-
-      const assistant = await chat.addMessage({
-        role: "assistant",
-        content: "",
-        status: "pending",
-        connKey: settings.connKey ?? undefined,
-        provider,
-        modelId: settings.modelId,
-        paramsJson: jsonParams(settings),
+      await generateAssistantForUser({
+        userMsg,
+        history: [...chat.messages, userMsg],
+        prompt: content,
+        inputAttachments: pendingAttachments,
       });
-      const req: ChatRequest = {
-        model: settings.modelId,
-        messages: buildApiMessages(history),
-        params: {
-          temperature: Number(settings.temperature),
-          maxTokens: Number(settings.maxTokens),
-        },
-        tools,
-        toolChoice: tools.length > 0 ? "auto" : undefined,
-        wireFormat: isVolc ? settings.wireFormat : "openai-chat",
-        signal: controller.signal,
-      };
-
-      if (settings.streaming && adapter.chatStream && tools.length === 0) {
-        let acc = "";
-        for await (const chunk of adapter.chatStream(req, cred)) {
-          acc += chunk.delta;
-          await chat.updateMessage(assistant.id, { content: acc });
-        }
-        await chat.updateMessage(assistant.id, { content: acc, status: "complete" });
-      } else {
-        const res = await adapter.chat(req, cred);
-        await chat.updateMessage(assistant.id, {
-          content: res.content || summarizeToolCalls(res.toolCalls?.length ?? 0),
-          status: "complete",
-          usage: res.usage,
-          raw: res.raw,
-        });
-        if (res.toolCalls?.length) {
-          for (const call of res.toolCalls) {
-            await chat.recordToolCall({
-              sessionId: userMsg.sessionId,
-              messageId: assistant.id,
-              source: call.function.name.startsWith("mcp_") ? "mcp" : "skill",
-              toolName: call.function.name,
-              title: call.function.name,
-              argumentsJson: call.function.arguments || "{}",
-              resultText:
-                "模型已发起工具调用；Playground 已记录该调用，Skill 可通过右侧手动执行。",
-              status: "success",
-              startedAt: new Date().toISOString(),
-              completedAt: new Date().toISOString(),
-              durationMs: 0,
-            });
-          }
-        }
-      }
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "请求失败";
-      const currentMessages = useChatStore.getState().messages;
-      const last = currentMessages[currentMessages.length - 1];
-      if (last?.role === "assistant" && last.status === "pending") {
-        await chat.updateMessage(last.id, {
-          status: "error",
-          error: msg,
-          content: "",
-        });
-      } else {
-        setError(msg);
-      }
+      await handleGenerationError(e);
     } finally {
       setSending(false);
       abortRef.current = null;
@@ -918,6 +995,120 @@ export function PlaygroundPage() {
   };
 
   const stop = () => abortRef.current?.abort();
+
+  const retryFromUserMessage = async (message: PersistedChatMessage) => {
+    if (sending || !settings) return;
+    const prompt = message.content.trim();
+    const validationError = validateGenerationInput(prompt, message.attachments);
+    if (validationError) return setError(validationError);
+    abortRef.current?.abort();
+    setError(null);
+    setEditingMessageId(null);
+    setSending(true);
+    try {
+      await chat.deleteMessagesFrom(message.sessionId, message.id, false);
+      const currentMessages = useChatStore.getState().messages;
+      const userMsg = currentMessages.find((m) => m.id === message.id) ?? message;
+      await generateAssistantForUser({
+        userMsg,
+        history: currentMessages,
+        prompt,
+        inputAttachments: userMsg.attachments,
+      });
+    } catch (e) {
+      await handleGenerationError(e);
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  };
+
+  const retryFromAssistantMessage = async (message: PersistedChatMessage) => {
+    if (sending || !settings) return;
+    const index = chat.messages.findIndex((m) => m.id === message.id);
+    const userMsg = [...chat.messages]
+      .slice(0, index)
+      .reverse()
+      .find((m) => m.role === "user");
+    if (!userMsg) return setError("未找到可重试的用户消息");
+    const prompt = userMsg.content.trim();
+    const validationError = validateGenerationInput(prompt, userMsg.attachments);
+    if (validationError) return setError(validationError);
+    abortRef.current?.abort();
+    setError(null);
+    setEditingMessageId(null);
+    setSending(true);
+    try {
+      await chat.deleteMessagesFrom(message.sessionId, message.id, true);
+      const currentMessages = useChatStore.getState().messages;
+      const latestUser = currentMessages.find((m) => m.id === userMsg.id) ?? userMsg;
+      await generateAssistantForUser({
+        userMsg: latestUser,
+        history: currentMessages,
+        prompt,
+        inputAttachments: latestUser.attachments,
+      });
+    } catch (e) {
+      await handleGenerationError(e);
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  };
+
+  const deleteFromMessage = async (message: PersistedChatMessage) => {
+    if (sending) return;
+    abortRef.current?.abort();
+    setError(null);
+    setEditingMessageId(null);
+    try {
+      await chat.deleteMessagesFrom(message.sessionId, message.id, true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除消息失败");
+    }
+  };
+
+  const startEditingMessage = (message: PersistedChatMessage) => {
+    setEditingMessageId(message.id);
+    setEditingDraft(message.content);
+  };
+
+  const saveEditedMessage = async (message: PersistedChatMessage) => {
+    if (sending || message.role !== "user") return;
+    const prompt = editingDraft.trim();
+    if (!prompt && message.attachments.length === 0) {
+      setError("编辑后的消息不能为空");
+      return;
+    }
+    const validationError = validateGenerationInput(prompt, message.attachments);
+    if (validationError) return setError(validationError);
+    abortRef.current?.abort();
+    setError(null);
+    setSending(true);
+    try {
+      const edited = await chat.replaceMessageContent(
+        message.id,
+        prompt,
+        editedPartsForMessage(message, prompt)
+      );
+      await chat.deleteMessagesFrom(message.sessionId, message.id, false);
+      setEditingMessageId(null);
+      setEditingDraft("");
+      const currentMessages = useChatStore.getState().messages;
+      const userMsg = currentMessages.find((m) => m.id === edited.id) ?? edited;
+      await generateAssistantForUser({
+        userMsg,
+        history: currentMessages,
+        prompt,
+        inputAttachments: userMsg.attachments,
+      });
+    } catch (e) {
+      await handleGenerationError(e);
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  };
 
   const runSkill = async (skill: Skill) => {
     if (!settings || !chat.activeSessionId || runningSkillId) return;
@@ -949,8 +1140,22 @@ export function PlaygroundPage() {
           } satisfies SandboxRunResponse);
       const completedAt = new Date().toISOString();
       const status = res.timedOut || (res.exitCode ?? 0) !== 0 ? "error" : "success";
+      const output = res.stdout || res.stderr || "(no output)";
+      const toolMessage = await chat.addMessage({
+        role: "tool",
+        content: output,
+        parts: [
+          {
+            id: uid("part"),
+            kind: "tool_result",
+            text: output,
+            sortOrder: 0,
+          },
+        ],
+      });
       const tool = await chat.recordToolCall({
         sessionId: chat.activeSessionId,
+        messageId: toolMessage.id,
         source: "skill",
         toolName: safeToolName("skill", skill.name || skill.id),
         title: skill.name,
@@ -978,18 +1183,6 @@ export function PlaygroundPage() {
         durationMs: res.durationMs,
         error: res.timedOut ? "执行超时" : undefined,
       });
-      await chat.addMessage({
-        role: "tool",
-        content: res.stdout || res.stderr || "(no output)",
-        parts: [
-          {
-            id: uid("part"),
-            kind: "tool_result",
-            text: res.stdout || res.stderr || "(no output)",
-            sortOrder: 0,
-          },
-        ],
-      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Skill 执行失败");
     } finally {
@@ -1010,15 +1203,15 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] min-h-[620px] flex-col gap-4">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-heading-24">Playground</h1>
-          <p className="mt-1 text-copy-14 text-muted-foreground">
-            多会话、多模态、SQLite 持久化与工具运行测试台。
+    <div className="flex h-[calc(100vh-6.5rem)] min-h-[620px] flex-col gap-3">
+      <div className="flex shrink-0 items-center justify-between gap-4">
+        <div className="min-w-0">
+          <h1 className="truncate text-heading-20">Playground</h1>
+          <p className="mt-0.5 truncate text-label-12 text-muted-foreground">
+            会话、模型、多模态和工具运行集中在同一个工作台。
           </p>
         </div>
-        <Badge variant="outline" className="gap-1.5 rounded-md">
+        <Badge variant="outline" className="shrink-0 gap-1.5 rounded-md">
           <Database className="h-3.5 w-3.5" />
           SQLite
         </Badge>
@@ -1026,35 +1219,31 @@ export function PlaygroundPage() {
 
       <div
         className={cn(
-          "grid min-h-0 flex-1 gap-4",
+          "grid min-h-0 flex-1 gap-3",
           configOpen
-            ? "xl:grid-cols-[250px_minmax(0,1fr)_320px]"
-            : "xl:grid-cols-[250px_minmax(0,1fr)]"
+            ? "xl:grid-cols-[238px_minmax(0,1fr)_300px]"
+            : "xl:grid-cols-[238px_minmax(0,1fr)]"
         )}
       >
         <SessionRail />
 
         <Card className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3">
+          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent">
                 <Sparkles className="h-4 w-4" />
               </div>
               <div className="min-w-0">
                 <div className="truncate text-label-13 font-medium">
-                  {selectedModel?.name ?? "未选择模型"}
+                  {activeSession?.title ?? "新会话"}
                 </div>
                 <div className="truncate text-label-12 text-muted-foreground">
-                  {currentConn
-                    ? `${currentConn.name} · ${providerLabel(currentConn.provider)}`
-                    : "未选择连接"}
+                  {chat.messages.length} 条消息
+                  {selectedModel ? ` · ${selectedModel.name}` : " · 未选择模型"}
                 </div>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <span className="hidden text-label-12 text-muted-foreground sm:inline">
-                {chat.messages.length} 条消息
-              </span>
               <Button
                 size="icon-sm"
                 variant="ghost"
@@ -1082,7 +1271,9 @@ export function PlaygroundPage() {
           )}
 
           <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-5">
-            {chat.messages.length === 0 ? (
+            {chat.loading ? (
+              <MessageSkeletons />
+            ) : chat.messages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
                 <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
                   <Bot className="h-5 w-5" />
@@ -1099,6 +1290,22 @@ export function PlaygroundPage() {
                     message={m}
                     typing={m.status === "pending" && !m.content}
                     streaming={sending && i === chat.messages.length - 1}
+                    editing={editingMessageId === m.id}
+                    editingDraft={editingDraft}
+                    onEditDraftChange={setEditingDraft}
+                    onStartEdit={() => startEditingMessage(m)}
+                    onCancelEdit={() => {
+                      setEditingMessageId(null);
+                      setEditingDraft("");
+                    }}
+                    onSaveEdit={() => saveEditedMessage(m)}
+                    onDelete={() => deleteFromMessage(m)}
+                    onRetry={() =>
+                      m.role === "assistant"
+                        ? retryFromAssistantMessage(m)
+                        : retryFromUserMessage(m)
+                    }
+                    actionsDisabled={sending}
                   />
                 ))}
               </AnimatePresence>
@@ -1134,7 +1341,7 @@ export function PlaygroundPage() {
             </div>
           )}
 
-          <div className="flex items-end gap-2 border-t border-border bg-background-secondary/60 p-3">
+          <div className="border-t border-border bg-background-secondary/70 p-3">
             <input
               ref={fileRef}
               type="file"
@@ -1143,60 +1350,116 @@ export function PlaygroundPage() {
               className="hidden"
               onChange={pickFiles}
             />
-            <Button
-              size="icon"
-              variant="secondary"
-              disabled={!settings}
-              title="添加图片或文件"
-              onClick={() => fileRef.current?.click()}
-            >
-              <ImagePlus className="h-4 w-4" />
-            </Button>
-            <Textarea
-              className="min-h-[44px] flex-1 resize-none"
-              placeholder="输入消息，Enter 发送，Shift+Enter 换行"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  send();
-                }
-              }}
-            />
-            {sending ? (
-              <Button size="icon" variant="secondary" onClick={stop} title="停止">
-                <X className="h-4 w-4" />
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="min-w-[180px] flex-1 sm:flex-none">
+                <Select
+                  value={settings?.connKey ?? ""}
+                  onValueChange={(connKey) => updateSettings({ connKey })}
+                  disabled={!settings || options.length === 0}
+                >
+                  <SelectTrigger className="h-8 bg-background">
+                    <SelectValue placeholder="选择连接" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {options.map((o) => (
+                      <SelectItem key={o.key} value={o.key}>
+                        {o.name}
+                        <span className="ml-1.5 text-muted-foreground">
+                          · {providerLabel(o.provider)}
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="min-w-[200px] flex-[1.2]">
+                <Select
+                  value={settings?.modelId ?? ""}
+                  onValueChange={(modelId) => updateSettings({ modelId })}
+                  disabled={!settings || models.length === 0}
+                >
+                  <SelectTrigger className="h-8 bg-background">
+                    <SelectValue placeholder="先拉取模型" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {models.map((m) => (
+                      <SelectItem key={m.id} value={m.id}>
+                        {m.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={fetchModels}
+                disabled={modelsLoading || !currentConn}
+                title="拉取模型"
+              >
+                {modelsLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+                拉取
               </Button>
-            ) : (
+              {selectedModel && (
+                <div className="min-w-0">
+                  <ModelFeatureBadges model={selectedModel} />
+                </div>
+              )}
+            </div>
+            <div className="flex items-end gap-2">
               <Button
                 size="icon"
-                variant="accent"
-                onClick={send}
-                disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
-                title="发送"
+                variant="secondary"
+                disabled={!settings}
+                title="添加图片或文件"
+                onClick={() => fileRef.current?.click()}
               >
-                <Send className="h-4 w-4" />
+                <Plus className="h-4 w-4" />
               </Button>
-            )}
+              <Textarea
+                className="min-h-[44px] flex-1 resize-none bg-background"
+                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    e.preventDefault();
+                    send();
+                  }
+                }}
+              />
+              {sending ? (
+                <Button size="icon" variant="secondary" onClick={stop} title="停止">
+                  <X className="h-4 w-4" />
+                </Button>
+              ) : (
+                <Button
+                  size="icon"
+                  variant="accent"
+                  onClick={send}
+                  disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
+                  title="发送"
+                >
+                  <Send className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </div>
         </Card>
 
         {configOpen && (
           <ConfigRail
             settings={settings}
-            options={options}
-            models={models}
-            selectedModel={selectedModel}
-            currentConn={currentConn}
             isVolc={isVolc}
             usableKeys={usableKeys}
-            modelsLoading={modelsLoading}
             skills={skills.items}
             mcpServers={mcp.items}
             runningSkillId={runningSkillId}
             toolCalls={chat.toolCalls}
-            onFetchModels={fetchModels}
             onSettings={updateSettings}
             onRunSkill={runSkill}
             onClose={() => setConfigOpen(false)}
@@ -1209,6 +1472,31 @@ export function PlaygroundPage() {
 
 function summarizeToolCalls(count: number): string {
   return count > 0 ? `模型发起了 ${count} 个工具调用，已写入工具记录。` : "";
+}
+
+function MessageSkeletons() {
+  return (
+    <div className="grid gap-5">
+      {[0, 1, 2].map((item) => (
+        <div
+          key={item}
+          className={cn("flex gap-3", item === 1 && "flex-row-reverse")}
+        >
+          <div className="h-7 w-7 shrink-0 animate-pulse rounded-md bg-secondary" />
+          <div
+            className={cn(
+              "grid max-w-[78%] gap-2 rounded-md bg-secondary/70 p-3",
+              item === 1 ? "w-[42%]" : "w-[62%]"
+            )}
+          >
+            <div className="h-3 w-2/3 animate-pulse rounded-sm bg-muted" />
+            <div className="h-3 w-full animate-pulse rounded-sm bg-muted" />
+            <div className="h-3 w-1/2 animate-pulse rounded-sm bg-muted" />
+          </div>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function SessionRail() {
@@ -1260,35 +1548,23 @@ function SessionRail() {
 
 function ConfigRail({
   settings,
-  options,
-  models,
-  selectedModel,
-  currentConn,
   isVolc,
   usableKeys,
-  modelsLoading,
   skills,
   mcpServers,
   runningSkillId,
   toolCalls,
-  onFetchModels,
   onSettings,
   onRunSkill,
   onClose,
 }: {
   settings: ChatSessionSettings | null;
-  options: ConnOption[];
-  models: ModelInfo[];
-  selectedModel: ModelInfo | null;
-  currentConn: ConnOption | null;
   isVolc: boolean;
   usableKeys: { name: string; key?: string; arkId?: number }[];
-  modelsLoading: boolean;
   skills: Skill[];
   mcpServers: McpServer[];
   runningSkillId: string | null;
   toolCalls: ReturnType<typeof useChatStore.getState>["toolCalls"];
-  onFetchModels: () => void;
   onSettings: (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
   ) => void;
@@ -1312,65 +1588,10 @@ function ConfigRail({
           <X className="h-4 w-4" />
         </Button>
       </div>
-      <RailSection icon={Settings2} title="模型">
-        <div className="grid gap-1.5">
-          <Label>连接</Label>
-          <Select
-            value={settings.connKey ?? ""}
-            onValueChange={(connKey) => onSettings({ connKey })}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="选择连接" />
-            </SelectTrigger>
-            <SelectContent>
-              {options.map((o) => (
-                <SelectItem key={o.key} value={o.key}>
-                  {o.name}
-                  <span className="ml-1.5 text-muted-foreground">
-                    · {providerLabel(o.provider)}
-                  </span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+      <RailSection icon={Settings2} title="请求">
+        <div className="rounded-sm border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
+          连接与模型已移入输入栏，常用切换不再占用侧栏。
         </div>
-
-        <div className="grid gap-1.5">
-          <div className="flex items-center justify-between">
-            <Label>模型</Label>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={onFetchModels}
-              disabled={modelsLoading || !currentConn}
-            >
-              {modelsLoading ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <RefreshCw className="h-3.5 w-3.5" />
-              )}
-              拉取
-            </Button>
-          </div>
-          <Select
-            value={settings.modelId}
-            onValueChange={(modelId) => onSettings({ modelId })}
-            disabled={models.length === 0}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="先拉取模型" />
-            </SelectTrigger>
-            <SelectContent>
-              {models.map((m) => (
-                <SelectItem key={m.id} value={m.id}>
-                  {m.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {selectedModel && <ModelFeatureBadges model={selectedModel} />}
-        </div>
-
         {isVolc && (
           <>
             <div className="grid gap-1.5">
@@ -1690,14 +1911,33 @@ function ChatBubble({
   message,
   typing,
   streaming,
+  editing,
+  editingDraft,
+  actionsDisabled,
+  onEditDraftChange,
+  onStartEdit,
+  onCancelEdit,
+  onSaveEdit,
+  onDelete,
+  onRetry,
 }: {
   message: PersistedChatMessage;
   typing?: boolean;
   streaming?: boolean;
+  editing?: boolean;
+  editingDraft: string;
+  actionsDisabled?: boolean;
+  onEditDraftChange: (value: string) => void;
+  onStartEdit: () => void;
+  onCancelEdit: () => void;
+  onSaveEdit: () => void;
+  onDelete: () => void;
+  onRetry: () => void;
 }) {
   const reduce = useReducedMotion();
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
+  const canRetry = message.role === "user" || message.role === "assistant";
   const generatedImages = !isUser
     ? message.attachments.filter(
         (attachment) => attachment.kind === "image" && attachmentSrc(attachment)
@@ -1725,7 +1965,7 @@ function ChatBubble({
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-      className={cn("flex gap-3", isUser && "flex-row-reverse")}
+      className={cn("group flex gap-3", isUser && "flex-row-reverse")}
     >
       <div
         className={cn(
@@ -1745,62 +1985,131 @@ function ChatBubble({
           <Bot className="h-4 w-4" />
         )}
       </div>
-      <div
-        className={cn(
-          "max-w-[82%] rounded-md px-3.5 py-2.5 text-copy-14 shadow-geist-sm",
-          isUser
-            ? "rounded-tr-sm bg-accent text-accent-foreground"
-            : "rounded-tl-sm bg-secondary text-foreground"
-        )}
-      >
-        {generatedImages.length > 0 && (
-          <div className="mb-3 grid gap-2">
-            {generatedImages.map((attachment) => (
-              <img
-                key={attachment.id}
-                src={attachmentSrc(attachment)}
-                alt={attachment.name}
-                className="max-h-80 w-full rounded-sm border border-border bg-background object-contain"
+      <div className={cn("flex max-w-[82%] flex-col gap-1.5", isUser && "items-end")}>
+        <div
+          className={cn(
+            "rounded-md px-3.5 py-2.5 text-copy-14 shadow-geist-sm",
+            isUser
+              ? "rounded-tr-sm bg-accent text-accent-foreground"
+              : "rounded-tl-sm bg-secondary text-foreground"
+          )}
+        >
+          {generatedImages.length > 0 && (
+            <div className="mb-3 grid gap-2">
+              {generatedImages.map((attachment) => (
+                <img
+                  key={attachment.id}
+                  src={attachmentSrc(attachment)}
+                  alt={attachment.name}
+                  className="max-h-80 w-full rounded-sm border border-border bg-background object-contain"
+                />
+              ))}
+            </div>
+          )}
+          {generatedVideos.length > 0 && (
+            <div className="mb-3 grid gap-2">
+              {generatedVideos.map((attachment) => (
+                <video
+                  key={attachment.id}
+                  src={attachmentSrc(attachment)}
+                  controls
+                  className="max-h-80 w-full rounded-sm border border-border bg-background"
+                />
+              ))}
+            </div>
+          )}
+          {pillAttachments.length > 0 && (
+            <div className="mb-2 grid gap-2">
+              {pillAttachments.map((a) => (
+                <AttachmentPill key={a.id} attachment={a} />
+              ))}
+            </div>
+          )}
+          {editing ? (
+            <div className="grid min-w-[min(34rem,70vw)] gap-2">
+              <Textarea
+                className="min-h-[92px] resize-y bg-background text-foreground"
+                value={editingDraft}
+                onChange={(e) => onEditDraftChange(e.target.value)}
+                autoFocus
               />
-            ))}
-          </div>
-        )}
-        {generatedVideos.length > 0 && (
-          <div className="mb-3 grid gap-2">
-            {generatedVideos.map((attachment) => (
-              <video
-                key={attachment.id}
-                src={attachmentSrc(attachment)}
-                controls
-                className="max-h-80 w-full rounded-sm border border-border bg-background"
-              />
-            ))}
-          </div>
-        )}
-        {pillAttachments.length > 0 && (
-          <div className="mb-2 grid gap-2">
-            {pillAttachments.map((a) => (
-              <AttachmentPill key={a.id} attachment={a} />
-            ))}
-          </div>
-        )}
-        {typing ? (
-          <TypingDots />
-        ) : (
-          <div className="grid gap-2">
-            {visibleContent && (
-              <div className="whitespace-pre-wrap break-words">
-                {visibleContent}
-                {streaming && message.status === "pending" && (
-                  <span className="ml-0.5 inline-block h-4 w-[2px] -translate-y-[1px] animate-pulse bg-current align-middle" />
-                )}
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={onCancelEdit}>
+                  <X className="h-3.5 w-3.5" />
+                  取消
+                </Button>
+                <Button size="sm" variant="accent" onClick={onSaveEdit}>
+                  <Check className="h-3.5 w-3.5" />
+                  保存并重试
+                </Button>
               </div>
-            )}
-            {message.error && (
-              <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
-                {message.error}
+            </div>
+          ) : typing ? (
+            <div className="grid min-w-48 gap-2">
+              <div className="flex items-center gap-2 text-label-13 text-muted-foreground">
+                <TypingDots />
+                <span>正在生成回复</span>
               </div>
+              <div className="h-2 w-36 overflow-hidden rounded-full bg-muted">
+                <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/50" />
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {visibleContent && (
+                <div className="whitespace-pre-wrap break-words">
+                  {visibleContent}
+                  {streaming && message.status === "pending" && (
+                    <span className="ml-0.5 inline-block h-4 w-[2px] -translate-y-[1px] animate-pulse bg-current align-middle" />
+                  )}
+                </div>
+              )}
+              {message.error && (
+                <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
+                  {message.error}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        {!editing && (
+          <div
+            className={cn(
+              "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+              isUser && "flex-row-reverse"
             )}
+          >
+            {message.role === "user" && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                title="编辑消息"
+                disabled={actionsDisabled}
+                onClick={onStartEdit}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            {canRetry && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                title="重试"
+                disabled={actionsDisabled}
+                onClick={onRetry}
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+              </Button>
+            )}
+            <Button
+              size="icon-sm"
+              variant="ghost"
+              title="删除此处及后续消息"
+              disabled={actionsDisabled}
+              onClick={onDelete}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
       </div>

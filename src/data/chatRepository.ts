@@ -609,6 +609,151 @@ class ChatRepository {
     );
   }
 
+  async deleteMessagesFrom(
+    sessionId: string,
+    messageId: string,
+    includeTarget: boolean
+  ): Promise<void> {
+    await this.ensureInit();
+    if (!isTauri()) {
+      const state = readFallback();
+      const ordered = state.messages
+        .filter((m) => m.sessionId === sessionId)
+        .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      const index = ordered.findIndex((m) => m.id === messageId);
+      if (index === -1) return;
+      const targetIds = new Set(
+        ordered.slice(includeTarget ? index : index + 1).map((m) => m.id)
+      );
+      if (targetIds.size === 0) return;
+      const targetToolIds = new Set(
+        state.toolCalls
+          .filter((call) => call.messageId && targetIds.has(call.messageId))
+          .map((call) => call.id)
+      );
+      state.messages = state.messages.filter((m) => !targetIds.has(m.id));
+      state.parts = state.parts.filter((p) => !targetIds.has(p.messageId));
+      state.attachments = state.attachments.filter(
+        (a) => !a.messageId || !targetIds.has(a.messageId)
+      );
+      state.toolCalls = state.toolCalls.filter(
+        (call) => !call.messageId || !targetIds.has(call.messageId)
+      );
+      state.sandboxRuns = state.sandboxRuns.filter(
+        (run) => !run.toolCallId || !targetToolIds.has(run.toolCallId)
+      );
+      writeFallback(state);
+      await this.touchSession(sessionId);
+      return;
+    }
+
+    const db = await this.db();
+    const rows = await db.select<Record<string, unknown>[]>(
+      "SELECT id FROM messages WHERE session_id = $1 ORDER BY created_at ASC",
+      [sessionId]
+    );
+    const ids = rows.map((row) => String(row.id));
+    const index = ids.indexOf(messageId);
+    if (index === -1) return;
+    const targetIds = ids.slice(includeTarget ? index : index + 1);
+    if (targetIds.length === 0) return;
+    const placeholders = targetIds.map((_, i) => `$${i + 2}`).join(",");
+    const toolRows = await db.select<Record<string, unknown>[]>(
+      `SELECT id FROM tool_calls WHERE session_id = $1 AND message_id IN (${placeholders})`,
+      [sessionId, ...targetIds]
+    );
+    const toolIds = toolRows.map((row) => String(row.id));
+    if (toolIds.length > 0) {
+      const toolPlaceholders = toolIds.map((_, i) => `$${i + 2}`).join(",");
+      await db.execute(
+        `DELETE FROM sandbox_runs WHERE session_id = $1 AND tool_call_id IN (${toolPlaceholders})`,
+        [sessionId, ...toolIds]
+      );
+    }
+    await db.execute(
+      `DELETE FROM tool_calls WHERE session_id = $1 AND message_id IN (${placeholders})`,
+      [sessionId, ...targetIds]
+    );
+    await db.execute(
+      `DELETE FROM attachments WHERE session_id = $1 AND message_id IN (${placeholders})`,
+      [sessionId, ...targetIds]
+    );
+    await db.execute(
+      `DELETE FROM message_parts WHERE message_id IN (${targetIds
+        .map((_, i) => `$${i + 1}`)
+        .join(",")})`,
+      targetIds
+    );
+    await db.execute(
+      `DELETE FROM messages WHERE session_id = $1 AND id IN (${placeholders})`,
+      [sessionId, ...targetIds]
+    );
+    await this.touchSession(sessionId);
+  }
+
+  async replaceMessageContent(
+    messageId: string,
+    content: string,
+    parts?: Omit<MessagePart, "messageId">[]
+  ): Promise<PersistedChatMessage> {
+    await this.ensureInit();
+    const updatedAt = nowIso();
+    if (!isTauri()) {
+      const state = readFallback();
+      const message = state.messages.find((m) => m.id === messageId);
+      if (!message) throw new Error("消息不存在");
+      const nextParts = (
+        parts ?? [{ id: uid("part"), kind: "text" as const, text: content, sortOrder: 0 }]
+      ).map((part, index) => ({
+        ...part,
+        messageId,
+        sortOrder: part.sortOrder ?? index,
+      }));
+      state.messages = state.messages.map((m) =>
+        m.id === messageId ? { ...m, content, updatedAt } : m
+      );
+      state.parts = [
+        ...state.parts.filter((part) => part.messageId !== messageId),
+        ...nextParts,
+      ];
+      writeFallback(state);
+      await this.touchSession(message.sessionId);
+      return {
+        ...message,
+        content,
+        parts: nextParts,
+        attachments: state.attachments.filter((a) => a.messageId === messageId),
+        updatedAt,
+      };
+    }
+
+    const db = await this.db();
+    const rows = await db.select<Record<string, unknown>[]>(
+      "SELECT session_id FROM messages WHERE id = $1",
+      [messageId]
+    );
+    const sessionId = rows[0]?.session_id ? String(rows[0].session_id) : null;
+    if (!sessionId) throw new Error("消息不存在");
+    const nextParts = (
+      parts ?? [{ id: uid("part"), kind: "text" as const, text: content, sortOrder: 0 }]
+    ).map((part, index) => ({
+      ...part,
+      messageId,
+      sortOrder: part.sortOrder ?? index,
+    }));
+    await db.execute(
+      "UPDATE messages SET content = $1, updated_at = $2 WHERE id = $3",
+      [content, updatedAt, messageId]
+    );
+    await db.execute("DELETE FROM message_parts WHERE message_id = $1", [messageId]);
+    for (const part of nextParts) await this.insertPart(part);
+    await this.touchSession(sessionId);
+    const bundle = await this.getSessionBundle(sessionId);
+    const message = bundle?.messages.find((m) => m.id === messageId);
+    if (!message) throw new Error("消息不存在");
+    return message;
+  }
+
   async appendMessageArtifacts(
     messageId: string,
     input: {

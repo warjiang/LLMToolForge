@@ -92,3 +92,64 @@ await chat.updateMessage(messageId, { content: statusText, status: "pending" });
 await chat.appendMessageArtifacts(messageId, { parts, attachments });
 await chat.updateMessage(messageId, { content: "已生成视频。", status: "complete" });
 ```
+
+## Scenario: Message Edit / Retry With Linear History
+
+### 1. Scope / Trigger
+- Trigger: Playground message editing, retry, and deletion span React actions,
+  Zustand state, `chatRepository`, SQLite/fallback storage, and provider calls.
+- Apply this spec when changing message action UI or truncation persistence.
+
+### 2. Signatures
+- `chatRepo.deleteMessagesFrom(sessionId, messageId, includeTarget): Promise<void>`
+- `chatRepo.replaceMessageContent(messageId, content, parts?): Promise<PersistedChatMessage>`
+- `chatStore.deleteMessagesFrom(sessionId, messageId, includeTarget): Promise<void>`
+- `chatStore.replaceMessageContent(messageId, content, parts?): Promise<PersistedChatMessage>`
+
+### 3. Contracts
+- Editing a user message updates the target message content and text part, then
+  deletes messages after it before generating a new assistant response.
+- Retrying a user message deletes messages after that user message, then
+  regenerates from the same user message.
+- Retrying an assistant message finds the nearest previous user message, deletes
+  the assistant message and everything after it, then regenerates from that user.
+- Deleting a message deletes the target message and all following messages.
+- Truncation must delete message parts, attachments, tool calls linked by
+  `messageId`, and sandbox runs linked through those tool calls.
+
+### 4. Validation & Error Matrix
+- Empty edited text with no attachments -> show Playground error; do not persist.
+- Missing connection/model/provider before retry -> show Playground error; do not
+  truncate history.
+- Assistant retry without a previous user message -> show Playground error.
+- Repository target message not found -> no-op for truncation, error for content
+  replacement.
+
+### 5. Good/Base/Bad Cases
+- Good: Edit first user turn, later assistant/tool turns disappear, one new
+  assistant reply is generated from the edited prompt.
+- Base: Delete the latest assistant message; only that message is removed.
+- Bad: Delete a middle message while leaving later messages, because provider
+  history now contains orphaned context.
+
+### 6. Tests Required
+- Build/type check must cover the store/repository signatures.
+- Browser fallback test should assert edit/retry/delete survives reload.
+- SQLite test should assert truncation removes messages, `message_parts`,
+  attachments, linked tool calls, and linked sandbox runs.
+- Manual UI test should assert hover actions appear and inline editing does not
+  open a modal.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await chat.updateMessage(userId, { content: edited });
+await chat.addMessage({ role: "assistant", content: next });
+```
+
+#### Correct
+```typescript
+await chat.replaceMessageContent(userId, edited, parts);
+await chat.deleteMessagesFrom(sessionId, userId, false);
+await generateAssistantFromCurrentHistory(userId);
+```

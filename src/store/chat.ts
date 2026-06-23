@@ -44,6 +44,16 @@ interface ChatState {
     id: string,
     patch: Parameters<typeof chatRepo.updateMessage>[1]
   ) => Promise<void>;
+  deleteMessagesFrom: (
+    sessionId: string,
+    messageId: string,
+    includeTarget: boolean
+  ) => Promise<void>;
+  replaceMessageContent: (
+    id: string,
+    content: string,
+    parts?: Omit<MessagePart, "messageId">[]
+  ) => Promise<PersistedChatMessage>;
   appendMessageArtifacts: (
     id: string,
     input: Parameters<typeof chatRepo.appendMessageArtifacts>[1]
@@ -192,6 +202,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
         m.id === id ? { ...m, ...patch, updatedAt: new Date().toISOString() } : m
       ),
     });
+  },
+
+  deleteMessagesFrom: async (sessionId, messageId, includeTarget) => {
+    await chatRepo.deleteMessagesFrom(sessionId, messageId, includeTarget);
+    await loadIntoState(set, sessionId);
+    set({ sessions: await chatRepo.listSessions() });
+  },
+
+  replaceMessageContent: async (id, content, parts) => {
+    const message = await chatRepo.replaceMessageContent(id, content, parts);
+    await loadIntoState(set, message.sessionId);
+    set({ sessions: await chatRepo.listSessions() });
+    return message;
   },
 
   appendMessageArtifacts: async (id, input) => {
