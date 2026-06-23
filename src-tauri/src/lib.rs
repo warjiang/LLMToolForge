@@ -6,6 +6,8 @@ use std::thread;
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
 
+mod unified;
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SandboxRunRequest {
@@ -168,7 +170,17 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![run_sandboxed_command])
+        .manage(unified::UnifiedManager::default())
+        .invoke_handler(tauri::generate_handler![
+            run_sandboxed_command,
+            unified::unified_api_set_config,
+            unified::unified_api_start,
+            unified::unified_api_stop,
+            unified::unified_api_status,
+            unified::unified_api_logs,
+            unified::unified_api_clear_logs,
+            unified::unified_api_stats,
+        ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

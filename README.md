@@ -19,6 +19,13 @@
   - **New API**：OpenAI 兼容网关，录入 Base URL + API Key，通过 `/v1/models` 拉取可用模型
   - **LiteLLM**：OpenAI 兼容代理，录入 Base URL + API Key，通过 `/v1/models` 拉取可用模型
 - **Playground**：基于已接入的连接（Volcengine 凭证或 New API / LiteLLM 网关）的对话测试台，支持 OpenAI Chat 与 Responses（火山引擎）两种请求格式、流式输出、System Prompt / 温度 / Max Tokens 参数，多模态模型可附带图片输入
+- **Unified API（本地统一网关）**：把已接入的各 provider 模型统一暴露为一个本地 HTTP 服务，供 Codex、Claude Code 与本地 agent 直接使用（仅桌面端 Tauri 运行时可启动服务）
+  - **OpenAI 兼容**：`GET /v1/models`、`POST /v1/chat/completions`（流式 + 非流式）
+  - **Anthropic 兼容**：`POST /v1/messages`（请求/响应/流式事件与工具调用翻译，供 Claude Code 使用）
+  - 模型 id 形如 `{provider}/{model}`，默认全部暴露，可按模型单独开关；可选本地 API Key 校验
+  - 内置交互式文档：`GET /openapi.json`（OpenAPI 3.1）、`GET /docs`（Redoc）
+  - 内置接入指南：OpenAI Python / Node SDK、curl、Codex、Claude Code 一键复制示例
+  - 调用监控：实时调用日志、成功率 / P95 耗时 / token 统计与 SVG 图表，支持过滤、清空、导出（JSON/CSV）
 - **Skills**：技能的增删改查、启用开关、标签
 - **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关
 - **实用工具**：URL 编解码、JSON 预览（尽力解开被转义/双重编码的嵌套字段）、转义/去转义、Unicode 编解码，纯本地计算

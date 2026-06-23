@@ -1,8 +1,16 @@
 import { Outlet } from "react-router-dom";
+import { useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { useUnifiedStore } from "@/store/unified";
 
 export function AppLayout() {
+  const init = useUnifiedStore((s) => s.init);
+
+  useEffect(() => {
+    void init();
+  }, [init]);
+
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
       <Topbar />
