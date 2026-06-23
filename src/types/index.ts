@@ -95,7 +95,7 @@ export interface ProviderMeta {
 export const PROVIDER_METAS: ProviderMeta[] = [
   {
     id: "volcengine",
-    label: "Volcengine 火山引擎",
+    label: "Volcengine",
     description: "AK/SK 拉取已开通的模型与 Ark API Key",
     kind: "volc",
   },
@@ -113,13 +113,13 @@ export const PROVIDER_METAS: ProviderMeta[] = [
   },
   {
     id: "dmxapi",
-    label: "DMXAPI",
+    label: "DMX",
     description: "OpenAI 兼容聚合平台，Base URL + API Key",
     kind: "gateway",
   },
   {
     id: "manual",
-    label: "自定义 / OpenAI 兼容",
+    label: "自定义",
     description: "手动录入 API Key 与可用模型，OpenAI 兼容调用",
     kind: "manual",
   },

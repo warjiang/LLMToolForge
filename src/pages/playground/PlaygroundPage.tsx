@@ -28,11 +28,10 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { TypingDots } from "@/components/common/Reveal";
-import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
+import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
   ModelIcon,
   ModelIconLabel,
-  ProviderIcon,
   ProviderIconLabel,
 } from "@/components/common/ProviderModelIcon";
 import { Button } from "@/components/ui/button";
@@ -1375,12 +1374,7 @@ export function PlaygroundPage() {
                     {options.map((o) => (
                       <SelectItem key={o.key} value={o.key}>
                         <ProviderIconLabel provider={o.provider}>
-                          <span className="min-w-0">
-                            <span>{o.name}</span>
-                            <span className="ml-1.5 text-muted-foreground">
-                              · {providerLabel(o.provider)}
-                            </span>
-                          </span>
+                          <span className="min-w-0 truncate">{o.name}</span>
                         </ProviderIconLabel>
                       </SelectItem>
                     ))}
@@ -1393,13 +1387,16 @@ export function PlaygroundPage() {
                   onValueChange={(modelId) => updateSettings({ modelId })}
                   disabled={!settings || models.length === 0}
                 >
-                  <SelectTrigger className="h-8 bg-background">
+                  <SelectTrigger
+                    className="h-8 bg-background"
+                    title={getModelFeatureTitle(selectedModel)}
+                  >
                     <SelectValue placeholder="先拉取模型" />
                   </SelectTrigger>
                   <SelectContent>
                     {models.map((m) => (
                       <SelectItem key={m.id} value={m.id}>
-                        <ModelIconLabel model={m}>
+                        <ModelIconLabel model={m} className="max-w-full" title={getModelFeatureTitle(m)}>
                           <span className="truncate">{m.name}</span>
                         </ModelIconLabel>
                       </SelectItem>
@@ -1421,12 +1418,6 @@ export function PlaygroundPage() {
                 )}
                 拉取
               </Button>
-              {selectedModel && (
-                <div className="flex min-w-0 items-center gap-2">
-                  <ProviderIcon provider={currentConn?.provider} className="h-4 w-4" />
-                  <ModelFeatureBadges model={selectedModel} />
-                </div>
-              )}
             </div>
             <div className="flex items-end gap-2">
               <Button

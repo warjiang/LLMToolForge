@@ -1,10 +1,26 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, CSSProperties, ReactNode } from "react";
+import AnthropicIconMono from "@lobehub/icons/es/Anthropic/components/Mono";
+import ClaudeIconColor from "@lobehub/icons/es/Claude/components/Color";
+import DeepSeekIconColor from "@lobehub/icons/es/DeepSeek/components/Color";
+import DoubaoIconColor from "@lobehub/icons/es/Doubao/components/Color";
+import GeminiIconColor from "@lobehub/icons/es/Gemini/components/Color";
+import GrokIconMono from "@lobehub/icons/es/Grok/components/Mono";
+import GroqIconMono from "@lobehub/icons/es/Groq/components/Mono";
+import KimiIconColor from "@lobehub/icons/es/Kimi/components/Color";
+import MetaIconColor from "@lobehub/icons/es/Meta/components/Color";
+import MistralIconColor from "@lobehub/icons/es/Mistral/components/Color";
+import NewApiIconColor from "@lobehub/icons/es/NewAPI/components/Color";
+import OllamaIconMono from "@lobehub/icons/es/Ollama/components/Mono";
+import OpenAIIconMono from "@lobehub/icons/es/OpenAI/components/Mono";
+import QwenIconColor from "@lobehub/icons/es/Qwen/components/Color";
+import VolcengineIconColor from "@lobehub/icons/es/Volcengine/components/Color";
 import { Boxes, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/providers/types";
 
 type IconKey =
   | "anthropic"
+  | "claude"
   | "deepseek"
   | "dmxapi"
   | "doubao"
@@ -60,7 +76,8 @@ function modelIconKey(model?: ModelInfo | string | null): IconKey {
   if (value.includes("gpt") || value.includes("openai") || value.includes("o1") || value.includes("o3") || value.includes("o4")) {
     return "openai";
   }
-  if (value.includes("claude") || value.includes("anthropic")) return "anthropic";
+  if (value.includes("claude")) return "claude";
+  if (value.includes("anthropic")) return "anthropic";
   if (value.includes("gemini") || value.includes("google")) return "gemini";
   if (value.includes("deepseek")) return "deepseek";
   if (value.includes("qwen") || value.includes("qwq") || value.includes("tongyi")) {
@@ -109,13 +126,15 @@ export function ProviderIconLabel({
   provider,
   children,
   className,
+  title,
 }: {
   provider?: string | null;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-2", className)} title={title}>
       <ProviderIcon provider={provider} className="h-4 w-4 shrink-0" />
       {children}
     </span>
@@ -126,13 +145,15 @@ export function ModelIconLabel({
   model,
   children,
   className,
+  title,
 }: {
   model?: ModelInfo | string | null;
   children: ReactNode;
   className?: string;
+  title?: string;
 }) {
   return (
-    <span className={cn("inline-flex min-w-0 items-center gap-2", className)}>
+    <span className={cn("inline-flex min-w-0 items-center gap-2", className)} title={title}>
       <ModelIcon model={model} className="h-4 w-4 shrink-0" />
       {children}
     </span>
@@ -140,8 +161,39 @@ export function ModelIconLabel({
 }
 
 function IconByKey({ iconKey, className }: { iconKey: IconKey; className?: string }) {
-  const Icon = ICONS[iconKey] ?? GenericIcon;
+  const LobeIcon = LOBE_ICONS[iconKey];
+  if (LobeIcon) {
+    return <LobeIconRenderer Icon={LobeIcon} className={className} />;
+  }
+
+  const Icon = LOCAL_ICONS[iconKey] ?? GenericIcon;
   return <Icon className={cn("h-4 w-4 shrink-0", className)} />;
+}
+
+type LobeIconComponent = ComponentType<{
+  className?: string;
+  color?: string;
+  size?: number | string;
+  style?: CSSProperties;
+}>;
+
+function LobeIconRenderer({
+  Icon,
+  className,
+}: {
+  Icon: LobeIconComponent;
+  className?: string;
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden",
+        className
+      )}
+    >
+      <Icon className="h-full w-full" size="100%" />
+    </span>
+  );
 }
 
 function SvgShell({
@@ -231,22 +283,40 @@ function VolcengineIcon({ className }: IconProps) {
 
 function LiteLLMIcon({ className }: IconProps) {
   return (
-    <SvgShell className={className}>
-      <rect width="24" height="24" rx="6" fill="#effdf3" />
-      <path d="M5 16.4V5.2h3.2v8.4h5.1v2.8H5Z" fill="#16a34a" />
-      <path d="M12.2 18.8 16 5.2h3l-2.2 7h2.9l-5.6 6.6 1.4-4.2h-3.3Z" fill="#22c55e" />
-      <circle cx="18.8" cy="17.6" r="1.4" fill="#14532d" />
-    </SvgShell>
+    <span
+      aria-label="LiteLLM"
+      className={cn(
+        "inline-flex h-4 w-4 shrink-0 items-center justify-center text-[14px] leading-none",
+        className
+      )}
+      role="img"
+    >
+      🚅
+    </span>
   );
 }
 
 function DmxIcon({ className }: IconProps) {
   return (
-    <SvgShell className={className}>
-      <rect width="24" height="24" rx="6" fill="#eaf4ff" />
-      <path d="M4.6 6.2h5.2c3.5 0 5.9 2.3 5.9 5.8s-2.4 5.8-5.9 5.8H4.6V6.2Zm5 8.7c1.7 0 2.8-1.1 2.8-2.9 0-1.8-1.1-2.9-2.8-2.9H7.9v5.8h1.7Z" fill="#1677ff" />
-      <path d="M15.4 17.8 18 14l-2.5-3.8h2.9l1.2 2 1.2-2h2.6L21 13.9l2.5 3.9h-2.9l-1.3-2.1-1.4 2.1h-2.5Z" fill="#00a6ff" />
-    </SvgShell>
+    <span
+      aria-label="DMX"
+      className={cn("inline-flex h-4 shrink-0 items-center overflow-hidden", className)}
+      role="img"
+      style={{ width: 48 }}
+    >
+      <img
+        alt=""
+        aria-hidden="true"
+        className="block h-[9px] w-[48px] object-contain dark:hidden"
+        src="/icons/dmx-logo-dark.png"
+      />
+      <img
+        alt=""
+        aria-hidden="true"
+        className="hidden h-[9px] w-[48px] object-contain dark:block"
+        src="/icons/dmx-logo-white.png"
+      />
+    </span>
   );
 }
 
@@ -309,8 +379,27 @@ function GenericIcon({ className }: IconProps) {
   return <Boxes className={cn("text-muted-foreground", className)} />;
 }
 
-const ICONS: Record<IconKey, ComponentType<IconProps>> = {
+const LOBE_ICONS: Partial<Record<IconKey, LobeIconComponent>> = {
+  anthropic: AnthropicIconMono,
+  claude: ClaudeIconColor,
+  deepseek: DeepSeekIconColor,
+  doubao: DoubaoIconColor,
+  gemini: GeminiIconColor,
+  groq: GroqIconMono,
+  grok: GrokIconMono,
+  kimi: KimiIconColor,
+  llama: MetaIconColor,
+  mistral: MistralIconColor,
+  "new-api": NewApiIconColor,
+  ollama: OllamaIconMono,
+  openai: OpenAIIconMono,
+  qwen: QwenIconColor,
+  volcengine: VolcengineIconColor,
+};
+
+const LOCAL_ICONS: Record<IconKey, ComponentType<IconProps>> = {
   anthropic: AnthropicIcon,
+  claude: AnthropicIcon,
   deepseek: DeepSeekIcon,
   dmxapi: DmxIcon,
   doubao: DoubaoIcon,

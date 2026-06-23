@@ -23,7 +23,7 @@ export function ProvidersPage() {
       <div className="shrink-0">
         <PageHeader
           title="模型接入"
-          description="统一管理各模型 provider 的接入：火山引擎、New API、LiteLLM、DMXAPI 以及自定义 API Key。新增接入时请先选择 provider。"
+          description="统一管理各模型 provider 的接入：Volcengine、New API、LiteLLM、DMX 以及自定义 API Key。新增接入时请先选择 provider。"
         />
 
         <SegmentedControl
