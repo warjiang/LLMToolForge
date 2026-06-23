@@ -71,3 +71,36 @@ Added a reusable provider/model icon component with local SVG marks, wired icons
 ### Next Steps
 
 - None - task complete
+
+
+## Session 3: Playground composer redesign
+
+**Date**: 2026-06-23
+**Task**: Playground composer redesign
+**Branch**: `fix/0623`
+
+### Summary
+
+Centered Playground chat content and composer, moved model/tool/attach/send controls into one compact composer toolbar, and removed duplicated Skill/MCP rail controls.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `1631be5` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
