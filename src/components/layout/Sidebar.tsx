@@ -9,6 +9,7 @@ import {
   Hammer,
   Cloud,
   MessageSquare,
+  Network,
   Moon,
   Sun,
 } from "lucide-react";
@@ -20,6 +21,7 @@ const navItems = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/providers", label: "模型接入", icon: Cloud },
   { to: "/playground", label: "Playground", icon: MessageSquare },
+  { to: "/unified", label: "Unified API", icon: Network },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
   { to: "/tools", label: "实用工具", icon: Wrench },

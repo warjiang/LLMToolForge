@@ -1174,18 +1174,18 @@ export function PlaygroundPage() {
         </Badge>
       </div>
 
-      <div
+      <Card
         className={cn(
-          "grid min-h-0 flex-1 gap-3",
+          "grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] divide-y divide-border overflow-hidden shadow-geist-md lg:grid-rows-1 lg:divide-x lg:divide-y-0",
           configOpen
-            ? "xl:grid-cols-[238px_minmax(0,1fr)_300px]"
-            : "xl:grid-cols-[238px_minmax(0,1fr)]"
+            ? "lg:grid-cols-[240px_minmax(0,1fr)_300px]"
+            : "lg:grid-cols-[240px_minmax(0,1fr)]"
         )}
       >
         <SessionRail />
 
-        <Card className="flex min-h-0 flex-col overflow-hidden">
-          <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-4 py-2.5">
+        <section className="flex min-h-0 flex-col bg-background">
+          <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent">
                 <Sparkles className="h-4 w-4" />
@@ -1208,14 +1208,6 @@ export function PlaygroundPage() {
             <div className="flex items-center gap-2">
               <Button
                 size="icon-sm"
-                variant="ghost"
-                onClick={() => chat.newSession()}
-                title="新建会话"
-              >
-                <MessageSquarePlus className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon-sm"
                 variant={configOpen ? "secondary" : "ghost"}
                 onClick={() => setConfigOpen((open) => !open)}
                 title={configOpen ? "隐藏配置" : "显示配置"}
@@ -1232,8 +1224,8 @@ export function PlaygroundPage() {
             </div>
           )}
 
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
-            <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col">
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-6">
+            <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
               {chat.loading ? (
                 <MessageSkeletons />
               ) : chat.messages.length === 0 ? (
@@ -1278,22 +1270,7 @@ export function PlaygroundPage() {
             </div>
           </div>
 
-          <AnimatePresence>
-            {error && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mx-auto w-full max-w-[760px] overflow-hidden px-4"
-              >
-                <div className="mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
-                  {error}
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          <div className="border-t border-border bg-background-secondary/50 px-4 py-3">
+          <div className="shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
             <input
               ref={fileRef}
               type="file"
@@ -1302,9 +1279,23 @@ export function PlaygroundPage() {
               className="hidden"
               onChange={pickFiles}
             />
-            <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-lg border border-input bg-background shadow-geist-sm transition-[border-color,box-shadow] duration-150 ease-geist focus-within:border-ring focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mx-auto w-full max-w-[760px] overflow-hidden"
+                >
+                  <div className="mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
+                    {error}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-[16px] border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-shadow duration-150 ease-geist">
               <Textarea
-                className="max-h-40 min-h-[58px] resize-none border-0 bg-transparent px-3 py-3 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                className="h-[48px] min-h-0 max-h-28 resize-none border-0 bg-transparent px-4 py-3 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
                 placeholder="输入消息，Enter 发送，Shift+Enter 换行"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1316,7 +1307,7 @@ export function PlaygroundPage() {
                 }}
               />
               {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-2 border-t border-border px-2.5 py-2">
+                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-1">
                   {attachments.map((a) => (
                     <AttachmentPill
                       key={a.id}
@@ -1328,55 +1319,67 @@ export function PlaygroundPage() {
                   ))}
                 </div>
               )}
-              <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-2 py-2">
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  className="h-8 w-8"
-                  disabled={!settings}
-                  title="添加图片或文件"
-                  onClick={() => fileRef.current?.click()}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
-                <div className="min-w-[220px] flex-[1.5] sm:max-w-[320px]">
-                  <ComposerModelCascade
-                    options={options}
-                    currentConn={currentConn}
-                    selectedModel={selectedModel}
-                    modelsLoading={modelsLoading}
-                    disabled={!settings || options.length === 0}
-                    modelsForOption={modelsForOption}
-                    onRefresh={(connKey) => fetchModels(connKey)}
-                    onSelect={(connKey, modelId) =>
-                      updateSettings({ connKey, modelId })
+              <div className="flex items-end gap-1.5 px-2.5 py-1.5">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7"
+                    disabled={!settings}
+                    title="添加图片或文件"
+                    onClick={() => fileRef.current?.click()}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                  {settings && (
+                    <Badge
+                      variant="outline"
+                      className="h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12"
+                      title="当前沙箱模式"
+                    >
+                      <ShieldIcon className="h-3.5 w-3.5" />
+                      {SANDBOX_MODES.find((m) => m.value === settings.sandboxMode)
+                        ?.label ?? "Sandbox"}
+                    </Badge>
+                  )}
+                  <div className="w-[184px] shrink-0">
+                    <ComposerModelCascade
+                      options={options}
+                      currentConn={currentConn}
+                      selectedModel={selectedModel}
+                      modelsLoading={modelsLoading}
+                      disabled={!settings || options.length === 0}
+                      modelsForOption={modelsForOption}
+                      onRefresh={(connKey) => fetchModels(connKey)}
+                      onSelect={(connKey, modelId) =>
+                        updateSettings({ connKey, modelId })
+                      }
+                    />
+                  </div>
+                  <ComposerToolMenu
+                    icon={Boxes}
+                    label="Skills"
+                    empty="还没有可用 Skill"
+                    items={skills.items}
+                    activeIds={settings?.enabledSkillIds ?? []}
+                    onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
+                  />
+                  <ComposerToolMenu
+                    icon={Server}
+                    label="MCP"
+                    empty="还没有可用 MCP Server"
+                    items={mcp.items}
+                    activeIds={settings?.enabledMcpServerIds ?? []}
+                    onChange={(enabledMcpServerIds) =>
+                      updateSettings({ enabledMcpServerIds })
                     }
                   />
                 </div>
-                <ComposerToolMenu
-                  icon={Boxes}
-                  label="Skills"
-                  empty="还没有可用 Skill"
-                  items={skills.items}
-                  activeIds={settings?.enabledSkillIds ?? []}
-                  onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
-                />
-                <ComposerToolMenu
-                  icon={Server}
-                  label="MCP"
-                  empty="还没有可用 MCP Server"
-                  items={mcp.items}
-                  activeIds={settings?.enabledMcpServerIds ?? []}
-                  onChange={(enabledMcpServerIds) =>
-                    updateSettings({ enabledMcpServerIds })
-                  }
-                />
-                <div className="min-w-0 flex-1" />
                 {sending ? (
                   <Button
                     size="icon"
                     variant="secondary"
-                    className="h-8 w-8"
+                    className="h-8 w-8 rounded-full"
                     onClick={stop}
                     title="停止"
                   >
@@ -1386,7 +1389,7 @@ export function PlaygroundPage() {
                   <Button
                     size="icon"
                     variant="accent"
-                    className="h-8 w-8"
+                    className="h-8 w-8 rounded-full shadow-geist-md"
                     onClick={send}
                     disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
                     title="发送"
@@ -1397,7 +1400,7 @@ export function PlaygroundPage() {
               </div>
             </div>
           </div>
-        </Card>
+        </section>
 
         {configOpen && (
           <ConfigRail
@@ -1409,7 +1412,7 @@ export function PlaygroundPage() {
             onClose={() => setConfigOpen(false)}
           />
         )}
-      </div>
+      </Card>
     </div>
   );
 }
@@ -1450,45 +1453,56 @@ function SessionRail() {
   const canDeleteSession = chat.sessions.length > 1;
 
   return (
-    <Card className="flex min-h-0 flex-col overflow-hidden">
-      <div className="flex items-center justify-between border-b border-border px-3 py-3">
+    <aside className="flex min-h-0 flex-col bg-card-elevated/50">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3">
         <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
           Sessions
         </div>
-        <Button size="icon-sm" variant="ghost" onClick={() => chat.newSession()}>
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          onClick={() => chat.newSession()}
+          title="新建会话"
+          aria-label="新建会话"
+        >
           <MessageSquarePlus className="h-4 w-4" />
         </Button>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto p-2">
-        {chat.sessions.map((session) => (
-          <div key={session.id} className="group relative mb-1">
-            <button
-              className={cn(
-                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-10 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none",
-                chat.activeSessionId === session.id && "bg-secondary"
-              )}
-              onClick={() => chat.selectSession(session.id)}
+      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-2 lg:overflow-x-hidden lg:overflow-y-auto">
+        <div className="flex gap-2 lg:block">
+          {chat.sessions.map((session) => (
+            <div
+              key={session.id}
+              className="group relative min-w-[190px] lg:mb-1 lg:min-w-0"
             >
-              <span className="truncate text-label-13 font-medium">
-                {session.title}
-              </span>
-              <span className="text-label-12 text-muted-foreground">
-                {formatDate(session.updatedAt)}
-              </span>
-            </button>
-            {canDeleteSession && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="absolute right-1.5 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
-                title="删除会话"
-                onClick={() => setDeleteSessionId(session.id)}
+              <button
+                className={cn(
+                  "grid h-full w-full gap-1 rounded-sm py-2 pl-3 pr-10 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none",
+                  chat.activeSessionId === session.id && "bg-secondary"
+                )}
+                onClick={() => chat.selectSession(session.id)}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            )}
-          </div>
-        ))}
+                <span className="truncate text-label-13 font-medium">
+                  {session.title}
+                </span>
+                <span className="text-label-12 text-muted-foreground">
+                  {formatDate(session.updatedAt)}
+                </span>
+              </button>
+              {canDeleteSession && (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  className="absolute right-1.5 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+                  title="删除会话"
+                  onClick={() => setDeleteSessionId(session.id)}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
+          ))}
+        </div>
       </div>
       <ConfirmDialog
         open={!!pendingDelete}
@@ -1503,7 +1517,7 @@ function SessionRail() {
           setDeleteSessionId(null);
         }}
       />
-    </Card>
+    </aside>
   );
 }
 
@@ -1526,13 +1540,13 @@ function ConfigRail({
 }) {
   if (!settings) {
     return (
-      <Card className="flex items-center justify-center p-5 text-label-13 text-muted-foreground">
+      <aside className="flex items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
         加载会话设置…
-      </Card>
+      </aside>
     );
   }
   return (
-    <Card className="flex min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
+    <aside className="flex min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
           配置
@@ -1684,7 +1698,7 @@ function ConfigRail({
           </div>
         )}
       </RailSection>
-    </Card>
+    </aside>
   );
 }
 
@@ -1720,13 +1734,13 @@ function ComposerModelCascade({
         : "选择模型";
 
   return (
-    <div className="flex min-w-0">
+    <div className="flex min-w-0 items-center gap-1 rounded-md bg-secondary/55 p-0.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             size="sm"
-            variant="secondary"
-            className="h-8 min-w-0 flex-1 justify-start gap-2 rounded-r-none bg-secondary/40 px-2"
+            variant="ghost"
+            className="h-[26px] w-0 min-w-0 flex-1 justify-start gap-1.5 rounded-[5px] px-2 text-foreground hover:bg-background/80"
             disabled={disabled}
             title={selectedModel ? getModelFeatureTitle(selectedModel) : title}
           >
@@ -1735,7 +1749,9 @@ function ComposerModelCascade({
             ) : (
               <Sparkles className="h-3.5 w-3.5 shrink-0" />
             )}
-            <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+            <span className="min-w-0 flex-1 truncate text-left text-label-13">
+              {title}
+            </span>
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
@@ -1786,8 +1802,8 @@ function ComposerModelCascade({
       </DropdownMenu>
       <Button
         size="icon"
-        variant="secondary"
-        className="h-8 w-8 shrink-0 rounded-l-none border-l border-border bg-secondary/40"
+        variant="ghost"
+        className="h-[26px] w-[26px] shrink-0 rounded-[5px] text-muted-foreground hover:bg-background/80 hover:text-foreground"
         disabled={disabled || modelsLoading || !refreshConn}
         title={refreshConn ? `刷新 ${refreshConn.name}` : "刷新模型"}
         onClick={() => {
@@ -1826,7 +1842,7 @@ function ComposerToolMenu<T extends { id: string; name: string; description?: st
     return (
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="sm" variant="ghost" className="h-8" title={empty}>
+          <Button size="sm" variant="ghost" className="h-7 px-2" title={empty}>
             <Icon className="h-3.5 w-3.5" />
             {label}
           </Button>
@@ -1841,7 +1857,11 @@ function ComposerToolMenu<T extends { id: string; name: string; description?: st
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button size="sm" variant={activeCount > 0 ? "secondary" : "ghost"} className="h-8">
+        <Button
+          size="sm"
+          variant={activeCount > 0 ? "secondary" : "ghost"}
+          className="h-7 px-2"
+        >
           <Icon className="h-3.5 w-3.5" />
           <span>{label}</span>
           {activeCount > 0 && (
@@ -1975,6 +1995,7 @@ function ChatBubble({
   onRetry: () => void;
 }) {
   const reduce = useReducedMotion();
+  const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const canRetry = message.role === "user" || message.role === "assistant";
@@ -2000,6 +2021,22 @@ function ChatBubble({
     message.error && message.content.trim() === message.error.trim()
       ? ""
       : message.content;
+
+  useEffect(() => {
+    if (!editing) return;
+    const textarea = editTextareaRef.current;
+    if (!textarea) return;
+
+    const frame = requestAnimationFrame(() => {
+      textarea.focus();
+      const end = textarea.value.length;
+      textarea.setSelectionRange(end, end);
+      textarea.scrollTop = textarea.scrollHeight;
+    });
+
+    return () => cancelAnimationFrame(frame);
+  }, [editing, message.id]);
+
   return (
     <motion.div
       initial={reduce ? false : { opacity: 0, y: 10 }}
@@ -2025,13 +2062,17 @@ function ChatBubble({
           <Bot className="h-4 w-4" />
         )}
       </div>
-      <div className={cn("flex max-w-[82%] flex-col gap-1.5", isUser && "items-end")}>
+      <div className={cn("flex max-w-[90%] flex-col gap-1.5", isUser && "items-end")}>
         <div
           className={cn(
-            "rounded-md px-3.5 py-2.5 text-copy-14 shadow-geist-sm",
-            isUser
-              ? "rounded-tr-sm bg-accent text-accent-foreground"
-              : "rounded-tl-sm bg-secondary text-foreground"
+            "text-copy-14",
+            editing
+              ? "rounded-[14px] border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
+              : "rounded-md px-3.5 py-2.5 shadow-geist-sm",
+            !editing &&
+              (isUser
+                ? "rounded-tr-sm bg-accent text-accent-foreground"
+                : "rounded-tl-sm bg-secondary text-foreground")
           )}
         >
           {generatedImages.length > 0 && (
@@ -2066,19 +2107,20 @@ function ChatBubble({
             </div>
           )}
           {editing ? (
-            <div className="grid min-w-[min(34rem,70vw)] gap-2">
+            <div className="grid w-[min(42rem,70vw)] max-w-full gap-2">
               <Textarea
-                className="min-h-[92px] resize-y bg-background text-foreground"
+                ref={editTextareaRef}
+                className="min-h-[96px] resize-y border-0 bg-transparent px-2 py-2 text-copy-14 text-foreground shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
                 value={editingDraft}
                 onChange={(e) => onEditDraftChange(e.target.value)}
                 autoFocus
               />
-              <div className="flex justify-end gap-2">
-                <Button size="sm" variant="ghost" onClick={onCancelEdit}>
+              <div className="flex justify-end gap-1.5 border-t border-border/70 pt-1.5">
+                <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onCancelEdit}>
                   <X className="h-3.5 w-3.5" />
                   取消
                 </Button>
-                <Button size="sm" variant="accent" onClick={onSaveEdit}>
+                <Button size="sm" variant="primary" className="h-7 px-2.5" onClick={onSaveEdit}>
                   <Check className="h-3.5 w-3.5" />
                   保存并重试
                 </Button>

@@ -89,11 +89,6 @@ export default {
           foreground: "var(--warning-foreground)",
         },
         // Raw Geist palette (theme-independent)
-        blue: {
-          100: "#f0f7ff", 200: "#e9f4ff", 300: "#dfefff", 400: "#cae7ff",
-          500: "#94ccff", 600: "#48aeff", 700: "#006bff", 800: "#0059ec",
-          900: "#005ff2", 1000: "#002359",
-        },
         red: {
           100: "#ffeeef", 200: "#ffe8ea", 300: "#ffe3e4", 400: "#ffd7d6",
           500: "#ffb1b3", 600: "#ff676d", 700: "#fc0035", 800: "#ea001d",
@@ -141,7 +136,7 @@ export default {
         "geist-sm": "0px 1px 2px rgba(0,0,0,0.08)",
         "geist-md": "0px 2px 4px rgba(0,0,0,0.06), 0px 1px 2px rgba(0,0,0,0.08)",
         "geist-lg": "0px 8px 16px rgba(0,0,0,0.08), 0px 2px 4px rgba(0,0,0,0.06)",
-        "geist-focus": "0 0 0 2px var(--background), 0 0 0 4px #006bff",
+        "geist-focus": "0 0 0 1px var(--ring)",
       },
       transitionTimingFunction: {
         geist: "cubic-bezier(0.175, 0.885, 0.32, 1.1)",
@@ -159,11 +154,43 @@ export default {
           from: { opacity: "0" },
           to: { opacity: "1" },
         },
+        "modal-overlay-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
+        },
+        "modal-overlay-out": {
+          from: { opacity: "1" },
+          to: { opacity: "0" },
+        },
+        "modal-content-in": {
+          from: {
+            opacity: "0",
+            transform: "translate(-50%, -48%) scale(0.985)",
+          },
+          to: {
+            opacity: "1",
+            transform: "translate(-50%, -50%) scale(1)",
+          },
+        },
+        "modal-content-out": {
+          from: {
+            opacity: "1",
+            transform: "translate(-50%, -50%) scale(1)",
+          },
+          to: {
+            opacity: "0",
+            transform: "translate(-50%, -49%) scale(0.992)",
+          },
+        },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "fade-in": "fade-in 0.15s cubic-bezier(0.175, 0.885, 0.32, 1.1)",
+        "modal-overlay-in": "modal-overlay-in 180ms ease-out",
+        "modal-overlay-out": "modal-overlay-out 140ms ease-in",
+        "modal-content-in": "modal-content-in 220ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "modal-content-out": "modal-content-out 140ms ease-in",
       },
     },
   },
