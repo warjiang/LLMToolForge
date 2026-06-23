@@ -1,42 +1,66 @@
 import type { ComponentType, CSSProperties, ReactNode } from "react";
+import AlibabaIconColor from "@lobehub/icons/es/Alibaba/components/Color";
 import AnthropicIconMono from "@lobehub/icons/es/Anthropic/components/Mono";
+import BaichuanIconColor from "@lobehub/icons/es/Baichuan/components/Color";
+import ChatGLMIconColor from "@lobehub/icons/es/ChatGLM/components/Color";
 import ClaudeIconColor from "@lobehub/icons/es/Claude/components/Color";
 import DeepSeekIconColor from "@lobehub/icons/es/DeepSeek/components/Color";
 import DoubaoIconColor from "@lobehub/icons/es/Doubao/components/Color";
 import GeminiIconColor from "@lobehub/icons/es/Gemini/components/Color";
 import GrokIconMono from "@lobehub/icons/es/Grok/components/Mono";
 import GroqIconMono from "@lobehub/icons/es/Groq/components/Mono";
-import KimiIconColor from "@lobehub/icons/es/Kimi/components/Color";
+import HunyuanIconColor from "@lobehub/icons/es/Hunyuan/components/Color";
+import KlingIconColor from "@lobehub/icons/es/Kling/components/Color";
+import LongCatIconColor from "@lobehub/icons/es/LongCat/components/Color";
 import MetaIconColor from "@lobehub/icons/es/Meta/components/Color";
+import MinimaxIconColor from "@lobehub/icons/es/Minimax/components/Color";
 import MistralIconColor from "@lobehub/icons/es/Mistral/components/Color";
+import MoonshotIconMono from "@lobehub/icons/es/Moonshot/components/Mono";
 import NewApiIconColor from "@lobehub/icons/es/NewAPI/components/Color";
 import OllamaIconMono from "@lobehub/icons/es/Ollama/components/Mono";
 import OpenAIIconMono from "@lobehub/icons/es/OpenAI/components/Mono";
+import PerplexityIconColor from "@lobehub/icons/es/Perplexity/components/Color";
 import QwenIconColor from "@lobehub/icons/es/Qwen/components/Color";
+import SparkIconColor from "@lobehub/icons/es/Spark/components/Color";
+import StepfunIconColor from "@lobehub/icons/es/Stepfun/components/Color";
 import VolcengineIconColor from "@lobehub/icons/es/Volcengine/components/Color";
+import WenxinIconColor from "@lobehub/icons/es/Wenxin/components/Color";
+import XiaomiMiMoIconMono from "@lobehub/icons/es/XiaomiMiMo/components/Mono";
 import { Boxes, KeyRound } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { ModelInfo } from "@/lib/providers/types";
 
 type IconKey =
+  | "alibaba"
   | "anthropic"
+  | "baichuan"
   | "claude"
   | "deepseek"
   | "dmxapi"
   | "doubao"
+  | "ernie"
   | "gemini"
   | "generic"
+  | "glm"
   | "groq"
   | "grok"
+  | "hunyuan"
   | "kimi"
+  | "kling"
   | "litellm"
   | "llama"
+  | "longcat"
   | "manual"
+  | "mimo"
+  | "minimax"
   | "mistral"
   | "new-api"
   | "ollama"
   | "openai"
+  | "perplexity"
   | "qwen"
+  | "spark"
+  | "stepfun"
   | "volcengine";
 
 interface IconProps {
@@ -48,8 +72,63 @@ function normalize(value?: string | null): string {
   return (value ?? "").toLowerCase().replace(/[\s_./:]+/g, "-");
 }
 
+function includesAny(value: string, patterns: string[]): boolean {
+  return patterns.some((pattern) => value.includes(pattern));
+}
+
+function isErnie(value: string): boolean {
+  return includesAny(value, ["ernie", "wenxin", "文心", "yiyan", "baidu", "百度"]);
+}
+
+function isStepfun(value: string): boolean {
+  return (
+    value === "step" ||
+    includesAny(value, ["stepfun", "step-", "step1", "阶跃"])
+  );
+}
+
+function isSpark(value: string): boolean {
+  return (
+    value === "spar" ||
+    includesAny(value, [
+      "spark",
+      "spar-",
+      "iflytek",
+      "xfyun",
+      "xunfei",
+      "讯飞",
+      "星火",
+    ])
+  );
+}
+
+function isKling(value: string): boolean {
+  return includesAny(value, ["kling", "klingai", "kuaishou", "kwai", "快手", "可灵"]);
+}
+
+function isPerplexity(value: string): boolean {
+  return includesAny(value, ["perplexity", "pplx", "sonar"]);
+}
+
+function isAlibaba(value: string): boolean {
+  return includesAny(value, ["happyhorse", "alibaba", "aliyun", "dashscope", "阿里"]);
+}
+
+function isHunyuan(value: string): boolean {
+  return includesAny(value, ["hunyuan", "混元", "tencent-hunyuan", "腾讯混元"]);
+}
+
+function isBaichuan(value: string): boolean {
+  return includesAny(value, ["baichuan", "百川"]);
+}
+
 function providerIconKey(provider?: string | null): IconKey {
   const value = normalize(provider);
+  if (isPerplexity(value)) return "perplexity";
+  if (isAlibaba(value)) return "alibaba";
+  if (isHunyuan(value)) return "hunyuan";
+  if (isBaichuan(value)) return "baichuan";
+  if (isSpark(value)) return "spark";
   if (value.includes("volc") || value.includes("doubao") || value.includes("ark")) {
     return "volcengine";
   }
@@ -60,7 +139,23 @@ function providerIconKey(provider?: string | null): IconKey {
   if (value.includes("anthropic") || value.includes("claude")) return "anthropic";
   if (value.includes("google") || value.includes("gemini")) return "gemini";
   if (value.includes("deepseek")) return "deepseek";
+  if (
+    value.includes("zhipu") ||
+    value.includes("chatglm") ||
+    value.includes("glm") ||
+    value.includes("z-ai") ||
+    value === "zai"
+  ) {
+    return "glm";
+  }
   if (value.includes("mistral")) return "mistral";
+  if (value.includes("longcat")) return "longcat";
+  if (value.includes("xiaomi-mimo") || value.includes("mimo")) return "mimo";
+  if (value.includes("minimax") || value.includes("abab")) return "minimax";
+  if (value.includes("moonshot") || value.includes("kimi")) return "kimi";
+  if (isErnie(value)) return "ernie";
+  if (isStepfun(value)) return "stepfun";
+  if (isKling(value)) return "kling";
   if (value.includes("groq")) return "groq";
   if (value.includes("ollama")) return "ollama";
   if (value.includes("custom") || value.includes("manual")) return "manual";
@@ -80,9 +175,24 @@ function modelIconKey(model?: ModelInfo | string | null): IconKey {
   if (value.includes("anthropic")) return "anthropic";
   if (value.includes("gemini") || value.includes("google")) return "gemini";
   if (value.includes("deepseek")) return "deepseek";
+  if (isPerplexity(value)) return "perplexity";
+  if (isHunyuan(value)) return "hunyuan";
+  if (isBaichuan(value)) return "baichuan";
+  if (
+    value.includes("chatglm") ||
+    value.includes("zhipu") ||
+    value.includes("glm-") ||
+    value.includes("glm4") ||
+    value.includes("glm5") ||
+    value.includes("z-ai") ||
+    value.includes("zai")
+  ) {
+    return "glm";
+  }
   if (value.includes("qwen") || value.includes("qwq") || value.includes("tongyi")) {
     return "qwen";
   }
+  if (isAlibaba(value)) return "alibaba";
   if (
     value.includes("doubao") ||
     value.includes("seedream") ||
@@ -91,10 +201,33 @@ function modelIconKey(model?: ModelInfo | string | null): IconKey {
   ) {
     return "doubao";
   }
-  if (value.includes("moonshot") || value.includes("kimi")) return "kimi";
+  if (
+    value.includes("moonshot") ||
+    value.includes("kimi") ||
+    value.includes("k2-instruct") ||
+    value.includes("kimi-k2")
+  ) {
+    return "kimi";
+  }
   if (value.includes("mistral") || value.includes("mixtral") || value.includes("codestral")) {
     return "mistral";
   }
+  if (value.includes("longcat")) return "longcat";
+  if (
+    value.includes("xiaomi-mimo") ||
+    value.includes("mimo-") ||
+    value.includes("/mimo") ||
+    value.includes("-mimo")
+  ) {
+    return "mimo";
+  }
+  if (value.includes("minimax") || value.includes("abab") || value.includes("hailuo")) {
+    return "minimax";
+  }
+  if (isErnie(value)) return "ernie";
+  if (isStepfun(value)) return "stepfun";
+  if (isSpark(value)) return "spark";
+  if (isKling(value)) return "kling";
   if (value.includes("llama") || value.includes("meta")) return "llama";
   if (value.includes("grok") || value.includes("xai")) return "grok";
   if (value.includes("groq")) return "groq";
@@ -271,6 +404,10 @@ function GeminiIcon({ className }: IconProps) {
   );
 }
 
+function GlmIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="GLM" bg="#3859ff" />;
+}
+
 function VolcengineIcon({ className }: IconProps) {
   return (
     <SvgShell className={className}>
@@ -337,7 +474,43 @@ function DoubaoIcon({ className }: IconProps) {
 }
 
 function KimiIcon({ className }: IconProps) {
-  return <TextIcon className={className} letters="K" bg="#111827" />;
+  return <TextIcon className={className} letters="MS" bg="#111827" />;
+}
+
+function MinimaxIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="MM" bg="#2563eb" />;
+}
+
+function AlibabaIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="AL" bg="#ff6a00" />;
+}
+
+function PerplexityIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="PX" bg="#0f766e" />;
+}
+
+function HunyuanIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="HY" bg="#2563eb" />;
+}
+
+function BaichuanIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="BC" bg="#111827" />;
+}
+
+function ErnieIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="EN" bg="#2563eb" />;
+}
+
+function StepfunIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="ST" bg="#111827" />;
+}
+
+function SparkIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="SP" bg="#6d28d9" />;
+}
+
+function KlingIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="KL" bg="#111827" />;
 }
 
 function MistralIcon({ className }: IconProps) {
@@ -357,6 +530,14 @@ function LlamaIcon({ className }: IconProps) {
       <path d="M5.3 12c2.2-4.2 5.1-4.3 7.1 0 2-4.3 4.9-4.2 7.1 0-2.2 4.2-5.1 4.3-7.1 0-2 4.3-4.9 4.2-7.1 0Z" stroke="#2563eb" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
     </SvgShell>
   );
+}
+
+function LongCatIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="LC" bg="#f97316" />;
+}
+
+function MimoIcon({ className }: IconProps) {
+  return <TextIcon className={className} letters="MI" bg="#111111" />;
 }
 
 function GrokIcon({ className }: IconProps) {
@@ -380,41 +561,65 @@ function GenericIcon({ className }: IconProps) {
 }
 
 const LOBE_ICONS: Partial<Record<IconKey, LobeIconComponent>> = {
+  alibaba: AlibabaIconColor,
   anthropic: AnthropicIconMono,
+  baichuan: BaichuanIconColor,
   claude: ClaudeIconColor,
   deepseek: DeepSeekIconColor,
   doubao: DoubaoIconColor,
+  ernie: WenxinIconColor,
   gemini: GeminiIconColor,
+  glm: ChatGLMIconColor,
   groq: GroqIconMono,
   grok: GrokIconMono,
-  kimi: KimiIconColor,
+  hunyuan: HunyuanIconColor,
+  kimi: MoonshotIconMono,
+  kling: KlingIconColor,
   llama: MetaIconColor,
+  longcat: LongCatIconColor,
+  mimo: XiaomiMiMoIconMono,
+  minimax: MinimaxIconColor,
   mistral: MistralIconColor,
   "new-api": NewApiIconColor,
   ollama: OllamaIconMono,
   openai: OpenAIIconMono,
+  perplexity: PerplexityIconColor,
   qwen: QwenIconColor,
+  spark: SparkIconColor,
+  stepfun: StepfunIconColor,
   volcengine: VolcengineIconColor,
 };
 
 const LOCAL_ICONS: Record<IconKey, ComponentType<IconProps>> = {
+  alibaba: AlibabaIcon,
   anthropic: AnthropicIcon,
+  baichuan: BaichuanIcon,
   claude: AnthropicIcon,
   deepseek: DeepSeekIcon,
   dmxapi: DmxIcon,
   doubao: DoubaoIcon,
+  ernie: ErnieIcon,
   gemini: GeminiIcon,
   generic: GenericIcon,
+  glm: GlmIcon,
   groq: GroqIcon,
   grok: GrokIcon,
+  hunyuan: HunyuanIcon,
   kimi: KimiIcon,
+  kling: KlingIcon,
   litellm: LiteLLMIcon,
   llama: LlamaIcon,
+  longcat: LongCatIcon,
   manual: ManualIcon,
+  mimo: MimoIcon,
+  minimax: MinimaxIcon,
   mistral: MistralIcon,
   "new-api": NewApiIcon,
   ollama: OllamaIcon,
   openai: OpenAIIcon,
+  perplexity: PerplexityIcon,
   qwen: QwenIcon,
+  spark: SparkIcon,
+  stepfun: StepfunIcon,
   volcengine: VolcengineIcon,
 };

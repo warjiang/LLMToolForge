@@ -26,6 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { TypingDots } from "@/components/common/Reveal";
 import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
@@ -50,6 +51,10 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
@@ -386,6 +391,25 @@ export function PlaygroundPage() {
     if (keyConn) return manualModels;
     return [];
   }, [volcCred, gwConn, keyConn, manualModels]);
+  const modelsForOption = (option: ConnOption): ModelInfo[] => {
+    if (option.key === settings?.connKey) return models;
+    if (option.kind === "volc") {
+      return (
+        volc.items.find((c) => `volc:${c.id}` === option.key)?.models ?? []
+      );
+    }
+    if (option.kind === "gateway") {
+      return (
+        gateway.items.find((c) => `gw:${c.id}` === option.key)?.models ?? []
+      );
+    }
+    const conn = apiKeys.items.find((c) => `key:${c.id}` === option.key);
+    return (conn?.models ?? []).map((id) => ({
+      id,
+      name: id,
+      provider: "manual",
+    }));
+  };
   const selectedModel =
     models.find((m) => m.id === settings?.modelId) ?? null;
   const currentConn = options.find((o) => o.key === connKey) ?? null;
@@ -416,41 +440,55 @@ export function PlaygroundPage() {
     chat.saveSettings(patch);
   };
 
-  const fetchModels = async () => {
+  const fetchModels = async (targetConnKey = settings?.connKey ?? options[0]?.key) => {
+    if (!targetConnKey) return;
     setError(null);
     setModelsLoading(true);
     try {
       let list: ModelInfo[] = [];
-      if (volcCred) {
+      const targetVolc = targetConnKey.startsWith("volc:")
+        ? volc.items.find((c) => `volc:${c.id}` === targetConnKey) ?? null
+        : null;
+      const targetGateway = targetConnKey.startsWith("gw:")
+        ? gateway.items.find((c) => `gw:${c.id}` === targetConnKey) ?? null
+        : null;
+      const targetKey = targetConnKey.startsWith("key:")
+        ? apiKeys.items.find((c) => `key:${c.id}` === targetConnKey) ?? null
+        : null;
+
+      if (targetVolc) {
         list = await listEndpoints({
-          accessKey: volcCred.accessKey,
-          secretKey: volcCred.secretKey,
-          region: volcCred.region,
-          project: volcCred.project,
+          accessKey: targetVolc.accessKey,
+          secretKey: targetVolc.secretKey,
+          region: targetVolc.region,
+          project: targetVolc.project,
         });
-        await volc.edit(volcCred.id, { models: list });
-      } else if (gwConn) {
-        const adapter = getAdapter(gwConn.provider);
-        if (!adapter) throw new Error(`未找到适配器: ${gwConn.provider}`);
+        await volc.edit(targetVolc.id, { models: list });
+      } else if (targetGateway) {
+        const adapter = getAdapter(targetGateway.provider);
+        if (!adapter) throw new Error(`未找到适配器: ${targetGateway.provider}`);
         list = await adapter.listModels({
-          baseUrl: gwConn.baseUrl,
-          apiKey: gwConn.apiKey,
+          baseUrl: targetGateway.baseUrl,
+          apiKey: targetGateway.apiKey,
         });
-        await gateway.edit(gwConn.id, { models: list });
-      } else if (keyConn) {
-        if (!keyConn.baseUrl) throw new Error("该 Key 未配置 Base URL，无法拉取模型");
+        await gateway.edit(targetGateway.id, { models: list });
+      } else if (targetKey) {
+        if (!targetKey.baseUrl) throw new Error("该 Key 未配置 Base URL，无法拉取模型");
         const adapter = getAdapter("manual")!;
         list = await adapter.listModels({
-          baseUrl: keyConn.baseUrl,
-          apiKey: keyConn.key,
+          baseUrl: targetKey.baseUrl,
+          apiKey: targetKey.key,
         });
         const mergedIds = [
-          ...new Set([...(keyConn.models ?? []), ...list.map((m) => m.id)]),
+          ...new Set([...(targetKey.models ?? []), ...list.map((m) => m.id)]),
         ];
-        await apiKeys.edit(keyConn.id, { models: mergedIds });
+        await apiKeys.edit(targetKey.id, { models: mergedIds });
       }
       setModels(list);
-      if (list.length > 0) updateSettings({ modelId: list[0].id });
+      updateSettings({
+        connKey: targetConnKey,
+        modelId: list[0]?.id ?? "",
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "拉取模型失败");
     } finally {
@@ -1301,67 +1339,20 @@ export function PlaygroundPage() {
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <div className="min-w-[132px] flex-1 sm:max-w-[180px] sm:flex-none">
-                  <Select
-                    value={settings?.connKey ?? ""}
-                    onValueChange={(connKey) => updateSettings({ connKey })}
+                <div className="min-w-[220px] flex-[1.5] sm:max-w-[320px]">
+                  <ComposerModelCascade
+                    options={options}
+                    currentConn={currentConn}
+                    selectedModel={selectedModel}
+                    modelsLoading={modelsLoading}
                     disabled={!settings || options.length === 0}
-                  >
-                    <SelectTrigger className="h-8 bg-secondary/40">
-                      <SelectValue placeholder="选择连接" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {options.map((o) => (
-                        <SelectItem key={o.key} value={o.key}>
-                          <ProviderIconLabel provider={o.provider}>
-                            <span className="min-w-0 truncate">{o.name}</span>
-                          </ProviderIconLabel>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    modelsForOption={modelsForOption}
+                    onRefresh={(connKey) => fetchModels(connKey)}
+                    onSelect={(connKey, modelId) =>
+                      updateSettings({ connKey, modelId })
+                    }
+                  />
                 </div>
-                <div className="min-w-[150px] flex-[1.2]">
-                  <Select
-                    value={settings?.modelId ?? ""}
-                    onValueChange={(modelId) => updateSettings({ modelId })}
-                    disabled={!settings || models.length === 0}
-                  >
-                    <SelectTrigger
-                      className="h-8 bg-secondary/40"
-                      title={getModelFeatureTitle(selectedModel)}
-                    >
-                      <SelectValue placeholder="先拉取模型" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {models.map((m) => (
-                        <SelectItem key={m.id} value={m.id}>
-                          <ModelIconLabel
-                            model={m}
-                            className="max-w-full"
-                            title={getModelFeatureTitle(m)}
-                          >
-                            <span className="truncate">{m.name}</span>
-                          </ModelIconLabel>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  className="h-8 w-8"
-                  onClick={fetchModels}
-                  disabled={modelsLoading || !currentConn}
-                  title="刷新模型"
-                >
-                  {modelsLoading ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  ) : (
-                    <RefreshCcw className="h-3.5 w-3.5" />
-                  )}
-                </Button>
                 <ComposerToolMenu
                   icon={Boxes}
                   label="Skills"
@@ -1454,6 +1445,10 @@ function MessageSkeletons() {
 
 function SessionRail() {
   const chat = useChatStore();
+  const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
+  const pendingDelete = chat.sessions.find((session) => session.id === deleteSessionId);
+  const canDeleteSession = chat.sessions.length > 1;
+
   return (
     <Card className="flex min-h-0 flex-col overflow-hidden">
       <div className="flex items-center justify-between border-b border-border px-3 py-3">
@@ -1466,35 +1461,48 @@ function SessionRail() {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {chat.sessions.map((session) => (
-          <button
-            key={session.id}
-            className={cn(
-              "group mb-1 grid w-full gap-1 rounded-sm px-3 py-2 text-left transition-colors hover:bg-secondary",
-              chat.activeSessionId === session.id && "bg-secondary"
+          <div key={session.id} className="group relative mb-1">
+            <button
+              className={cn(
+                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-10 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none",
+                chat.activeSessionId === session.id && "bg-secondary"
+              )}
+              onClick={() => chat.selectSession(session.id)}
+            >
+              <span className="truncate text-label-13 font-medium">
+                {session.title}
+              </span>
+              <span className="text-label-12 text-muted-foreground">
+                {formatDate(session.updatedAt)}
+              </span>
+            </button>
+            {canDeleteSession && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="absolute right-1.5 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
+                title="删除会话"
+                onClick={() => setDeleteSessionId(session.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             )}
-            onClick={() => chat.selectSession(session.id)}
-          >
-            <span className="truncate text-label-13 font-medium">
-              {session.title}
-            </span>
-            <span className="text-label-12 text-muted-foreground">
-              {formatDate(session.updatedAt)}
-            </span>
-          </button>
+          </div>
         ))}
       </div>
-      <div className="border-t border-border p-2">
-        <Button
-          className="w-full"
-          variant="ghost"
-          size="sm"
-          disabled={!chat.activeSessionId || chat.sessions.length <= 1}
-          onClick={() => chat.activeSessionId && chat.deleteSession(chat.activeSessionId)}
-        >
-          <Trash2 className="h-4 w-4" />
-          删除当前会话
-        </Button>
-      </div>
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setDeleteSessionId(null);
+        }}
+        title="删除会话"
+        description={`确定删除「${pendingDelete?.title ?? "该会话"}」吗？此操作会删除会话中的所有消息，无法撤销。`}
+        confirmLabel="删除"
+        onConfirm={() => {
+          if (pendingDelete) void chat.deleteSession(pendingDelete.id);
+          setDeleteSessionId(null);
+        }}
+      />
     </Card>
   );
 }
@@ -1684,6 +1692,118 @@ function toggleId(ids: string[], id: string): string[] {
   return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
 }
 
+function ComposerModelCascade({
+  options,
+  currentConn,
+  selectedModel,
+  modelsLoading,
+  disabled,
+  modelsForOption,
+  onRefresh,
+  onSelect,
+}: {
+  options: ConnOption[];
+  currentConn: ConnOption | null;
+  selectedModel: ModelInfo | null;
+  modelsLoading: boolean;
+  disabled: boolean;
+  modelsForOption: (option: ConnOption) => ModelInfo[];
+  onRefresh: (connKey: string) => void;
+  onSelect: (connKey: string, modelId: string) => void;
+}) {
+  const refreshConn = currentConn ?? options[0] ?? null;
+  const title =
+    currentConn && selectedModel
+      ? `${currentConn.name} / ${selectedModel.name}`
+      : currentConn
+        ? `${currentConn.name} / 先选择模型`
+        : "选择模型";
+
+  return (
+    <div className="flex min-w-0">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            size="sm"
+            variant="secondary"
+            className="h-8 min-w-0 flex-1 justify-start gap-2 rounded-r-none bg-secondary/40 px-2"
+            disabled={disabled}
+            title={selectedModel ? getModelFeatureTitle(selectedModel) : title}
+          >
+            {selectedModel ? (
+              <ModelIcon model={selectedModel} className="h-3.5 w-3.5 shrink-0" />
+            ) : (
+              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+            )}
+            <span className="min-w-0 flex-1 truncate text-left">{title}</span>
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-72">
+          <DropdownMenuLabel>模型配置</DropdownMenuLabel>
+          {options.map((option) => {
+            const optionModels = modelsForOption(option);
+            const isActiveConn = currentConn?.key === option.key;
+            return (
+              <DropdownMenuSub key={option.key}>
+                <DropdownMenuSubTrigger>
+                  <ProviderIconLabel
+                    provider={option.provider}
+                    className="min-w-0 flex-1"
+                    title={option.name}
+                  >
+                    <span className="min-w-0 truncate">{option.name}</span>
+                  </ProviderIconLabel>
+                  {isActiveConn && (
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                  )}
+                </DropdownMenuSubTrigger>
+                <DropdownMenuSubContent className="max-h-80 w-80 overflow-y-auto">
+                  {optionModels.length === 0 ? (
+                    <DropdownMenuItem disabled>请到模型接入刷新模型</DropdownMenuItem>
+                  ) : (
+                    optionModels.map((model) => {
+                      const active =
+                        isActiveConn && selectedModel?.id === model.id;
+                      return (
+                        <DropdownMenuItem
+                          key={model.id}
+                          title={getModelFeatureTitle(model)}
+                          onSelect={() => onSelect(option.key, model.id)}
+                        >
+                          <ModelIconLabel model={model} className="min-w-0 flex-1">
+                            <span className="min-w-0 truncate">{model.name}</span>
+                          </ModelIconLabel>
+                          {active && <Check className="h-4 w-4 text-accent" />}
+                        </DropdownMenuItem>
+                      );
+                    })
+                  )}
+                </DropdownMenuSubContent>
+              </DropdownMenuSub>
+            );
+          })}
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <Button
+        size="icon"
+        variant="secondary"
+        className="h-8 w-8 shrink-0 rounded-l-none border-l border-border bg-secondary/40"
+        disabled={disabled || modelsLoading || !refreshConn}
+        title={refreshConn ? `刷新 ${refreshConn.name}` : "刷新模型"}
+        onClick={() => {
+          if (refreshConn) onRefresh(refreshConn.key);
+        }}
+      >
+        {modelsLoading ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <RefreshCcw className="h-3.5 w-3.5" />
+        )}
+      </Button>
+    </div>
+  );
+}
+
 function ComposerToolMenu<T extends { id: string; name: string; description?: string; enabled?: boolean }>({
   icon: Icon,
   label,
@@ -1758,7 +1878,6 @@ function ComposerToolMenu<T extends { id: string; name: string; description?: st
     </DropdownMenu>
   );
 }
-
 function RailSection({
   icon: Icon,
   title,
