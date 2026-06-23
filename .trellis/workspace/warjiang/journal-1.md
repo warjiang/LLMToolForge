@@ -38,3 +38,36 @@ Redesigned the Playground workspace around a compact chat surface, moved provide
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Add provider and model icons
+
+**Date**: 2026-06-23
+**Task**: Add provider and model icons
+**Branch**: `fix/0623`
+
+### Summary
+
+Added a reusable provider/model icon component with local SVG marks, wired icons into Playground provider and model selectors, provider tabs, gateway and Volcengine model lists, and manual API key flows; documented the shared icon mapping convention.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2f9ea99` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
