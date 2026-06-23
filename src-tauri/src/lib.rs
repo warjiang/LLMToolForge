@@ -122,14 +122,14 @@ fn sandbox_backend(mode: &str) -> &'static str {
     }
 }
 
-fn build_platform_command(req: &SandboxRunRequest, cwd: &str) -> Result<Command, String> {
+fn build_platform_command(req: &SandboxRunRequest, _cwd: &str) -> Result<Command, String> {
     #[cfg(target_os = "macos")]
     {
         if req.sandbox_mode != "danger-full-access" {
             let mut command = Command::new("sandbox-exec");
             command
                 .arg("-p")
-                .arg(seatbelt_profile(&req.sandbox_mode, cwd));
+                .arg(seatbelt_profile(&req.sandbox_mode, _cwd));
             command.arg(&req.command).args(&req.args);
             return Ok(command);
         }
