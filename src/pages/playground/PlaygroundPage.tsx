@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
   Bot,
@@ -16,7 +15,7 @@ import {
   Pencil,
   Plus,
   Play,
-  RefreshCw,
+  RefreshCcw,
   RotateCcw,
   Send,
   Server,
@@ -46,6 +45,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
@@ -57,7 +63,7 @@ import {
   useSkillStore,
   useMcpStore,
 } from "@/store";
-import { cn, formatDate, isTauri, uid } from "@/lib/utils";
+import { cn, formatDate, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
@@ -90,8 +96,6 @@ import {
   type VolcCredential,
   type GatewayConnection,
   type ApiKey,
-  type Skill,
-  type McpServer,
 } from "@/types";
 
 interface ConnOption {
@@ -99,15 +103,6 @@ interface ConnOption {
   name: string;
   kind: "volc" | "gateway" | "manual";
   provider: string;
-}
-
-interface SandboxRunResponse {
-  stdout: string;
-  stderr: string;
-  exitCode?: number;
-  timedOut: boolean;
-  durationMs: number;
-  sandboxBackend: string;
 }
 
 const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
@@ -286,7 +281,6 @@ export function PlaygroundPage() {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [sending, setSending] = useState(false);
-  const [runningSkillId, setRunningSkillId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
@@ -395,11 +389,11 @@ export function PlaygroundPage() {
   const selectedModel =
     models.find((m) => m.id === settings?.modelId) ?? null;
   const currentConn = options.find((o) => o.key === connKey) ?? null;
-  const activeSkills = skills.items.filter((s) =>
-    settings?.enabledSkillIds.includes(s.id)
+  const activeSkills = skills.items.filter(
+    (s) => s.enabled !== false && settings?.enabledSkillIds.includes(s.id)
   );
-  const activeMcp = mcp.items.filter((s) =>
-    settings?.enabledMcpServerIds.includes(s.id)
+  const activeMcp = mcp.items.filter(
+    (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
   );
   const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
 
@@ -954,7 +948,7 @@ export function PlaygroundPage() {
             title: call.function.name,
             argumentsJson: call.function.arguments || "{}",
             resultText:
-              "模型已发起工具调用；Playground 已记录该调用，Skill 可通过右侧手动执行。",
+              "模型已发起工具调用；Playground 已记录该调用。",
             status: "success",
             startedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
@@ -1115,86 +1109,6 @@ export function PlaygroundPage() {
     }
   };
 
-  const runSkill = async (skill: Skill) => {
-    if (!settings || !chat.activeSessionId || runningSkillId) return;
-    setRunningSkillId(skill.id);
-    setError(null);
-    const startedAt = new Date().toISOString();
-    const commandText =
-      skill.content?.trim() ||
-      `printf '%s\\n' ${JSON.stringify(skill.description || skill.name)}`;
-    try {
-      const res = isTauri()
-        ? await invoke<SandboxRunResponse>("run_sandboxed_command", {
-            req: {
-              command: "/bin/sh",
-              args: ["-lc", commandText],
-              cwd: undefined,
-              env: {},
-              sandboxMode: settings.sandboxMode,
-              timeoutMs: 30_000,
-            },
-          })
-        : ({
-            stdout: "浏览器模式不支持沙箱执行，请在桌面应用中运行。",
-            stderr: "",
-            exitCode: 0,
-            timedOut: false,
-            durationMs: 0,
-            sandboxBackend: "browser",
-          } satisfies SandboxRunResponse);
-      const completedAt = new Date().toISOString();
-      const status = res.timedOut || (res.exitCode ?? 0) !== 0 ? "error" : "success";
-      const output = res.stdout || res.stderr || "(no output)";
-      const toolMessage = await chat.addMessage({
-        role: "tool",
-        content: output,
-        parts: [
-          {
-            id: uid("part"),
-            kind: "tool_result",
-            text: output,
-            sortOrder: 0,
-          },
-        ],
-      });
-      const tool = await chat.recordToolCall({
-        sessionId: chat.activeSessionId,
-        messageId: toolMessage.id,
-        source: "skill",
-        toolName: safeToolName("skill", skill.name || skill.id),
-        title: skill.name,
-        argumentsJson: JSON.stringify({ command: commandText }),
-        resultText: res.stdout || res.stderr,
-        status,
-        startedAt,
-        completedAt,
-        durationMs: res.durationMs,
-        error: status === "error" ? res.stderr || "Skill 执行失败" : undefined,
-      });
-      await chat.recordSandboxRun({
-        toolCallId: tool.id,
-        sessionId: chat.activeSessionId,
-        command: "/bin/sh",
-        args: ["-lc", commandText],
-        envKeys: [],
-        sandboxMode: settings.sandboxMode,
-        stdout: res.stdout,
-        stderr: res.stderr,
-        exitCode: res.exitCode,
-        status,
-        startedAt,
-        completedAt,
-        durationMs: res.durationMs,
-        error: res.timedOut ? "执行超时" : undefined,
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Skill 执行失败");
-    } finally {
-      setRunningSkillId(null);
-    }
-  };
-
   if (loaded && options.length === 0) {
     return (
       <div>
@@ -1280,46 +1194,50 @@ export function PlaygroundPage() {
             </div>
           )}
 
-          <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-5">
-            {chat.loading ? (
-              <MessageSkeletons />
-            ) : chat.messages.length === 0 ? (
-              <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                  <Bot className="h-5 w-5" />
+          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-6">
+            <div className="mx-auto flex min-h-full w-full max-w-[760px] flex-col">
+              {chat.loading ? (
+                <MessageSkeletons />
+              ) : chat.messages.length === 0 ? (
+                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
+                    <Bot className="h-5 w-5" />
+                  </div>
+                  <div className="text-label-13 text-muted-foreground">
+                    发送一条消息开始持久化会话
+                  </div>
                 </div>
-                <div className="text-label-13 text-muted-foreground">
-                  发送一条消息开始持久化会话
+              ) : (
+                <div className="space-y-5">
+                  <AnimatePresence initial={false}>
+                    {chat.messages.map((m, i) => (
+                      <ChatBubble
+                        key={m.id}
+                        message={m}
+                        typing={m.status === "pending" && !m.content}
+                        streaming={sending && i === chat.messages.length - 1}
+                        editing={editingMessageId === m.id}
+                        editingDraft={editingDraft}
+                        onEditDraftChange={setEditingDraft}
+                        onStartEdit={() => startEditingMessage(m)}
+                        onCancelEdit={() => {
+                          setEditingMessageId(null);
+                          setEditingDraft("");
+                        }}
+                        onSaveEdit={() => saveEditedMessage(m)}
+                        onDelete={() => deleteFromMessage(m)}
+                        onRetry={() =>
+                          m.role === "assistant"
+                            ? retryFromAssistantMessage(m)
+                            : retryFromUserMessage(m)
+                        }
+                        actionsDisabled={sending}
+                      />
+                    ))}
+                  </AnimatePresence>
                 </div>
-              </div>
-            ) : (
-              <AnimatePresence initial={false}>
-                {chat.messages.map((m, i) => (
-                  <ChatBubble
-                    key={m.id}
-                    message={m}
-                    typing={m.status === "pending" && !m.content}
-                    streaming={sending && i === chat.messages.length - 1}
-                    editing={editingMessageId === m.id}
-                    editingDraft={editingDraft}
-                    onEditDraftChange={setEditingDraft}
-                    onStartEdit={() => startEditingMessage(m)}
-                    onCancelEdit={() => {
-                      setEditingMessageId(null);
-                      setEditingDraft("");
-                    }}
-                    onSaveEdit={() => saveEditedMessage(m)}
-                    onDelete={() => deleteFromMessage(m)}
-                    onRetry={() =>
-                      m.role === "assistant"
-                        ? retryFromAssistantMessage(m)
-                        : retryFromUserMessage(m)
-                    }
-                    actionsDisabled={sending}
-                  />
-                ))}
-              </AnimatePresence>
-            )}
+              )}
+            </div>
           </div>
 
           <AnimatePresence>
@@ -1328,7 +1246,7 @@ export function PlaygroundPage() {
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                className="mx-5 overflow-hidden"
+                className="mx-auto w-full max-w-[760px] overflow-hidden px-4"
               >
                 <div className="mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
                   {error}
@@ -1337,21 +1255,7 @@ export function PlaygroundPage() {
             )}
           </AnimatePresence>
 
-          {attachments.length > 0 && (
-            <div className="mx-5 mb-2 flex flex-wrap gap-2">
-              {attachments.map((a) => (
-                <AttachmentPill
-                  key={a.id}
-                  attachment={a}
-                  onRemove={() =>
-                    setAttachments((prev) => prev.filter((x) => x.id !== a.id))
-                  }
-                />
-              ))}
-            </div>
-          )}
-
-          <div className="border-t border-border bg-background-secondary/70 p-3">
+          <div className="border-t border-border bg-background-secondary/50 px-4 py-3">
             <input
               ref={fileRef}
               type="file"
@@ -1360,77 +1264,9 @@ export function PlaygroundPage() {
               className="hidden"
               onChange={pickFiles}
             />
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <div className="min-w-[180px] flex-1 sm:flex-none">
-                <Select
-                  value={settings?.connKey ?? ""}
-                  onValueChange={(connKey) => updateSettings({ connKey })}
-                  disabled={!settings || options.length === 0}
-                >
-                  <SelectTrigger className="h-8 bg-background">
-                    <SelectValue placeholder="选择连接" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {options.map((o) => (
-                      <SelectItem key={o.key} value={o.key}>
-                        <ProviderIconLabel provider={o.provider}>
-                          <span className="min-w-0 truncate">{o.name}</span>
-                        </ProviderIconLabel>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="min-w-[200px] flex-[1.2]">
-                <Select
-                  value={settings?.modelId ?? ""}
-                  onValueChange={(modelId) => updateSettings({ modelId })}
-                  disabled={!settings || models.length === 0}
-                >
-                  <SelectTrigger
-                    className="h-8 bg-background"
-                    title={getModelFeatureTitle(selectedModel)}
-                  >
-                    <SelectValue placeholder="先拉取模型" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {models.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        <ModelIconLabel model={m} className="max-w-full" title={getModelFeatureTitle(m)}>
-                          <span className="truncate">{m.name}</span>
-                        </ModelIconLabel>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={fetchModels}
-                disabled={modelsLoading || !currentConn}
-                title="拉取模型"
-              >
-                {modelsLoading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-3.5 w-3.5" />
-                )}
-                拉取
-              </Button>
-            </div>
-            <div className="flex items-end gap-2">
-              <Button
-                size="icon"
-                variant="secondary"
-                disabled={!settings}
-                title="添加图片或文件"
-                onClick={() => fileRef.current?.click()}
-              >
-                <Plus className="h-4 w-4" />
-              </Button>
+            <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-lg border border-input bg-background shadow-geist-sm transition-[border-color,box-shadow] duration-150 ease-geist focus-within:border-ring focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background">
               <Textarea
-                className="min-h-[44px] flex-1 resize-none bg-background"
+                className="max-h-40 min-h-[58px] resize-none border-0 bg-transparent px-3 py-3 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                 placeholder="输入消息，Enter 发送，Shift+Enter 换行"
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1441,21 +1277,133 @@ export function PlaygroundPage() {
                   }
                 }}
               />
-              {sending ? (
-                <Button size="icon" variant="secondary" onClick={stop} title="停止">
-                  <X className="h-4 w-4" />
-                </Button>
-              ) : (
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2 border-t border-border px-2.5 py-2">
+                  {attachments.map((a) => (
+                    <AttachmentPill
+                      key={a.id}
+                      attachment={a}
+                      onRemove={() =>
+                        setAttachments((prev) => prev.filter((x) => x.id !== a.id))
+                      }
+                    />
+                  ))}
+                </div>
+              )}
+              <div className="flex flex-wrap items-center gap-1.5 border-t border-border px-2 py-2">
                 <Button
                   size="icon"
-                  variant="accent"
-                  onClick={send}
-                  disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
-                  title="发送"
+                  variant="ghost"
+                  className="h-8 w-8"
+                  disabled={!settings}
+                  title="添加图片或文件"
+                  onClick={() => fileRef.current?.click()}
                 >
-                  <Send className="h-4 w-4" />
+                  <Plus className="h-4 w-4" />
                 </Button>
-              )}
+                <div className="min-w-[132px] flex-1 sm:max-w-[180px] sm:flex-none">
+                  <Select
+                    value={settings?.connKey ?? ""}
+                    onValueChange={(connKey) => updateSettings({ connKey })}
+                    disabled={!settings || options.length === 0}
+                  >
+                    <SelectTrigger className="h-8 bg-secondary/40">
+                      <SelectValue placeholder="选择连接" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {options.map((o) => (
+                        <SelectItem key={o.key} value={o.key}>
+                          <ProviderIconLabel provider={o.provider}>
+                            <span className="min-w-0 truncate">{o.name}</span>
+                          </ProviderIconLabel>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="min-w-[150px] flex-[1.2]">
+                  <Select
+                    value={settings?.modelId ?? ""}
+                    onValueChange={(modelId) => updateSettings({ modelId })}
+                    disabled={!settings || models.length === 0}
+                  >
+                    <SelectTrigger
+                      className="h-8 bg-secondary/40"
+                      title={getModelFeatureTitle(selectedModel)}
+                    >
+                      <SelectValue placeholder="先拉取模型" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {models.map((m) => (
+                        <SelectItem key={m.id} value={m.id}>
+                          <ModelIconLabel
+                            model={m}
+                            className="max-w-full"
+                            title={getModelFeatureTitle(m)}
+                          >
+                            <span className="truncate">{m.name}</span>
+                          </ModelIconLabel>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button
+                  size="icon"
+                  variant="secondary"
+                  className="h-8 w-8"
+                  onClick={fetchModels}
+                  disabled={modelsLoading || !currentConn}
+                  title="刷新模型"
+                >
+                  {modelsLoading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <RefreshCcw className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                <ComposerToolMenu
+                  icon={Boxes}
+                  label="Skills"
+                  empty="还没有可用 Skill"
+                  items={skills.items}
+                  activeIds={settings?.enabledSkillIds ?? []}
+                  onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
+                />
+                <ComposerToolMenu
+                  icon={Server}
+                  label="MCP"
+                  empty="还没有可用 MCP Server"
+                  items={mcp.items}
+                  activeIds={settings?.enabledMcpServerIds ?? []}
+                  onChange={(enabledMcpServerIds) =>
+                    updateSettings({ enabledMcpServerIds })
+                  }
+                />
+                <div className="min-w-0 flex-1" />
+                {sending ? (
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    className="h-8 w-8"
+                    onClick={stop}
+                    title="停止"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                ) : (
+                  <Button
+                    size="icon"
+                    variant="accent"
+                    className="h-8 w-8"
+                    onClick={send}
+                    disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
+                    title="发送"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         </Card>
@@ -1465,12 +1413,8 @@ export function PlaygroundPage() {
             settings={settings}
             isVolc={isVolc}
             usableKeys={usableKeys}
-            skills={skills.items}
-            mcpServers={mcp.items}
-            runningSkillId={runningSkillId}
             toolCalls={chat.toolCalls}
             onSettings={updateSettings}
-            onRunSkill={runSkill}
             onClose={() => setConfigOpen(false)}
           />
         )}
@@ -1559,25 +1503,17 @@ function ConfigRail({
   settings,
   isVolc,
   usableKeys,
-  skills,
-  mcpServers,
-  runningSkillId,
   toolCalls,
   onSettings,
-  onRunSkill,
   onClose,
 }: {
   settings: ChatSessionSettings | null;
   isVolc: boolean;
   usableKeys: { name: string; key?: string; arkId?: number }[];
-  skills: Skill[];
-  mcpServers: McpServer[];
-  runningSkillId: string | null;
   toolCalls: ReturnType<typeof useChatStore.getState>["toolCalls"];
   onSettings: (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
   ) => void;
-  onRunSkill: (skill: Skill) => void;
   onClose: () => void;
 }) {
   if (!settings) {
@@ -1685,47 +1621,6 @@ function ConfigRail({
         </div>
       </RailSection>
 
-      <Separator className="my-4" />
-
-      <RailSection icon={Boxes} title="Skills">
-        <ToolToggleList
-          empty="还没有 Skill"
-          items={skills}
-          activeIds={settings.enabledSkillIds}
-          onChange={(enabledSkillIds) => onSettings({ enabledSkillIds })}
-          renderAction={(skill) =>
-            settings.enabledSkillIds.includes(skill.id) ? (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title="沙箱运行"
-                onClick={() => onRunSkill(skill)}
-                disabled={!!runningSkillId}
-              >
-                {runningSkillId === skill.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-              </Button>
-            ) : null
-          }
-        />
-      </RailSection>
-
-      <Separator className="my-4" />
-
-      <RailSection icon={Server} title="MCP">
-        <ToolToggleList
-          empty="还没有 MCP Server"
-          items={mcpServers}
-          activeIds={settings.enabledMcpServerIds}
-          onChange={(enabledMcpServerIds) => onSettings({ enabledMcpServerIds })}
-        />
-      </RailSection>
-
-      <Separator className="my-4" />
-
       <RailSection icon={ShieldIcon} title="沙箱">
         <Select
           value={settings.sandboxMode}
@@ -1745,7 +1640,7 @@ function ConfigRail({
           </SelectContent>
         </Select>
         <div className="rounded-sm border border-border p-3 text-label-12 text-muted-foreground">
-          Skill 脚本通过 Tauri 命令执行；macOS 会优先使用 Seatbelt 兼容沙箱。
+          沙箱模式保留给本地工具执行；macOS 会优先使用 Seatbelt 兼容沙箱。
         </div>
       </RailSection>
 
@@ -1785,37 +1680,67 @@ function ConfigRail({
   );
 }
 
-function ToolToggleList<T extends { id: string; name: string; description?: string; enabled?: boolean }>({
+function toggleId(ids: string[], id: string): string[] {
+  return ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id];
+}
+
+function ComposerToolMenu<T extends { id: string; name: string; description?: string; enabled?: boolean }>({
+  icon: Icon,
+  label,
   empty,
   items,
   activeIds,
   onChange,
-  renderAction,
 }: {
+  icon: ComponentType<{ className?: string }>;
+  label: string;
   empty: string;
   items: T[];
   activeIds: string[];
   onChange: (ids: string[]) => void;
-  renderAction?: (item: T) => React.ReactNode;
 }) {
   const available = items.filter((i) => i.enabled !== false);
+  const activeCount = available.filter((item) => activeIds.includes(item.id)).length;
+
   if (available.length === 0) {
     return (
-      <div className="rounded-sm border border-dashed border-border p-3 text-label-12 text-muted-foreground">
-        {empty}
-      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button size="sm" variant="ghost" className="h-8" title={empty}>
+            <Icon className="h-3.5 w-3.5" />
+            {label}
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="w-64">
+          <DropdownMenuItem disabled>{empty}</DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     );
   }
+
   return (
-    <div className="grid gap-2">
-      {available.map((item) => {
-        const active = activeIds.includes(item.id);
-        return (
-          <div
-            key={item.id}
-            className="grid gap-2 rounded-sm border border-border px-3 py-2"
-          >
-            <div className="flex items-center justify-between gap-2">
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button size="sm" variant={activeCount > 0 ? "secondary" : "ghost"} className="h-8">
+          <Icon className="h-3.5 w-3.5" />
+          <span>{label}</span>
+          {activeCount > 0 && (
+            <Badge variant="accent" className="-mr-1 rounded-sm px-1.5 py-0">
+              {activeCount}
+            </Badge>
+          )}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="max-h-80 w-72 overflow-y-auto">
+        {available.map((item) => {
+          const active = activeIds.includes(item.id);
+          return (
+            <DropdownMenuCheckboxItem
+              key={item.id}
+              checked={active}
+              onCheckedChange={() => onChange(toggleId(activeIds, item.id))}
+              onSelect={(event) => event.preventDefault()}
+            >
               <div className="min-w-0">
                 <div className="truncate text-label-13 font-medium">
                   {item.name}
@@ -1826,24 +1751,11 @@ function ToolToggleList<T extends { id: string; name: string; description?: stri
                   </div>
                 )}
               </div>
-              <div className="flex items-center gap-1">
-                {renderAction?.(item)}
-                <Switch
-                  checked={active}
-                  onCheckedChange={(checked) =>
-                    onChange(
-                      checked
-                        ? [...activeIds, item.id]
-                        : activeIds.filter((id) => id !== item.id)
-                    )
-                  }
-                />
-              </div>
-            </div>
-          </div>
-        );
-      })}
-    </div>
+            </DropdownMenuCheckboxItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
