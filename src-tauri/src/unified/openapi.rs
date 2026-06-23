@@ -147,6 +147,54 @@ pub fn build_spec(models: &[String]) -> Value {
                     }
                 }
             },
+            "/v1/images/generations": {
+                "post": {
+                    "summary": "OpenAI 兼容图像生成",
+                    "operationId": "imageGenerations",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "type": "object", "required": ["model", "prompt"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "prompt": { "type": "string" }, "n": { "type": "integer" }, "size": { "type": "string" }, "quality": { "type": "string" }, "style": { "type": "string" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像生成结果", "content": { "application/json": { "schema": { "type": "object" } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
+            "/v1/images/edits": {
+                "post": {
+                    "summary": "OpenAI 兼容图像编辑（multipart/form-data）",
+                    "operationId": "imageEdits",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["model", "image", "prompt"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "image": { "type": "string", "format": "binary" }, "prompt": { "type": "string" }, "mask": { "type": "string", "format": "binary" }, "n": { "type": "integer" }, "size": { "type": "string" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像编辑结果", "content": { "application/json": { "schema": { "type": "object" } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
+            "/v1/images/variations": {
+                "post": {
+                    "summary": "OpenAI 兼容图像变体（multipart/form-data）",
+                    "operationId": "imageVariations",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["model", "image"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "image": { "type": "string", "format": "binary" }, "n": { "type": "integer" }, "size": { "type": "string" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像变体结果", "content": { "application/json": { "schema": { "type": "object" } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
             "/v1/messages": {
                 "post": {
                     "summary": "Anthropic 兼容消息（供 Claude Code，支持 SSE 流式与工具调用）",

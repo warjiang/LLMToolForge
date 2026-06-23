@@ -33,6 +33,18 @@ pub fn router(ctx: AppCtx) -> Router {
             "/v1/chat/completions",
             post(super::openai::chat_completions),
         )
+        .route(
+            "/v1/images/generations",
+            post(super::openai::images_generations),
+        )
+        .route(
+            "/v1/images/edits",
+            post(super::openai::images_edits),
+        )
+        .route(
+            "/v1/images/variations",
+            post(super::openai::images_variations),
+        )
         .route("/v1/messages", post(super::anthropic::messages))
         .route("/openapi.json", get(super::openapi::spec))
         .route("/docs", get(super::openapi::docs))
@@ -100,7 +112,17 @@ pub async fn post_chat(
     upstream: &Upstream,
     body: &serde_json::Value,
 ) -> reqwest::Result<reqwest::Response> {
-    let url = format!("{}/chat/completions", upstream.base_url);
+    post_path(ctx, upstream, "chat/completions", body).await
+}
+
+/// POST an arbitrary JSON body to `{base_url}/{path}` on the upstream.
+pub async fn post_path(
+    ctx: &AppCtx,
+    upstream: &Upstream,
+    path: &str,
+    body: &serde_json::Value,
+) -> reqwest::Result<reqwest::Response> {
+    let url = format!("{}/{}", upstream.base_url, path);
     ctx.client
         .post(url)
         .header("Content-Type", "application/json")
