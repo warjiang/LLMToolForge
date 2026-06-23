@@ -55,6 +55,8 @@ function buildChatBody(req: ChatRequest, stream: boolean) {
     body.temperature = req.params.temperature;
   if (req.params?.maxTokens != null) body.max_tokens = req.params.maxTokens;
   if (req.params?.topP != null) body.top_p = req.params.topP;
+  if (req.tools?.length) body.tools = req.tools;
+  if (req.toolChoice) body.tool_choice = req.toolChoice;
   if (stream) body.stream_options = { include_usage: true };
   return body;
 }
@@ -89,9 +91,13 @@ export async function chat(
   const res = await postChat(cred, buildChatBody(req, false), req.signal);
   await ensureOk(res, "Chat");
   const json = await res.json();
-  const choice = json?.choices?.[0]?.message?.content ?? "";
+  const message = json?.choices?.[0]?.message;
+  const choice = message?.content ?? "";
   return {
     content: typeof choice === "string" ? choice : "",
+    toolCalls: Array.isArray(message?.tool_calls)
+      ? message.tool_calls
+      : undefined,
     usage: json?.usage
       ? {
           promptTokens: json.usage.prompt_tokens,

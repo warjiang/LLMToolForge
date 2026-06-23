@@ -1,5 +1,9 @@
-import { Brain, Eye, Wrench } from "lucide-react";
+import { Brain, Eye, ImageIcon, Video, Wrench } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import {
+  isImageGenerationModel,
+  isVideoGenerationModel,
+} from "@/lib/providers/capabilities";
 import type { ModelInfo } from "@/lib/providers/types";
 
 function formatContext(tokens?: number): string | null {
@@ -11,6 +15,8 @@ function formatContext(tokens?: number): string | null {
 /** Renders capability badges (context window, tools, vision, tags) for a model. */
 export function ModelFeatureBadges({ model }: { model: ModelInfo }) {
   const ctx = formatContext(model.contextWindow);
+  const supportsImageGeneration = isImageGenerationModel(model);
+  const supportsVideoGeneration = isVideoGenerationModel(model);
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {ctx && <Badge variant="outline">{ctx}</Badge>}
@@ -26,6 +32,18 @@ export function ModelFeatureBadges({ model }: { model: ModelInfo }) {
           多模态
         </Badge>
       )}
+      {supportsImageGeneration && (
+        <Badge variant="success">
+          <ImageIcon className="h-3 w-3" />
+          生图
+        </Badge>
+      )}
+      {supportsVideoGeneration && (
+        <Badge variant="success">
+          <Video className="h-3 w-3" />
+          生视频
+        </Badge>
+      )}
       {model.tags?.includes("thinking") && (
         <Badge variant="warning">
           <Brain className="h-3 w-3" />
@@ -33,7 +51,12 @@ export function ModelFeatureBadges({ model }: { model: ModelInfo }) {
         </Badge>
       )}
       {model.tags
-        ?.filter((t) => t !== "thinking")
+        ?.filter(
+          (t) =>
+            t !== "thinking" &&
+            t !== "image-generation" &&
+            t !== "video-generation"
+        )
         .map((t) => (
           <Badge key={t} variant="outline">
             {t}

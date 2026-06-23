@@ -10,6 +10,8 @@
  * lag behind the latest model releases. Update as needed.
  */
 
+import type { Modality } from "@/lib/providers/types";
+
 export interface CatalogEntry {
   /** Match by prefix on the foundation model name (case-insensitive). */
   prefix: string;
@@ -17,6 +19,10 @@ export interface CatalogEntry {
   contextWindow?: number;
   supportsFunctionCall?: boolean;
   supportsVision?: boolean;
+  supportsImageGeneration?: boolean;
+  supportsVideoGeneration?: boolean;
+  inputModalities?: Modality[];
+  outputModalities?: Modality[];
   tags?: string[];
 }
 
@@ -24,6 +30,37 @@ export interface CatalogEntry {
  * Ordered most-specific prefix first so lookups match the narrowest entry.
  */
 export const VOLC_MODEL_CATALOG: CatalogEntry[] = [
+  // Video/content generation endpoints. This must stay before broader
+  // seed prefixes because Seedance does not use the chat API.
+  {
+    prefix: "doubao-seedance",
+    label: "Doubao Seedance",
+    supportsFunctionCall: false,
+    supportsVideoGeneration: true,
+    inputModalities: ["text", "image", "video", "audio"],
+    outputModalities: ["video"],
+    tags: ["video-generation", "seedance"],
+  },
+  {
+    prefix: "seedance",
+    label: "Seedance",
+    supportsFunctionCall: false,
+    supportsVideoGeneration: true,
+    inputModalities: ["text", "image", "video", "audio"],
+    outputModalities: ["video"],
+    tags: ["video-generation", "seedance"],
+  },
+  // Image generation endpoints. This must stay before the broader
+  // "doubao-seed" chat/multimodal prefix.
+  {
+    prefix: "doubao-seedream",
+    label: "Doubao Seedream",
+    supportsFunctionCall: false,
+    supportsImageGeneration: true,
+    inputModalities: ["text", "image"],
+    outputModalities: ["image"],
+    tags: ["image-generation", "seedream"],
+  },
   // Vision-capable Doubao
   {
     prefix: "doubao-1-5-thinking-vision",

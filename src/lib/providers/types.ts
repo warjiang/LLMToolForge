@@ -26,6 +26,12 @@ export interface ModelInfo {
   supportsVision?: boolean;
   /** Input modalities the model accepts. */
   inputModalities?: Modality[];
+  /** Output modalities the model can produce. */
+  outputModalities?: Modality[];
+  /** Whether the model uses an image generation endpoint instead of chat. */
+  supportsImageGeneration?: boolean;
+  /** Whether the model uses a video/content generation endpoint instead of chat. */
+  supportsVideoGeneration?: boolean;
   /** Free-form tags for display/filtering (e.g. "thinking", "deepseek"). */
   tags?: string[];
   /** Raw payload from the provider, for debugging. */
@@ -58,10 +64,30 @@ export interface ChatParams {
   topP?: number;
 }
 
+export interface ToolDefinition {
+  type: "function";
+  function: {
+    name: string;
+    description?: string;
+    parameters?: Record<string, unknown>;
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+}
+
 export interface ChatRequest {
   model: string;
   messages: ChatMessage[];
   params?: ChatParams;
+  tools?: ToolDefinition[];
+  toolChoice?: "auto" | "none" | { type: "function"; function: { name: string } };
   /** Selected wire format; defaults to the adapter's primary format. */
   wireFormat?: WireFormat;
   stream?: boolean;
@@ -76,8 +102,67 @@ export interface ChatUsage {
 
 export interface ChatResult {
   content: string;
+  toolCalls?: ToolCall[];
   usage?: ChatUsage;
   raw?: unknown;
+}
+
+export interface ImageGenerationRequest {
+  model: string;
+  prompt: string;
+  size?: string;
+  responseFormat?: "url" | "b64_json";
+  sequentialImageGeneration?: "disabled" | "auto";
+  watermark?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface ImageGenerationImage {
+  url?: string;
+  b64Json?: string;
+  revisedPrompt?: string;
+  mime?: string;
+}
+
+export interface ImageGenerationResult {
+  images: ImageGenerationImage[];
+  usage?: ChatUsage;
+  raw?: unknown;
+}
+
+export interface VideoGenerationReference {
+  kind: "image" | "video" | "audio";
+  url: string;
+  role?: "reference_image" | "reference_video" | "reference_audio";
+}
+
+export interface VideoGenerationRequest {
+  model: string;
+  prompt: string;
+  references?: VideoGenerationReference[];
+  generateAudio?: boolean;
+  ratio?: string;
+  duration?: number;
+  watermark?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface VideoGenerationVideo {
+  url?: string;
+  lastFrameUrl?: string;
+  mime?: string;
+}
+
+export interface VideoGenerationResult {
+  taskId?: string;
+  status?: string;
+  videos: VideoGenerationVideo[];
+  raw?: unknown;
+}
+
+export interface VideoGenerationTaskRequest {
+  taskId: string;
+  signal?: AbortSignal;
 }
 
 /** Incremental chunk emitted during streaming. */
@@ -122,4 +207,22 @@ export interface ProviderAdapter {
     req: ChatRequest,
     cred: ProviderCredential
   ): AsyncGenerator<ChatStreamChunk, void, unknown>;
+
+  /** Non-streaming image generation. */
+  imageGeneration?(
+    req: ImageGenerationRequest,
+    cred: ProviderCredential
+  ): Promise<ImageGenerationResult>;
+
+  /** Async video/content generation task creation. */
+  videoGeneration?(
+    req: VideoGenerationRequest,
+    cred: ProviderCredential
+  ): Promise<VideoGenerationResult>;
+
+  /** Query an async video/content generation task. */
+  getVideoGenerationTask?(
+    req: VideoGenerationTaskRequest,
+    cred: ProviderCredential
+  ): Promise<VideoGenerationResult>;
 }

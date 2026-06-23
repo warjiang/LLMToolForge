@@ -131,7 +131,8 @@ export async function listEndpoints(cred: VolcAkSk): Promise<ModelInfo[]> {
 function endpointToModel(item: EndpointItem): ModelInfo {
   const fm = item.ModelReference?.FoundationModel;
   const fmName = fm?.Name;
-  const cat = lookupCatalog(fmName);
+  const lookupName = fmName ?? item.Id ?? item.Name;
+  const cat = lookupCatalog(lookupName);
   const versionSuffix = fm?.ModelVersion ? ` (${fm.ModelVersion})` : "";
   const displayName =
     item.Name ||
@@ -146,7 +147,11 @@ function endpointToModel(item: EndpointItem): ModelInfo {
     contextWindow: cat?.contextWindow,
     supportsFunctionCall: cat?.supportsFunctionCall,
     supportsVision: cat?.supportsVision,
-    inputModalities: cat?.supportsVision ? ["text", "image"] : ["text"],
+    supportsImageGeneration: cat?.supportsImageGeneration,
+    supportsVideoGeneration: cat?.supportsVideoGeneration,
+    inputModalities:
+      cat?.inputModalities ?? (cat?.supportsVision ? ["text", "image"] : ["text"]),
+    outputModalities: cat?.outputModalities ?? ["text"],
     tags: [
       ...(item.EndpointModelType === "CustomModel" ? ["custom"] : []),
       ...(item.Status && item.Status !== "Running" ? [item.Status] : []),
