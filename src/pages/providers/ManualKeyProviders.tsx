@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
+import { ProviderIcon } from "@/components/common/ProviderModelIcon";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -79,7 +80,7 @@ export function ManualKeyProviders() {
               className="flex items-center gap-4 px-5 py-3.5 transition-colors duration-200 ease-geist hover:bg-secondary/40"
             >
               <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
-                <KeyRound className="h-4 w-4" />
+                <ProviderIcon provider={item.provider} className="h-4 w-4" />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">

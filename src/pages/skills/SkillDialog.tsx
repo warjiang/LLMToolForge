@@ -122,6 +122,17 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
             />
           </div>
 
+          <div className="grid gap-1.5">
+            <Label htmlFor="sk-content">内容 / 脚本（可选）</Label>
+            <Textarea
+              id="sk-content"
+              className="min-h-[120px] font-mono text-label-12"
+              placeholder={"说明型 Skill 可填写详细指令；脚本型 Skill 可填写 shell 脚本，由 Playground 沙箱运行。"}
+              value={form.content}
+              onChange={(e) => setForm({ ...form, content: e.target.value })}
+            />
+          </div>
+
           <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
             <div className="space-y-0.5">
               <Label>启用</Label>

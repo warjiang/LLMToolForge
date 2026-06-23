@@ -22,25 +22,26 @@ Questions to answer:
 
 ## Component Structure
 
-<!-- Standard structure of a component file -->
-
-(To be filled by the team)
+- Shared visual semantics belong in `src/components/common/` when they are used
+  by more than one page.
+- Provider/model identity icons are centralized in
+  `src/components/common/ProviderModelIcon.tsx`.
 
 ---
 
 ## Props Conventions
 
-<!-- How props should be defined and typed -->
-
-(To be filled by the team)
+- Components that render model identity should accept the normalized
+  `ModelInfo` shape when available, and may accept a string model id for manual
+  API-key flows.
 
 ---
 
 ## Styling Patterns
 
-<!-- How styles are applied (CSS modules, styled-components, Tailwind, etc.) -->
-
-(To be filled by the team)
+- Use Tailwind utility classes and semantic color tokens.
+- Icon components should accept `className` and default to stable `h-4 w-4`
+  sizing so Select triggers, badges, and list rows do not shift layout.
 
 ---
 
@@ -54,6 +55,8 @@ Questions to answer:
 
 ## Common Mistakes
 
-<!-- Component-related mistakes your team has made -->
-
-(To be filled by the team)
+- Do not duplicate provider/model string matching in page components. Add or
+  adjust the mapping in `ProviderModelIcon.tsx`, then render with
+  `ProviderIcon`, `ProviderIconLabel`, `ModelIcon`, or `ModelIconLabel`.
+- Do not load provider/model icons from the network at runtime; keep them local
+  so the desktop app works offline.

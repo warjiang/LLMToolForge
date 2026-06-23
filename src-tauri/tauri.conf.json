@@ -26,6 +26,11 @@
       "csp": null
     }
   },
+  "plugins": {
+    "sql": {
+      "preload": ["sqlite:llmtoolforge.db"]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",

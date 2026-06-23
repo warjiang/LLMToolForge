@@ -6,7 +6,6 @@
  * OpenAI Responses-compatible /responses endpoint, with SSE streaming.
  */
 
-import { httpFetch } from "@/lib/http";
 import type {
   ChatMessage,
   ChatRequest,
@@ -16,17 +15,7 @@ import type {
   ProviderCredential,
   WireFormat,
 } from "@/lib/providers/types";
-
-const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
-
-function baseUrl(cred: ProviderCredential): string {
-  return (cred.baseUrl || DEFAULT_BASE_URL).replace(/\/+$/, "");
-}
-
-function requireKey(cred: ProviderCredential): string {
-  if (!cred.apiKey) throw new Error("缺少 Ark API Key");
-  return cred.apiKey;
-}
+import { ensureOk, postArkJson } from "./request";
 
 // ---- message conversion ----
 
@@ -56,6 +45,8 @@ function buildChatBody(req: ChatRequest, stream: boolean) {
     body.temperature = req.params.temperature;
   if (req.params?.maxTokens != null) body.max_tokens = req.params.maxTokens;
   if (req.params?.topP != null) body.top_p = req.params.topP;
+  if (req.tools?.length) body.tools = req.tools;
+  if (req.toolChoice) body.tool_choice = req.toolChoice;
   if (stream) body.stream_options = { include_usage: true };
   return body;
 }
@@ -84,35 +75,13 @@ function buildResponsesBody(req: ChatRequest, stream: boolean) {
     body.temperature = req.params.temperature;
   if (req.params?.maxTokens != null)
     body.max_output_tokens = req.params.maxTokens;
+  if (req.tools?.length) body.tools = req.tools;
+  if (req.toolChoice) body.tool_choice = req.toolChoice;
   return body;
 }
 
 function endpointFor(format: WireFormat): string {
   return format === "openai-responses" ? "/responses" : "/chat/completions";
-}
-
-async function postJson(
-  cred: ProviderCredential,
-  path: string,
-  body: unknown,
-  signal?: AbortSignal
-): Promise<Response> {
-  return httpFetch(`${baseUrl(cred)}${path}`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${requireKey(cred)}`,
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-}
-
-async function ensureOk(res: Response, label: string) {
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`${label} 失败: HTTP ${res.status} ${text.slice(0, 300)}`);
-  }
 }
 
 // ---- non-streaming ----
@@ -123,7 +92,7 @@ export async function chat(
 ): Promise<ChatResult> {
   const format = req.wireFormat ?? "openai-chat";
   if (format === "openai-responses") {
-    const res = await postJson(
+    const res = await postArkJson(
       cred,
       "/responses",
       buildResponsesBody(req, false),
@@ -131,10 +100,14 @@ export async function chat(
     );
     await ensureOk(res, "Responses");
     const json = await res.json();
-    return { content: extractResponsesText(json), raw: json };
+    return {
+      content: extractResponsesText(json),
+      toolCalls: extractResponsesToolCalls(json),
+      raw: json,
+    };
   }
 
-  const res = await postJson(
+  const res = await postArkJson(
     cred,
     endpointFor(format),
     buildChatBody(req, false),
@@ -142,9 +115,13 @@ export async function chat(
   );
   await ensureOk(res, "Chat");
   const json = await res.json();
-  const choice = json?.choices?.[0]?.message?.content ?? "";
+  const message = json?.choices?.[0]?.message;
+  const choice = message?.content ?? "";
   return {
     content: typeof choice === "string" ? choice : "",
+    toolCalls: Array.isArray(message?.tool_calls)
+      ? message.tool_calls
+      : undefined,
     usage: json?.usage
       ? {
           promptTokens: json.usage.prompt_tokens,
@@ -154,6 +131,29 @@ export async function chat(
       : undefined,
     raw: json,
   };
+}
+
+function extractResponsesToolCalls(json: unknown) {
+  const j = json as {
+    output?: {
+      type?: string;
+      id?: string;
+      call_id?: string;
+      name?: string;
+      arguments?: string;
+    }[];
+  };
+  const calls = (j.output ?? [])
+    .filter((item) => item.type === "function_call" && item.name)
+    .map((item) => ({
+      id: item.call_id ?? item.id ?? item.name ?? "call",
+      type: "function" as const,
+      function: {
+        name: item.name ?? "",
+        arguments: item.arguments ?? "{}",
+      },
+    }));
+  return calls.length > 0 ? calls : undefined;
 }
 
 function extractResponsesText(json: unknown): string {
@@ -177,7 +177,7 @@ export async function* chatStream(
 ): AsyncGenerator<ChatStreamChunk, void, unknown> {
   const format = req.wireFormat ?? "openai-chat";
   const isResponses = format === "openai-responses";
-  const res = await postJson(
+  const res = await postArkJson(
     cred,
     endpointFor(format),
     isResponses ? buildResponsesBody(req, true) : buildChatBody(req, true),

@@ -7,6 +7,10 @@
     "core:default",
     "core:window:allow-start-dragging",
     "store:default",
+    "sql:allow-load",
+    "sql:allow-select",
+    "sql:allow-execute",
+    "sql:allow-close",
     {
       "identifier": "http:default",
       "allow": [
