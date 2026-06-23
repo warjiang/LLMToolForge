@@ -123,6 +123,7 @@ resp = client.images.generate(
     prompt="a red panda",
     n=1,
     size="1024x1024",
+    response_format="url",
 )
 print(resp.data[0].url)`;
 
@@ -138,6 +139,7 @@ const resp = await client.images.generate({
   prompt: "a red panda",
   n: 1,
   size: "1024x1024",
+  response_format: "url",
 });
 console.log(resp.data[0].url);`;
 
@@ -148,7 +150,8 @@ console.log(resp.data[0].url);`;
     "model": "${model}",
     "prompt": "a red panda",
     "n": 1,
-    "size": "1024x1024"
+    "size": "1024x1024",
+    "response_format": "url"
   }'`;
 
   return (
