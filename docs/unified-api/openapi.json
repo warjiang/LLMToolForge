@@ -18,7 +18,7 @@
     "schemas": {
       "Model": {
         "type": "string",
-        "description": "暴露的模型 id，形如 {provider}/{model}"
+        "description": "暴露的模型 id，形如 {连接名}/{model}"
       },
       "ChatMessage": {
         "type": "object",

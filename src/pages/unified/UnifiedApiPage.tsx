@@ -403,7 +403,7 @@ export function UnifiedApiPage() {
                   </div>
                   <p className="hidden text-copy-13 text-muted-foreground sm:block">
                     id 形如{" "}
-                    <code className="font-mono">{"{provider}/{model}"}</code>
+                    <code className="font-mono">{"{连接名}/{model}"}</code>
                   </p>
                 </div>
 

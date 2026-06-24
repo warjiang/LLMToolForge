@@ -11,10 +11,10 @@
 export function buildSpec(models: string[]): unknown {
   const modelSchema =
     models.length === 0
-      ? { type: 'string', description: '暴露的模型 id，形如 {provider}/{model}' }
+      ? { type: 'string', description: '暴露的模型 id，形如 {连接名}/{model}' }
       : {
           type: 'string',
-          description: '暴露的模型 id，形如 {provider}/{model}',
+          description: '暴露的模型 id，形如 {连接名}/{model}',
           enum: models,
         };
 

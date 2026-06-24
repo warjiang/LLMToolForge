@@ -22,7 +22,7 @@
 - **Unified API（本地统一网关）**：把已接入的各 provider 模型统一暴露为一个本地 HTTP 服务，供 Codex、Claude Code 与本地 agent 直接使用（仅桌面端 Tauri 运行时可启动服务）
   - **OpenAI 兼容**：`GET /v1/models`、`POST /v1/chat/completions`（流式 + 非流式）
   - **Anthropic 兼容**：`POST /v1/messages`（请求/响应/流式事件与工具调用翻译，供 Claude Code 使用）
-  - 模型 id 形如 `{provider}/{model}`，默认全部暴露，可按模型单独开关；可选本地 API Key 校验
+  - 模型 id 形如 `{连接名}/{model}`，默认全部暴露，可按模型单独开关；可选本地 API Key 校验
   - 内置交互式文档：`GET /openapi.json`（OpenAPI 3.1）、`GET /docs`（Redoc）
   - 内置接入指南：OpenAI Python / Node SDK、curl、Codex、Claude Code 一键复制示例
   - 调用监控：实时调用日志、成功率 / P95 耗时 / token 统计与 SVG 图表，支持过滤、清空、导出（JSON/CSV）
