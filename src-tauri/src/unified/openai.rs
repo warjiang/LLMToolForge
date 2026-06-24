@@ -210,6 +210,14 @@ async fn images_multipart_generic(ctx: &AppCtx, headers: &HeaderMap, body: axum:
         user_agent(headers),
     );
 
+    // Forward the original multipart Content-Type header, which carries the
+    // boundary token required for the upstream to parse the form-data body.
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("multipart/form-data")
+        .to_string();
+
     // Rewrite the model field in the multipart body.
     let rewritten = rewrite_multipart_model(&body, &upstream.real_model);
 
@@ -218,6 +226,7 @@ async fn images_multipart_generic(ctx: &AppCtx, headers: &HeaderMap, body: axum:
         .client
         .post(url)
         .header("Authorization", format!("Bearer {}", upstream.api_key))
+        .header(axum::http::header::CONTENT_TYPE, content_type)
         .body(rewritten)
         .send()
         .await
