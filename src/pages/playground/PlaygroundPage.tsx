@@ -1734,13 +1734,13 @@ function ComposerModelCascade({
         : "选择模型";
 
   return (
-    <div className="flex min-w-0 items-center gap-1 rounded-md bg-secondary/55 p-0.5">
+    <div className="flex h-7 min-w-0 items-center gap-1 rounded-md border border-border bg-background">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
             size="sm"
             variant="ghost"
-            className="h-[26px] w-0 min-w-0 flex-1 justify-start gap-1.5 rounded-[5px] px-2 text-foreground hover:bg-background/80"
+            className="h-[26px] w-0 min-w-0 flex-1 justify-start gap-1.5 rounded-[5px] px-2 text-foreground hover:bg-secondary"
             disabled={disabled}
             title={selectedModel ? getModelFeatureTitle(selectedModel) : title}
           >
@@ -1803,7 +1803,7 @@ function ComposerModelCascade({
       <Button
         size="icon"
         variant="ghost"
-        className="h-[26px] w-[26px] shrink-0 rounded-[5px] text-muted-foreground hover:bg-background/80 hover:text-foreground"
+        className="h-[26px] w-[26px] shrink-0 rounded-[5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
         disabled={disabled || modelsLoading || !refreshConn}
         title={refreshConn ? `刷新 ${refreshConn.name}` : "刷新模型"}
         onClick={() => {

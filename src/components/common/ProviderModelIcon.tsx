@@ -320,11 +320,11 @@ function LobeIconRenderer({
   return (
     <span
       className={cn(
-        "inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-hidden",
+        "inline-flex h-4 w-4 shrink-0 items-center justify-center overflow-visible [&_svg]:!h-full [&_svg]:!w-full",
         className
       )}
     >
-      <Icon className="h-full w-full" size="100%" />
+      <Icon className="!h-full !w-full" size="100%" />
     </span>
   );
 }
