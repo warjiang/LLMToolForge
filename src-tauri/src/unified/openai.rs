@@ -163,11 +163,7 @@ pub async fn images_generations(
 
 /// OpenAI-compatible `POST /v1/images/edits` (multipart form-data).
 /// The request body is forwarded as-is (with model rewritten) to maintain file boundaries.
-pub async fn images_edits(
-    state: Ctx,
-    headers: HeaderMap,
-    body: axum::body::Bytes,
-) -> Response {
+pub async fn images_edits(state: Ctx, headers: HeaderMap, body: axum::body::Bytes) -> Response {
     images_multipart_generic(&state.0, &headers, body, "edits").await
 }
 
@@ -182,7 +178,12 @@ pub async fn images_variations(
 
 /// Handle image endpoint (edits/variations) that accept multipart form-data.
 /// Extract model, rewrite it, then forward as multipart verbatim.
-async fn images_multipart_generic(ctx: &AppCtx, headers: &HeaderMap, body: axum::body::Bytes, endpoint: &str) -> Response {
+async fn images_multipart_generic(
+    ctx: &AppCtx,
+    headers: &HeaderMap,
+    body: axum::body::Bytes,
+    endpoint: &str,
+) -> Response {
     if let Err(resp) = check_auth(ctx, headers).await {
         return resp;
     }

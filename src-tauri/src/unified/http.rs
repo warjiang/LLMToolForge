@@ -37,10 +37,7 @@ pub fn router(ctx: AppCtx) -> Router {
             "/v1/images/generations",
             post(super::openai::images_generations),
         )
-        .route(
-            "/v1/images/edits",
-            post(super::openai::images_edits),
-        )
+        .route("/v1/images/edits", post(super::openai::images_edits))
         .route(
             "/v1/images/variations",
             post(super::openai::images_variations),
