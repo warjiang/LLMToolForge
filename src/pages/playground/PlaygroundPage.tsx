@@ -1160,7 +1160,7 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] min-h-[620px] flex-col gap-3">
+    <div className="flex h-[calc(100vh-6.5rem)] min-h-[620px] flex-col gap-3 [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
       <div className="flex shrink-0 items-center justify-between gap-4">
         <div className="min-w-0">
           <h1 className="truncate text-heading-20">Playground</h1>
