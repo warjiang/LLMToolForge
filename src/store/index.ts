@@ -13,3 +13,4 @@ export const useMcpStore = createCollectionStore(mcpRepo);
 export const useVolcCredentialStore = createCollectionStore(volcCredentialRepo);
 export const useGatewayStore = createCollectionStore(gatewayConnectionRepo);
 export { useChatStore } from "./chat";
+export { useLocaleStore } from "./locale";

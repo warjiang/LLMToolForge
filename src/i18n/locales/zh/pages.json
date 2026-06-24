@@ -1,0 +1,27 @@
+{
+  "page_not_found": "页面未找到",
+  "error_title": "出错了",
+  "error_message": "发生了一个意外错误",
+  "go_home": "返回首页",
+  "back": "返回",
+  "confirm_delete": "确认删除",
+  "delete_confirm_message": "此操作无法撤销，确定要删除吗？",
+  "yes_delete": "是的，删除",
+  "cancel_action": "取消",
+  "settings_title": "设置",
+  "settings_description": "应用外观与数据存储信息。",
+  "appearance": "外观",
+  "choose_theme": "选择应用的主题。",
+  "light_theme": "亮色",
+  "dark_theme": "暗色",
+  "data_storage": "数据存储",
+  "storage_description": "当前为本地模式，所有 API Key、Skill 与 MCP 配置都保存在本机。后续版本将支持加密存储与云端同步。",
+  "tools_title": "实用工具",
+  "tools_description": "常用的编解码与文本处理工具，所有计算都在本地完成。",
+  "url_codec": "URL 编解码",
+  "json_viewer": "JSON 预览",
+  "escape_tool": "转义/去转义",
+  "unicode_tool": "Unicode"
+}
+
+

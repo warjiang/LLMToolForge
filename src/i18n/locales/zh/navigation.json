@@ -1,0 +1,14 @@
+{
+  "dashboard": "概览",
+  "providers": "模型接入",
+  "playground": "Playground",
+  "unified_api": "Unified API",
+  "skills": "Skills",
+  "mcp_servers": "MCP Servers",
+  "tools": "实用工具",
+  "settings": "设置",
+  "add_first_api_key": "添加第一个 API Key",
+  "add_first_skill": "创建第一个 Skill",
+  "add_first_mcp": "接入 MCP Server",
+  "open_playground": "打开 Playground"
+}
