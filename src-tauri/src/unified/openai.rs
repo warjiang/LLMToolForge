@@ -1,11 +1,12 @@
-//! OpenAI-compatible endpoints: `/v1/models` and `/v1/chat/completions`.
+//! OpenAI-compatible endpoints: `/v1/models`, `/v1/chat/completions`, and `/v1/images/*`.
 
 use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
 
 use super::http::{
-    self, check_auth, emit_log, json_error, lookup, post_chat, user_agent, AppCtx, Ctx, LogBuilder,
+    self, check_auth, emit_log, json_error, lookup, post_chat, post_path, user_agent, AppCtx, Ctx,
+    LogBuilder,
 };
 
 pub async fn list_models(state: Ctx, headers: HeaderMap) -> Response {
@@ -100,7 +101,188 @@ pub async fn chat_completions(state: Ctx, headers: HeaderMap, body: axum::body::
     forward_json(&ctx, log, resp).await
 }
 
-/// Read a non-streaming upstream response, log usage and forward it verbatim.
+/// OpenAI-compatible `POST /v1/images/generations`. Routes by `model` to the
+/// upstream and forwards the JSON response verbatim. Always non-streaming.
+pub async fn images_generations(
+    state: Ctx,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let ctx = state.0;
+    if let Err(resp) = check_auth(&ctx, &headers).await {
+        return resp;
+    }
+
+    let mut payload: Value = match serde_json::from_slice(&body) {
+        Ok(v) => v,
+        Err(e) => {
+            return json_error(
+                StatusCode::BAD_REQUEST,
+                &format!("请求体不是合法 JSON：{e}"),
+            )
+        }
+    };
+
+    let model = payload
+        .get("model")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if model.is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, "缺少 model 字段");
+    }
+
+    let Some(upstream) = lookup(&ctx, &model).await else {
+        return json_error(
+            StatusCode::NOT_FOUND,
+            &format!("未找到模型：{model}（请在应用内确认已暴露该模型）"),
+        );
+    };
+
+    payload["model"] = Value::String(upstream.real_model.clone());
+
+    let log = LogBuilder::new(
+        &model,
+        &upstream,
+        "openai-image",
+        false,
+        user_agent(&headers),
+    );
+
+    let resp = match post_path(&ctx, &upstream, "images/generations", &payload).await {
+        Ok(r) => r,
+        Err(e) => {
+            let rec = log.finish(502, None, Some(e.to_string()));
+            emit_log(&ctx, rec).await;
+            return json_error(StatusCode::BAD_GATEWAY, &format!("上游请求失败：{e}"));
+        }
+    };
+
+    forward_json(&ctx, log, resp).await
+}
+
+/// OpenAI-compatible `POST /v1/images/edits` (multipart form-data).
+/// The request body is forwarded as-is (with model rewritten) to maintain file boundaries.
+pub async fn images_edits(state: Ctx, headers: HeaderMap, body: axum::body::Bytes) -> Response {
+    images_multipart_generic(&state.0, &headers, body, "edits").await
+}
+
+/// OpenAI-compatible `POST /v1/images/variations` (multipart form-data).
+pub async fn images_variations(
+    state: Ctx,
+    headers: HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    images_multipart_generic(&state.0, &headers, body, "variations").await
+}
+
+/// Handle image endpoint (edits/variations) that accept multipart form-data.
+/// Extract model, rewrite it, then forward as multipart verbatim.
+async fn images_multipart_generic(
+    ctx: &AppCtx,
+    headers: &HeaderMap,
+    body: axum::body::Bytes,
+    endpoint: &str,
+) -> Response {
+    if let Err(resp) = check_auth(ctx, headers).await {
+        return resp;
+    }
+
+    // Parse multipart to extract the model.
+    let model = extract_multipart_model(&body);
+    let model_str = model.as_deref().unwrap_or("");
+
+    if model_str.is_empty() {
+        return json_error(StatusCode::BAD_REQUEST, "缺少 model 字段");
+    }
+
+    let Some(upstream) = lookup(ctx, model_str).await else {
+        return json_error(
+            StatusCode::NOT_FOUND,
+            &format!("未找到模型：{model_str}（请在应用内确认已暴露该模型）"),
+        );
+    };
+
+    let log = LogBuilder::new(
+        model_str,
+        &upstream,
+        "openai-image",
+        false,
+        user_agent(headers),
+    );
+
+    // Forward the original multipart Content-Type header, which carries the
+    // boundary token required for the upstream to parse the form-data body.
+    let content_type = headers
+        .get(axum::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("multipart/form-data")
+        .to_string();
+
+    // Rewrite the model field in the multipart body.
+    let rewritten = rewrite_multipart_model(&body, &upstream.real_model);
+
+    let url = format!("{}/images/{}", upstream.base_url, endpoint);
+    let resp = match ctx
+        .client
+        .post(url)
+        .header("Authorization", format!("Bearer {}", upstream.api_key))
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(rewritten)
+        .send()
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            let rec = log.finish(502, None, Some(e.to_string()));
+            emit_log(ctx, rec).await;
+            return json_error(StatusCode::BAD_GATEWAY, &format!("上游请求失败：{e}"));
+        }
+    };
+
+    forward_json(ctx, log, resp).await
+}
+
+/// Extract the "model" field from a multipart form-data body (best-effort).
+/// Returns None if not found; this will fail at the OpenAI layer with a proper error.
+fn extract_multipart_model(body: &[u8]) -> Option<String> {
+    let s = String::from_utf8_lossy(body);
+    // Naive search for `name="model"` followed by the value.
+    // Multipart format: Content-Disposition: form-data; name="model"\r\n\r\n{value}
+    if let Some(idx) = s.find(r#"name="model""#) {
+        let after_header = &s[idx + 12..]; // len of 'name="model"' is 12
+        if let Some(end_headers) = after_header.find("\r\n\r\n") {
+            let value_start = end_headers + 4;
+            if let Some(value_end) = after_header[value_start..].find("\r\n") {
+                let value = &after_header[value_start..value_start + value_end];
+                return Some(value.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Rewrite the "model" field in a multipart form-data body.
+/// Best-effort replacement; the server will error if rewrite fails.
+fn rewrite_multipart_model(body: &[u8], new_model: &str) -> Vec<u8> {
+    let s = String::from_utf8_lossy(body);
+    if let Some(idx) = s.find(r#"name="model""#) {
+        let after_header = &s[idx + 12..];
+        if let Some(end_headers) = after_header.find("\r\n\r\n") {
+            let value_start = end_headers + 4;
+            if let Some(value_end) = after_header[value_start..].find("\r\n") {
+                let prefix = &s[..idx + 12 + end_headers + 4];
+                let suffix = &s[idx + 12 + value_start + value_end..];
+                let mut result = prefix.to_string();
+                result.push_str(new_model);
+                result.push_str(suffix);
+                return result.into_bytes();
+            }
+        }
+    }
+    // If rewrite fails, return the original body unchanged; let the server handle it.
+    body.to_vec()
+}
 async fn forward_json(ctx: &AppCtx, log: LogBuilder, resp: reqwest::Response) -> Response {
     let status = resp.status();
     let bytes = match resp.bytes().await {

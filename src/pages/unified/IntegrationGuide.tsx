@@ -111,6 +111,49 @@ export ANTHROPIC_MODEL="${model}"
 
 claude`;
 
+  const pyImage = `from openai import OpenAI
+
+client = OpenAI(
+    base_url="${openaiBase}",
+    api_key="${key}",
+)
+
+resp = client.images.generate(
+    model="${model}",
+    prompt="a red panda",
+    n=1,
+    size="1024x1024",
+    response_format="url",
+)
+print(resp.data[0].url)`;
+
+  const nodeImage = `import OpenAI from "openai";
+
+const client = new OpenAI({
+  baseURL: "${openaiBase}",
+  apiKey: "${key}",
+});
+
+const resp = await client.images.generate({
+  model: "${model}",
+  prompt: "a red panda",
+  n: 1,
+  size: "1024x1024",
+  response_format: "url",
+});
+console.log(resp.data[0].url);`;
+
+  const curlImage = `curl ${openaiBase}/images/generations \\
+  -H "Content-Type: application/json" \\
+  -H "Authorization: Bearer ${key}" \\
+  -d '{
+    "model": "${model}",
+    "prompt": "a red panda",
+    "n": 1,
+    "size": "1024x1024",
+    "response_format": "url"
+  }'`;
+
   return (
     <div className="space-y-5">
       <Card className="space-y-4 p-5">
@@ -152,6 +195,15 @@ claude`;
         </Section>
         <Section title="Claude Code">
           <CodeBlock code={claude} />
+        </Section>
+        <Section title="Python · 图像生成">
+          <CodeBlock code={pyImage} />
+        </Section>
+        <Section title="Node · 图像生成">
+          <CodeBlock code={nodeImage} />
+        </Section>
+        <Section title="curl · 图像生成">
+          <CodeBlock code={curlImage} />
         </Section>
       </Card>
     </div>

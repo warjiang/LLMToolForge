@@ -147,6 +147,54 @@ pub fn build_spec(models: &[String]) -> Value {
                     }
                 }
             },
+            "/v1/images/generations": {
+                "post": {
+                    "summary": "OpenAI 兼容图像生成（DALL·E）",
+                    "operationId": "imageGenerations",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "application/json": { "schema": { "type": "object", "required": ["model", "prompt"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "prompt": { "type": "string", "description": "图像描述文本（1-4000 字符）" }, "n": { "type": "integer", "description": "生成图像数量（1-10，默认 1）", "default": 1 }, "size": { "type": "string", "description": "图像尺寸（256x256/512x512/1024x1024）", "enum": ["256x256", "512x512", "1024x1024"] }, "quality": { "type": "string", "description": "图像质量（standard/hd）", "enum": ["standard", "hd"] }, "style": { "type": "string", "description": "图像风格（natural/vivid）", "enum": ["natural", "vivid"] }, "response_format": { "type": "string", "description": "响应格式（url 或 b64_json）", "enum": ["url", "b64_json"], "default": "url" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像生成结果，包含 URL 或 base64 编码", "content": { "application/json": { "schema": { "type": "object", "properties": { "created": { "type": "integer" }, "data": { "type": "array", "items": { "type": "object", "properties": { "url": { "type": "string" }, "b64_json": { "type": "string" } } } } } } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
+            "/v1/images/edits": {
+                "post": {
+                    "summary": "OpenAI 兼容图像编辑（DALL·E，multipart/form-data）",
+                    "operationId": "imageEdits",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["model", "image", "prompt"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "image": { "type": "string", "format": "binary", "description": "要编辑的图像（PNG，<4MB，正方形）" }, "prompt": { "type": "string", "description": "编辑描述（1-1000 字符）" }, "mask": { "type": "string", "format": "binary", "description": "可选的编辑区域掩码（PNG，白色区域会被编辑）" }, "n": { "type": "integer", "description": "生成图像数量（1-10，默认 1）", "default": 1 }, "size": { "type": "string", "description": "图像尺寸（256x256/512x512/1024x1024）", "enum": ["256x256", "512x512", "1024x1024"] }, "response_format": { "type": "string", "description": "响应格式（url 或 b64_json）", "enum": ["url", "b64_json"], "default": "url" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像编辑结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "created": { "type": "integer" }, "data": { "type": "array", "items": { "type": "object", "properties": { "url": { "type": "string" }, "b64_json": { "type": "string" } } } } } } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
+            "/v1/images/variations": {
+                "post": {
+                    "summary": "OpenAI 兼容图像变体（DALL·E，multipart/form-data）",
+                    "operationId": "imageVariations",
+                    "requestBody": {
+                        "required": true,
+                        "content": { "multipart/form-data": { "schema": { "type": "object", "required": ["model", "image"], "properties": { "model": { "$ref": "#/components/schemas/Model" }, "image": { "type": "string", "format": "binary", "description": "参考图像（PNG，<4MB，正方形）" }, "n": { "type": "integer", "description": "生成变体数量（1-10，默认 1）", "default": 1 }, "size": { "type": "string", "description": "图像尺寸（256x256/512x512/1024x1024）", "enum": ["256x256", "512x512", "1024x1024"] }, "response_format": { "type": "string", "description": "响应格式（url 或 b64_json）", "enum": ["url", "b64_json"], "default": "url" } } } } }
+                    },
+                    "responses": {
+                        "200": { "description": "图像变体结果", "content": { "application/json": { "schema": { "type": "object", "properties": { "created": { "type": "integer" }, "data": { "type": "array", "items": { "type": "object", "properties": { "url": { "type": "string" }, "b64_json": { "type": "string" } } } } } } } } },
+                        "401": { "description": "未授权", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "404": { "description": "模型未找到", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+                        "502": { "description": "上游错误", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+                    }
+                }
+            },
             "/v1/messages": {
                 "post": {
                     "summary": "Anthropic 兼容消息（供 Claude Code，支持 SSE 流式与工具调用）",
