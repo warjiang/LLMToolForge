@@ -1,0 +1,14 @@
+{
+  "dashboard": "Dashboard",
+  "providers": "Model Integration",
+  "playground": "Playground",
+  "unified_api": "Unified API",
+  "skills": "Skills",
+  "mcp_servers": "MCP Servers",
+  "tools": "Tools",
+  "settings": "Settings",
+  "add_first_api_key": "Add First API Key",
+  "add_first_skill": "Create First Skill",
+  "add_first_mcp": "Connect MCP Server",
+  "open_playground": "Open Playground"
+}

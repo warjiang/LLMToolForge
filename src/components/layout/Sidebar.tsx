@@ -1,5 +1,6 @@
 import { NavLink } from "react-router-dom";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useTranslation } from "react-i18next";
 import {
   LayoutDashboard,
   Boxes,
@@ -11,30 +12,35 @@ import {
   Network,
   Moon,
   Sun,
+  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar";
 import { useThemeStore } from "@/store/theme";
-
-const navItems = [
-  { to: "/", label: "概览", icon: LayoutDashboard, end: true },
-  { to: "/providers", label: "模型接入", icon: Cloud },
-  { to: "/playground", label: "Playground", icon: MessageSquare },
-  { to: "/unified", label: "Unified API", icon: Network },
-  { to: "/skills", label: "Skills", icon: Boxes },
-  { to: "/mcp", label: "MCP Servers", icon: Server },
-  { to: "/tools", label: "实用工具", icon: Wrench },
-  { to: "/settings", label: "设置", icon: Settings },
-];
+import { useLocaleStore } from "@/store/locale";
 
 const EXPANDED = 240;
 const COLLAPSED = 64;
 
 export function Sidebar() {
+  const { t } = useTranslation("navigation");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const language = useLocaleStore((s) => s.language);
+  const setLanguage = useLocaleStore((s) => s.setLanguage);
+
+  const navItems = [
+    { to: "/", label: t("dashboard"), icon: LayoutDashboard, end: true },
+    { to: "/providers", label: t("providers"), icon: Cloud },
+    { to: "/playground", label: t("playground"), icon: MessageSquare },
+    { to: "/unified", label: t("unified_api"), icon: Network },
+    { to: "/skills", label: t("skills"), icon: Boxes },
+    { to: "/mcp", label: t("mcp_servers"), icon: Server },
+    { to: "/tools", label: t("tools"), icon: Wrench },
+    { to: "/settings", label: t("settings"), icon: Settings },
+  ];
 
   const labelTransition = reduce
     ? { duration: 0 }
@@ -109,8 +115,8 @@ export function Sidebar() {
       >
         <button
           onClick={toggleTheme}
-          aria-label="切换主题"
-          title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
+          aria-label={t("theme_toggle")}
+          title={theme === "dark" ? t("switch_to_light") : t("switch_to_dark")}
           className={cn(
             "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
             collapsed ? "w-9 justify-center px-0" : "px-2.5"
@@ -136,7 +142,37 @@ export function Sidebar() {
           </span>
           {!collapsed && (
             <span className="whitespace-nowrap">
-              {theme === "dark" ? "亮色模式" : "暗色模式"}
+              {theme === "dark" ? t("light_mode") : t("dark_mode")}
+            </span>
+          )}
+        </button>
+
+        <button
+          onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
+          aria-label={t("language")}
+          title={t("select_language")}
+          className={cn(
+            "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
+            collapsed ? "w-9 justify-center px-0" : "px-2.5"
+          )}
+        >
+          <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={language}
+                initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
+                animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
+                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                className="absolute inset-0 flex items-center justify-center"
+              >
+                <Globe className="h-4 w-4" />
+              </motion.span>
+            </AnimatePresence>
+          </span>
+          {!collapsed && (
+            <span className="whitespace-nowrap">
+              {language === "zh" ? t("english") : t("chinese")}
             </span>
           )}
         </button>

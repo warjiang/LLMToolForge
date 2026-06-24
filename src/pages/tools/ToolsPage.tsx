@@ -1,4 +1,5 @@
 import { Braces, Code2, Link2, Type } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -7,19 +8,21 @@ import { JsonTool } from "./JsonTool";
 import { EscapeTool } from "./EscapeTool";
 import { UnicodeTool } from "./UnicodeTool";
 
-const tabs = [
-  { value: "url", label: "URL 编解码", icon: Link2, Comp: UrlTool },
-  { value: "json", label: "JSON 预览", icon: Braces, Comp: JsonTool },
-  { value: "escape", label: "转义/去转义", icon: Code2, Comp: EscapeTool },
-  { value: "unicode", label: "Unicode", icon: Type, Comp: UnicodeTool },
-];
-
 export function ToolsPage() {
+  const { t } = useTranslation("pages");
+
+  const tabs = [
+    { value: "url", label: t("url_codec"), icon: Link2, Comp: UrlTool },
+    { value: "json", label: t("json_viewer"), icon: Braces, Comp: JsonTool },
+    { value: "escape", label: t("escape_tool"), icon: Code2, Comp: EscapeTool },
+    { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
+  ];
+
   return (
     <div>
       <PageHeader
-        title="实用工具"
-        description="常用的编解码与文本处理工具，所有计算都在本地完成。"
+        title={t("tools_title")}
+        description={t("tools_description")}
       />
 
       <Tabs defaultValue="url">

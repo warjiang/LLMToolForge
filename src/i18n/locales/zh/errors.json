@@ -1,0 +1,12 @@
+{
+  "network_error": "网络错误",
+  "request_failed": "请求失败",
+  "invalid_input": "输入无效",
+  "required_field": "此字段为必填项",
+  "server_error": "服务器错误",
+  "unauthorized": "未授权",
+  "forbidden": "禁止访问",
+  "not_found": "未找到",
+  "timeout": "请求超时",
+  "something_went_wrong": "出了点问题，请重试"
+}
