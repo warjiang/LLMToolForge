@@ -81,6 +81,24 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      # Compile the Portkey gateway sidecar for this platform's target triple so
+      # `tauri build` finds binaries/portkey-gateway-<triple> to embed.
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build gateway sidecar
+        working-directory: sidecar
+        shell: bash
+        run: |
+          bun install --frozen-lockfile
+          if [ -n "${{ matrix.rust-target }}" ]; then
+            bun run build.ts --target=${{ matrix.rust-target }}
+          else
+            bun run build.ts
+          fi
+
       - name: Build & publish Tauri app
         uses: tauri-apps/tauri-action@v0
         env:

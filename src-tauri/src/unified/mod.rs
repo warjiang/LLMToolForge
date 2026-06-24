@@ -1,26 +1,43 @@
-//! Local unified API server.
+//! Local unified API supervisor.
 //!
-//! Exposes the user's connected models through a local OpenAI-compatible and
+//! Exposes the user's connected models through a local OpenAI- and
 //! Anthropic-compatible HTTP server so external tools (Codex, Claude Code,
-//! local agents) can call them. Credentials live in the frontend; the frontend
-//! pushes a routing table (`exposedModel -> upstream`) via `unified_api_set_config`.
-
-mod anthropic;
-mod http;
-mod openai;
-mod openapi;
+//! local agents) can call them. The HTTP server itself is the bundled Portkey
+//! gateway sidecar (`binaries/portkey-gateway`), which handles all protocol
+//! translation. This module supervises that process: it writes the routing
+//! config the sidecar reads, spawns/stops it, health-checks it, and turns the
+//! call-log lines the sidecar prints on stdout into the in-memory ring buffer
+//! and `CALL_LOG_EVENT` the frontend monitoring UI consumes.
+//!
+//! Credentials live in the frontend; the frontend pushes a routing table
+//! (`exposedModel -> upstream`) via `unified_api_set_config`. They are written
+//! to a local config file the sidecar reads and never reach API clients.
 
 use std::collections::{HashMap, VecDeque};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
-use tokio::sync::{oneshot, Mutex, RwLock};
+use serde_json::json;
+use tauri::{Emitter, Manager};
+use tauri_plugin_shell::process::{CommandChild, CommandEvent};
+use tauri_plugin_shell::ShellExt;
+use tokio::sync::{Mutex, RwLock};
 
 /// Max call-log records kept in the in-memory ring buffer.
 const LOG_CAPACITY: usize = 2000;
 
 /// Event name used to push each completed call log to the frontend.
 pub const CALL_LOG_EVENT: &str = "unified://call-log";
+
+/// Name of the bundled sidecar binary (see `externalBin` in `tauri.conf.json`).
+const SIDECAR_NAME: &str = "portkey-gateway";
+
+/// Prefix the sidecar uses to mark structured call-log lines on stdout.
+const LOG_MARKER: &str = "@@LLMTF_CALLLOG@@";
+
+/// Default port the gateway listens on until configured otherwise.
+const DEFAULT_PORT: u16 = 4141;
 
 /// An upstream target a given exposed model id routes to.
 #[derive(Debug, Clone)]
@@ -34,7 +51,8 @@ pub struct Upstream {
     pub provider: String,
 }
 
-/// Shared state read by the HTTP handlers.
+/// Shared routing + logging state. Read when writing the sidecar config file and
+/// when serving status/logs/stats to the frontend.
 #[derive(Debug, Default)]
 pub struct SharedState {
     /// exposedModel -> upstream.
@@ -56,6 +74,26 @@ impl SharedState {
         }
         self.logs.push_back(rec.clone());
         rec
+    }
+
+    /// Serialize the routing table into the JSON config the sidecar reads.
+    fn to_config_json(&self) -> serde_json::Value {
+        let mut routes = serde_json::Map::new();
+        for (id, up) in &self.routes {
+            routes.insert(
+                id.clone(),
+                json!({
+                    "provider": up.provider,
+                    "baseUrl": up.base_url,
+                    "apiKey": up.api_key,
+                    "realModel": up.real_model,
+                }),
+            );
+        }
+        json!({
+            "localKey": self.local_key,
+            "routes": routes,
+        })
     }
 }
 
@@ -79,6 +117,46 @@ pub struct CallLogRecord {
     pub total_tokens: Option<u64>,
     pub error: Option<String>,
     pub user_agent: Option<String>,
+}
+
+/// Call-log line emitted by the sidecar on stdout (no `id`; we assign it).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SidecarLog {
+    ts: u64,
+    exposed_model: String,
+    real_model: String,
+    provider: String,
+    protocol: String,
+    stream: bool,
+    status: u16,
+    duration_ms: u64,
+    prompt_tokens: Option<u64>,
+    completion_tokens: Option<u64>,
+    total_tokens: Option<u64>,
+    error: Option<String>,
+    user_agent: Option<String>,
+}
+
+impl SidecarLog {
+    fn into_record(self) -> CallLogRecord {
+        CallLogRecord {
+            id: 0,
+            ts: self.ts,
+            exposed_model: self.exposed_model,
+            real_model: self.real_model,
+            provider: self.provider,
+            protocol: self.protocol,
+            stream: self.stream,
+            status: self.status,
+            duration_ms: self.duration_ms as u128,
+            prompt_tokens: self.prompt_tokens,
+            completion_tokens: self.completion_tokens,
+            total_tokens: self.total_tokens,
+            error: self.error,
+            user_agent: self.user_agent,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -132,17 +210,16 @@ pub struct UnifiedStats {
     pub by_model: Vec<ModelStat>,
 }
 
-struct RunningServer {
-    port: u16,
-    shutdown: oneshot::Sender<()>,
-}
-
 struct ManagerInner {
-    running: Option<RunningServer>,
+    /// Handle to the running sidecar process, if any.
+    child: Option<CommandChild>,
+    /// Port the running sidecar is bound to.
+    running_port: Option<u16>,
+    /// Port to bind on the next start.
     pending_port: u16,
 }
 
-/// Tauri-managed handle for the unified server.
+/// Tauri-managed handle for the unified gateway sidecar.
 pub struct UnifiedManager {
     inner: Arc<Mutex<ManagerInner>>,
     shared: Arc<RwLock<SharedState>>,
@@ -153,8 +230,9 @@ impl Default for UnifiedManager {
     fn default() -> Self {
         Self {
             inner: Arc::new(Mutex::new(ManagerInner {
-                running: None,
-                pending_port: 4141,
+                child: None,
+                running_port: None,
+                pending_port: DEFAULT_PORT,
             })),
             shared: Arc::new(RwLock::new(SharedState::default())),
             client: reqwest::Client::new(),
@@ -162,15 +240,31 @@ impl Default for UnifiedManager {
     }
 }
 
-pub fn now_ms() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_millis() as u64)
-        .unwrap_or(0)
+/// Resolve (and create) the gateway config file path inside the app config dir.
+fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法获取应用配置目录：{e}"))?;
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建配置目录：{e}"))?;
+    Ok(dir.join("gateway-config.json"))
+}
+
+/// Atomically write the routing config the sidecar reads (temp file + rename so
+/// the watcher never observes a partial write).
+fn write_config_file(path: &Path, shared: &SharedState) -> Result<(), String> {
+    let value = shared.to_config_json();
+    let bytes =
+        serde_json::to_vec_pretty(&value).map_err(|e| format!("序列化网关配置失败：{e}"))?;
+    let tmp = path.with_extension("json.tmp");
+    std::fs::write(&tmp, &bytes).map_err(|e| format!("写入网关配置失败：{e}"))?;
+    std::fs::rename(&tmp, path).map_err(|e| format!("替换网关配置失败：{e}"))?;
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn unified_api_set_config(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, UnifiedManager>,
     config: UnifiedConfigInput,
     routes: Vec<RouteInput>,
@@ -200,6 +294,13 @@ pub async fn unified_api_set_config(
             })
             .collect();
     }
+    // Persist the config so it is ready for the next start and so a running
+    // sidecar hot-reloads it (it watches the file).
+    let path = config_path(&app)?;
+    {
+        let shared = manager.shared.read().await;
+        write_config_file(&path, &shared)?;
+    }
     status(&manager).await
 }
 
@@ -210,37 +311,77 @@ pub async fn unified_api_start(
 ) -> Result<UnifiedStatus, String> {
     let port = {
         let inner = manager.inner.lock().await;
-        if inner.running.is_some() {
+        if inner.child.is_some() {
+            drop(inner);
             return status(&manager).await;
         }
         inner.pending_port
     };
 
-    let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let listener = tokio::net::TcpListener::bind(addr)
-        .await
-        .map_err(|e| format!("无法监听 127.0.0.1:{port}：{e}"))?;
+    let path = config_path(&app)?;
+    {
+        let shared = manager.shared.read().await;
+        write_config_file(&path, &shared)?;
+    }
 
-    let ctx = http::AppCtx {
-        shared: manager.shared.clone(),
-        client: manager.client.clone(),
-        app: app.clone(),
-    };
-    let router = http::router(ctx);
-    let (tx, rx) = oneshot::channel::<()>();
+    let sidecar = app
+        .shell()
+        .sidecar(SIDECAR_NAME)
+        .map_err(|e| format!("无法创建网关 sidecar：{e}"))?;
+    let (mut rx, child) = sidecar
+        .args([
+            format!("--port={port}"),
+            format!("--config={}", path.display()),
+        ])
+        .spawn()
+        .map_err(|e| format!("启动网关进程失败：{e}"))?;
 
+    // Pump sidecar stdout/stderr: structured log lines feed the ring buffer and
+    // the frontend event; everything else is forwarded for diagnostics.
+    let shared = manager.shared.clone();
+    let inner_handle = manager.inner.clone();
+    let app_handle = app.clone();
     tauri::async_runtime::spawn(async move {
-        let _ = axum::serve(listener, router)
-            .with_graceful_shutdown(async {
-                let _ = rx.await;
-            })
-            .await;
+        while let Some(event) = rx.recv().await {
+            match event {
+                CommandEvent::Stdout(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    handle_stdout_line(&shared, &app_handle, line.trim_end()).await;
+                }
+                CommandEvent::Stderr(bytes) => {
+                    let line = String::from_utf8_lossy(&bytes);
+                    let line = line.trim_end();
+                    if !line.is_empty() {
+                        eprintln!("[gateway] {line}");
+                    }
+                }
+                CommandEvent::Error(err) => {
+                    eprintln!("[gateway] sidecar error: {err}");
+                }
+                CommandEvent::Terminated(payload) => {
+                    eprintln!("[gateway] sidecar exited: {:?}", payload.code);
+                    let mut inner = inner_handle.lock().await;
+                    inner.child = None;
+                    inner.running_port = None;
+                    break;
+                }
+                _ => {}
+            }
+        }
     });
 
     {
         let mut inner = manager.inner.lock().await;
-        inner.running = Some(RunningServer { port, shutdown: tx });
+        inner.child = Some(child);
+        inner.running_port = Some(port);
     }
+
+    // Best-effort health check so the UI only reports "running" once the gateway
+    // is actually accepting connections.
+    if let Err(e) = wait_healthy(&manager.client, port).await {
+        eprintln!("[gateway] health check failed: {e}");
+    }
+
     status(&manager).await
 }
 
@@ -250,9 +391,10 @@ pub async fn unified_api_stop(
 ) -> Result<UnifiedStatus, String> {
     {
         let mut inner = manager.inner.lock().await;
-        if let Some(server) = inner.running.take() {
-            let _ = server.shutdown.send(());
+        if let Some(child) = inner.child.take() {
+            let _ = child.kill();
         }
+        inner.running_port = None;
     }
     status(&manager).await
 }
@@ -292,18 +434,57 @@ pub async fn unified_api_stats(
     Ok(compute_stats(&shared.logs))
 }
 
+/// Parse a single sidecar stdout line, recording structured call logs.
+async fn handle_stdout_line(shared: &Arc<RwLock<SharedState>>, app: &tauri::AppHandle, line: &str) {
+    if line.is_empty() {
+        return;
+    }
+    let Some(rest) = line.strip_prefix(LOG_MARKER) else {
+        eprintln!("[gateway] {line}");
+        return;
+    };
+    match serde_json::from_str::<SidecarLog>(rest) {
+        Ok(log) => {
+            let stored = {
+                let mut s = shared.write().await;
+                s.push_log(log.into_record())
+            };
+            let _ = app.emit(CALL_LOG_EVENT, &stored);
+        }
+        Err(e) => eprintln!("[gateway] 无法解析调用日志：{e}"),
+    }
+}
+
+/// Poll the sidecar `/health` endpoint until it responds or the timeout elapses.
+async fn wait_healthy(client: &reqwest::Client, port: u16) -> Result<(), String> {
+    let url = format!("http://127.0.0.1:{port}/health");
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(8);
+    loop {
+        match client
+            .get(&url)
+            .timeout(std::time::Duration::from_millis(500))
+            .send()
+            .await
+        {
+            Ok(resp) if resp.status().is_success() => return Ok(()),
+            _ => {
+                if std::time::Instant::now() >= deadline {
+                    return Err("网关在超时时间内未就绪".to_string());
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+            }
+        }
+    }
+}
+
 async fn status(manager: &tauri::State<'_, UnifiedManager>) -> Result<UnifiedStatus, String> {
     let inner = manager.inner.lock().await;
     let shared = manager.shared.read().await;
     let mut models: Vec<String> = shared.routes.keys().cloned().collect();
     models.sort();
     Ok(UnifiedStatus {
-        running: inner.running.is_some(),
-        port: inner
-            .running
-            .as_ref()
-            .map(|r| r.port)
-            .unwrap_or(inner.pending_port),
+        running: inner.child.is_some(),
+        port: inner.running_port.unwrap_or(inner.pending_port),
         route_count: shared.routes.len(),
         has_local_key: shared.local_key.is_some(),
         models,
