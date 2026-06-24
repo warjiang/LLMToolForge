@@ -35,7 +35,7 @@ export const DEFAULT_CONFIG: UnifiedApiConfig = {
 
 /** One exposable model resolved from a connection. */
 export interface ExposedModel {
-  /** Public id exposed by the server, `{provider}/{model}`. */
+  /** Public id exposed by the server, `{connName}/{model}`. */
   id: string;
   /** Upstream model id. */
   realModel: string;
@@ -176,6 +176,15 @@ function volcModelSlug(m: ModelInfo): string {
   return slugifyModel(candidate);
 }
 
+/** Short, stable token derived from a connection id, for namespace tiebreaks. */
+function connToken(connId: string): string {
+  const tail = connId.includes(":")
+    ? connId.slice(connId.indexOf(":") + 1)
+    : connId;
+  const slug = slugifyModel(tail);
+  return slug.slice(-6) || "conn";
+}
+
 /** Normalize an arbitrary model label into a clean, url-safe slug. */
 function slugifyModel(name: string): string {
   return (
@@ -190,8 +199,10 @@ function slugifyModel(name: string): string {
 }
 
 /**
- * Flatten all connections into exposable models, assigning `{provider}/{model}`
- * ids and disambiguating collisions across connections of the same provider.
+ * Flatten all connections into exposable models, assigning `{connName}/{model}`
+ * ids. The connection name is the namespace so that distinct connections of the
+ * same provider type (e.g. two `new-api` gateways) never collide; connections
+ * that happen to share a name are disambiguated with a short connection token.
  */
 export function buildExposedModels(
   volc: VolcCredential[],
@@ -249,21 +260,28 @@ export function buildExposedModels(
     }
   }
 
-  // Detect base-id collisions across distinct connections.
-  const baseCount = new Map<string, number>();
+  // Namespace ids by connection name. Detect names shared by >1 connection so
+  // we only append a connection token where it is actually needed.
+  const nsConns = new Map<string, Set<string>>();
   for (const c of candidates) {
-    const base = `${c.provider}/${c.slug}`;
-    baseCount.set(base, (baseCount.get(base) ?? 0) + 1);
+    const ns = sanitize(c.connName);
+    let set = nsConns.get(ns);
+    if (!set) {
+      set = new Set();
+      nsConns.set(ns, set);
+    }
+    set.add(c.connId);
   }
 
   const seen = new Set<string>();
   const models: ExposedModel[] = [];
   for (const c of candidates) {
-    const base = `${c.provider}/${c.slug}`;
-    let id = base;
-    if ((baseCount.get(base) ?? 0) > 1) {
-      id = `${c.provider}/${sanitize(c.connName)}/${c.slug}`;
-    }
+    const ns0 = sanitize(c.connName);
+    const ns =
+      (nsConns.get(ns0)?.size ?? 0) > 1
+        ? `${ns0}-${connToken(c.connId)}`
+        : ns0;
+    const id = `${ns}/${c.slug}`;
     // Guard against any residual duplicate (same model twice in one conn).
     let unique = id;
     let n = 2;

@@ -4,7 +4,7 @@
  * Wraps the vendored Portkey gateway (`../portkey/src/index.ts`) with:
  *   - local API key auth,
  *   - a `/v1/models` endpoint backed by the app's routing table,
- *   - resolution of exposed model ids (`{provider}/{model}`) to the real upstream
+ *   - resolution of exposed model ids (`{connName}/{model}`) to the real upstream
  *     (provider + custom host + real key + real model), injected as Portkey
  *     headers so upstream credentials never reach the client,
  *   - an Anthropic <-> OpenAI bridge for `/v1/messages` (Claude Code), since

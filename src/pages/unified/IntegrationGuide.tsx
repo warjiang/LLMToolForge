@@ -59,7 +59,7 @@ export function IntegrationGuide({
 }) {
   const key = localKey || "<可留空，未设置本地 Key 时任意值即可>";
   const openaiBase = `${baseUrl}/v1`;
-  const model = sampleModel || "{provider}/{model}";
+  const model = sampleModel || "{连接名}/{model}";
 
   const curlChat = `curl ${openaiBase}/chat/completions \\
   -H "Content-Type: application/json" \\
