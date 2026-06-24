@@ -170,6 +170,7 @@ pub fn run() {
         .plugin(tauri_plugin_store::Builder::new().build())
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
+        .plugin(tauri_plugin_shell::init())
         .manage(unified::UnifiedManager::default())
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,

@@ -1,0 +1,2 @@
+# Keep this directory; compiled portkey-gateway-<triple> binaries are built
+# into here by sidecar/build.ts during CI and are gitignored.

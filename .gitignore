@@ -8,6 +8,10 @@ dist-ssr/
 # Tauri / Rust
 src-tauri/target/
 
+# Compiled gateway sidecar binaries (built in CI from sidecar/, ~60MB each)
+src-tauri/binaries/portkey-gateway-*
+sidecar/portkey/patches/*.orig
+
 # Logs
 *.log
 npm-debug.log*
