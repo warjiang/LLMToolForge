@@ -6,7 +6,6 @@ import {
   Server,
   Wrench,
   Settings,
-  Hammer,
   Cloud,
   MessageSquare,
   Network,
@@ -52,30 +51,6 @@ export function Sidebar() {
       }
       className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-chrome"
     >
-      <div
-        className={cn(
-          "flex h-14 items-center gap-2",
-          collapsed ? "justify-center px-0" : "px-5"
-        )}
-      >
-        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-geist-sm">
-          <Hammer className="h-4 w-4" />
-        </div>
-        <AnimatePresence initial={false}>
-          {!collapsed && (
-            <motion.span
-              initial={reduce ? false : { opacity: 0, x: -4 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={reduce ? undefined : { opacity: 0, x: -4 }}
-              transition={labelTransition}
-              className="whitespace-nowrap text-heading-14 tracking-tight"
-            >
-              LLMToolForge
-            </motion.span>
-          )}
-        </AnimatePresence>
-      </div>
-
       <nav className="flex flex-1 flex-col gap-0.5 px-3 py-2">
         {navItems.map(({ to, label, icon: Icon, end }) => (
           <NavLink
