@@ -11,7 +11,6 @@ import {
   FileText,
   FileVideo,
   Loader2,
-  MessageSquarePlus,
   Pencil,
   Plus,
   Play,
@@ -26,7 +25,6 @@ import {
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { TypingDots } from "@/components/common/Reveal";
 import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
@@ -35,7 +33,6 @@ import {
   ProviderIconLabel,
 } from "@/components/common/ProviderModelIcon";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,7 +65,7 @@ import {
   useSkillStore,
   useMcpStore,
 } from "@/store";
-import { cn, formatDate, uid } from "@/lib/utils";
+import { cn, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
@@ -273,7 +270,7 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
   return lines.join("\n");
 }
 
-export function PlaygroundPage() {
+export function AgentChatView() {
   const volc = useVolcCredentialStore();
   const gateway = useGatewayStore();
   const apiKeys = useApiKeyStore();
@@ -1149,7 +1146,7 @@ export function PlaygroundPage() {
 
   if (loaded && options.length === 0) {
     return (
-      <div>
+      <div className="flex h-full w-full items-center justify-center p-6">
         <EmptyState
           icon={Bot}
           title="还没有可用的连接"
@@ -1160,32 +1157,9 @@ export function PlaygroundPage() {
   }
 
   return (
-    <div className="flex h-[calc(100vh-6.5rem)] min-h-[620px] flex-col gap-3 [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
-      <div className="flex shrink-0 items-center justify-between gap-4">
-        <div className="min-w-0">
-          <h1 className="truncate text-heading-20">Playground</h1>
-          <p className="mt-0.5 truncate text-label-12 text-muted-foreground">
-            会话、模型、多模态和工具运行集中在同一个工作台。
-          </p>
-        </div>
-        <Badge variant="outline" className="shrink-0 gap-1.5 rounded-md">
-          <Database className="h-3.5 w-3.5" />
-          SQLite
-        </Badge>
-      </div>
-
-      <Card
-        className={cn(
-          "grid min-h-0 flex-1 grid-rows-[auto_minmax(0,1fr)_auto] divide-y divide-border overflow-hidden shadow-geist-md lg:grid-rows-1 lg:divide-x lg:divide-y-0",
-          configOpen
-            ? "lg:grid-cols-[240px_minmax(0,1fr)_300px]"
-            : "lg:grid-cols-[240px_minmax(0,1fr)]"
-        )}
-      >
-        <SessionRail />
-
-        <section className="flex min-h-0 flex-col bg-background">
-          <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
+    <div className="flex h-full min-h-0 w-full [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
+      <section className="flex min-h-0 flex-1 flex-col bg-background">
+        <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent">
                 <Sparkles className="h-4 w-4" />
@@ -1403,16 +1377,17 @@ export function PlaygroundPage() {
         </section>
 
         {configOpen && (
-          <ConfigRail
-            settings={settings}
-            isVolc={isVolc}
-            usableKeys={usableKeys}
-            toolCalls={chat.toolCalls}
-            onSettings={updateSettings}
-            onClose={() => setConfigOpen(false)}
-          />
+          <div className="hidden h-full w-[300px] shrink-0 border-l border-border lg:flex">
+            <ConfigRail
+              settings={settings}
+              isVolc={isVolc}
+              usableKeys={usableKeys}
+              toolCalls={chat.toolCalls}
+              onSettings={updateSettings}
+              onClose={() => setConfigOpen(false)}
+            />
+          </div>
         )}
-      </Card>
     </div>
   );
 }
@@ -1446,81 +1421,6 @@ function MessageSkeletons() {
   );
 }
 
-function SessionRail() {
-  const chat = useChatStore();
-  const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
-  const pendingDelete = chat.sessions.find((session) => session.id === deleteSessionId);
-  const canDeleteSession = chat.sessions.length > 1;
-
-  return (
-    <aside className="flex min-h-0 flex-col bg-card-elevated/50">
-      <div className="flex h-14 shrink-0 items-center justify-between border-b border-border px-3">
-        <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
-          Sessions
-        </div>
-        <Button
-          size="icon-sm"
-          variant="ghost"
-          onClick={() => chat.newSession()}
-          title="新建会话"
-          aria-label="新建会话"
-        >
-          <MessageSquarePlus className="h-4 w-4" />
-        </Button>
-      </div>
-      <div className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-2 lg:overflow-x-hidden lg:overflow-y-auto">
-        <div className="flex gap-2 lg:block">
-          {chat.sessions.map((session) => (
-            <div
-              key={session.id}
-              className="group relative min-w-[190px] lg:mb-1 lg:min-w-0"
-            >
-              <button
-                className={cn(
-                  "grid h-full w-full gap-1 rounded-sm py-2 pl-3 pr-10 text-left transition-colors hover:bg-secondary focus-visible:bg-secondary focus-visible:outline-none",
-                  chat.activeSessionId === session.id && "bg-secondary"
-                )}
-                onClick={() => chat.selectSession(session.id)}
-              >
-                <span className="truncate text-label-13 font-medium">
-                  {session.title}
-                </span>
-                <span className="text-label-12 text-muted-foreground">
-                  {formatDate(session.updatedAt)}
-                </span>
-              </button>
-              {canDeleteSession && (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  className="absolute right-1.5 top-1/2 h-7 w-7 -translate-y-1/2 opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100 group-focus-within:opacity-100"
-                  title="删除会话"
-                  onClick={() => setDeleteSessionId(session.id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </Button>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-      <ConfirmDialog
-        open={!!pendingDelete}
-        onOpenChange={(open) => {
-          if (!open) setDeleteSessionId(null);
-        }}
-        title="删除会话"
-        description={`确定删除「${pendingDelete?.title ?? "该会话"}」吗？此操作会删除会话中的所有消息，无法撤销。`}
-        confirmLabel="删除"
-        onConfirm={() => {
-          if (pendingDelete) void chat.deleteSession(pendingDelete.id);
-          setDeleteSessionId(null);
-        }}
-      />
-    </aside>
-  );
-}
-
 function ConfigRail({
   settings,
   isVolc,
@@ -1540,13 +1440,13 @@ function ConfigRail({
 }) {
   if (!settings) {
     return (
-      <aside className="flex items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
+      <aside className="flex h-full w-full items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
         加载会话设置…
       </aside>
     );
   }
   return (
-    <aside className="flex min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
+    <aside className="flex h-full w-full min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
           配置

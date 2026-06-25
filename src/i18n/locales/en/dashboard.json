@@ -30,6 +30,6 @@
   "setup_skills_desc": "Organize common prompts, tool descriptions, and invocation methods into reusable abilities.",
   "setup_mcp_label": "Connect MCP Server",
   "setup_mcp_desc": "Connect local or remote tools to models to extend callable capabilities.",
-  "ready_playground_label": "Open Playground",
-  "ready_playground_desc": "Test real conversations with configured models, Skills, and tool combinations."
+  "ready_playground_label": "Enter Agent mode",
+  "ready_playground_desc": "Test real conversations in a dedicated chat interface using your configured models, Skills, and tools."
 }

@@ -15,6 +15,7 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Reveal } from "@/components/common/Reveal";
 import { Card } from "@/components/ui/card";
 import { useApiKeyStore, useMcpStore, useSkillStore } from "@/store";
+import { useAppModeStore } from "@/store/appMode";
 
 export function DashboardPage() {
   const { t } = useTranslation("dashboard");
@@ -51,9 +52,9 @@ export function DashboardPage() {
               description: t("setup_mcp_desc"),
             }
           : {
-              to: "/playground",
               label: t("ready_playground_label"),
               description: t("ready_playground_desc"),
+              onClick: () => useAppModeStore.getState().setMode("agent"),
             };
 
   return (
@@ -158,7 +159,10 @@ export function DashboardPage() {
                     {nextAction.description}
                   </p>
                   <QuickLink
-                    to={nextAction.to}
+                    to={"to" in nextAction ? nextAction.to : undefined}
+                    onClick={
+                      "onClick" in nextAction ? nextAction.onClick : undefined
+                    }
                     label={nextAction.label}
                     className="mt-4"
                   />
@@ -254,18 +258,26 @@ function StatusRow({ label, value }: { label: string; value: string }) {
 
 function QuickLink({
   to,
+  onClick,
   label,
   className,
 }: {
-  to: string;
+  to?: string;
+  onClick?: () => void;
   label: string;
   className?: string;
 }) {
+  const classes = `inline-flex items-center gap-1.5 rounded-sm border border-border px-3 py-1.5 text-label-13 text-foreground transition-colors hover:bg-secondary ${className ?? ""}`;
+  if (onClick) {
+    return (
+      <button type="button" onClick={onClick} className={classes}>
+        {label}
+        <ArrowRight className="h-3.5 w-3.5" />
+      </button>
+    );
+  }
   return (
-    <Link
-      to={to}
-      className={`inline-flex items-center gap-1.5 rounded-sm border border-border px-3 py-1.5 text-label-13 text-foreground transition-colors hover:bg-secondary ${className ?? ""}`}
-    >
+    <Link to={to ?? "#"} className={classes}>
       {label}
       <ArrowRight className="h-3.5 w-3.5" />
     </Link>

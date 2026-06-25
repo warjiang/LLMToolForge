@@ -42,7 +42,7 @@ export function Topbar() {
     <header
       data-tauri-drag-region
       className={cn(
-        "flex h-11 shrink-0 items-center justify-between border-b border-border bg-chrome pr-3",
+        "relative flex h-11 shrink-0 items-center justify-between border-b border-border bg-chrome pr-3",
         trafficLightPad ? "pl-[84px]" : "pl-3"
       )}
     >

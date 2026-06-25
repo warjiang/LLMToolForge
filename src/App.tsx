@@ -7,7 +7,6 @@ import { DashboardPage } from "@/pages/DashboardPage";
 import { SkillsPage } from "@/pages/skills/SkillsPage";
 import { McpPage } from "@/pages/mcp/McpPage";
 import { ProvidersPage } from "@/pages/providers/ProvidersPage";
-import { PlaygroundPage } from "@/pages/playground/PlaygroundPage";
 import { UnifiedApiPage } from "@/pages/unified/UnifiedApiPage";
 import { ToolsPage } from "@/pages/tools/ToolsPage";
 import { SettingsPage } from "@/pages/SettingsPage";
@@ -25,7 +24,7 @@ const router = createBrowserRouter([
         path: "providers/volcengine",
         element: <Navigate to="/providers" replace />,
       },
-      { path: "playground", element: <PlaygroundPage /> },
+      { path: "playground", element: <Navigate to="/" replace /> },
       { path: "unified", element: <UnifiedApiPage /> },
       { path: "skills", element: <SkillsPage /> },
       { path: "mcp", element: <McpPage /> },

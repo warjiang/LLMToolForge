@@ -30,6 +30,6 @@
   "setup_skills_desc": "把常用提示词、工具说明和调用方式整理成可复用能力。",
   "setup_mcp_label": "接入 MCP Server",
   "setup_mcp_desc": "为模型接入本地或远端工具，扩展可调用能力。",
-  "ready_playground_label": "打开 Playground",
-  "ready_playground_desc": "用已配置的模型、Skill 和工具组合测试真实对话。"
+  "ready_playground_label": "进入 Agent 形态",
+  "ready_playground_desc": "用已配置的模型、Skill 和工具组合，在独立的聊天界面里测试真实对话。"
 }

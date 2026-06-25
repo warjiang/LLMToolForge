@@ -38,6 +38,7 @@ i18n
     resources,
     fallbackLng: 'zh',
     defaultNS: 'common',
+    fallbackNS: 'common',
     interpolation: {
       escapeValue: false,
     },

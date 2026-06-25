@@ -8,7 +8,6 @@ import {
   Wrench,
   Settings,
   Cloud,
-  MessageSquare,
   Network,
   Moon,
   Sun,
@@ -17,6 +16,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar";
 import { useThemeStore } from "@/store/theme";
+import { FormModeToggle } from "./FormModeToggle";
 import { useLocaleStore } from "@/store/locale";
 
 const EXPANDED = 240;
@@ -34,7 +34,6 @@ export function Sidebar() {
   const navItems = [
     { to: "/", label: t("dashboard"), icon: LayoutDashboard, end: true },
     { to: "/providers", label: t("providers"), icon: Cloud },
-    { to: "/playground", label: t("playground"), icon: MessageSquare },
     { to: "/unified", label: t("unified_api"), icon: Network },
     { to: "/skills", label: t("skills"), icon: Boxes },
     { to: "/mcp", label: t("mcp_servers"), icon: Server },
@@ -72,14 +71,14 @@ export function Sidebar() {
                   "relative z-10 flex items-center gap-2.5 rounded-sm py-2 text-label-14 transition-colors duration-150",
                   collapsed ? "justify-center px-0" : "px-2.5",
                   isActive
-                    ? "text-foreground"
+                    ? "font-medium text-foreground"
                     : "text-muted-foreground group-hover:bg-secondary/60 group-hover:text-foreground"
                 )}
               >
                 {isActive && (
                   <motion.span
                     layoutId="nav-active"
-                    className="absolute inset-0 -z-10 rounded-sm bg-secondary"
+                    className="absolute inset-0 -z-10 rounded-sm bg-muted ring-1 ring-inset ring-border"
                     transition={
                       reduce
                         ? { duration: 0 }
@@ -109,73 +108,67 @@ export function Sidebar() {
 
       <div
         className={cn(
-          "flex flex-col gap-1 border-t border-border/60 py-3",
-          collapsed ? "items-center px-2" : "px-3"
+          "flex border-t border-border/60 py-3",
+          collapsed
+            ? "flex-col items-center gap-1 px-2"
+            : "items-center justify-between px-3"
         )}
       >
-        <button
-          onClick={toggleTheme}
-          aria-label={t("theme_toggle")}
-          title={theme === "dark" ? t("switch_to_light") : t("switch_to_dark")}
+        <div
           className={cn(
-            "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
-            collapsed ? "w-9 justify-center px-0" : "px-2.5"
+            "flex items-center",
+            collapsed ? "flex-col gap-1" : "gap-1"
           )}
         >
-          <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={theme}
-                initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
-                animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                {theme === "dark" ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
-                )}
-              </motion.span>
-            </AnimatePresence>
-          </span>
-          {!collapsed && (
-            <span className="whitespace-nowrap">
-              {theme === "dark" ? t("light_mode") : t("dark_mode")}
+          <button
+            onClick={toggleTheme}
+            aria-label={t("theme_toggle")}
+            title={theme === "dark" ? t("switch_to_light") : t("switch_to_dark")}
+            className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
+          >
+            <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={theme}
+                  initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
+                  animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                  exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  {theme === "dark" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
             </span>
-          )}
-        </button>
+          </button>
 
-        <button
-          onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
-          aria-label={t("language")}
-          title={t("select_language")}
-          className={cn(
-            "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
-            collapsed ? "w-9 justify-center px-0" : "px-2.5"
-          )}
-        >
-          <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={language}
-                initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
-                animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute inset-0 flex items-center justify-center"
-              >
-                <Globe className="h-4 w-4" />
-              </motion.span>
-            </AnimatePresence>
-          </span>
-          {!collapsed && (
-            <span className="whitespace-nowrap">
-              {language === "zh" ? t("english") : t("chinese")}
+          <button
+            onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
+            aria-label={t("language")}
+            title={t("select_language")}
+            className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
+          >
+            <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={language}
+                  initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
+                  animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                  exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  <Globe className="h-4 w-4" />
+                </motion.span>
+              </AnimatePresence>
             </span>
-          )}
-        </button>
+          </button>
+        </div>
+        <FormModeToggle />
       </div>
     </motion.aside>
   );

@@ -7,6 +7,7 @@
     "core:default",
     "core:window:allow-start-dragging",
     "store:default",
+    "window-state:default",
     "sql:allow-load",
     "sql:allow-select",
     "sql:allow-execute",

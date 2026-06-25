@@ -420,6 +420,7 @@ pub fn run() {
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_sql::Builder::default().build())
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(unified::UnifiedManager::default())
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
