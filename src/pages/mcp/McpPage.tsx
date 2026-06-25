@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { MoreHorizontal, Pencil, Plus, Server, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
@@ -20,6 +21,7 @@ import type { McpServer } from "@/types";
 import { McpDialog } from "./McpDialog";
 
 export function McpPage() {
+  const { t } = useTranslation("pages");
   const { items, loaded, load, edit, remove } = useMcpStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<McpServer | null>(null);
@@ -38,12 +40,12 @@ export function McpPage() {
     <div>
       <PageHeader
         title="MCP Servers"
-        description="管理 Model Context Protocol 服务器连接，扩展大模型的工具集。"
+        description={t("mcp_page_desc")}
         actions={
           items.length > 0 ? (
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建 Server
+              {t("mcp_new_server")}
             </Button>
           ) : undefined
         }
@@ -52,12 +54,12 @@ export function McpPage() {
       {items.length === 0 ? (
         <EmptyState
           icon={Server}
-          title="还没有 MCP Server"
-          description="添加一个 stdio / SSE / HTTP 服务器，为工具调用接入更多能力。"
+          title={t("mcp_empty_title")}
+          description={t("mcp_empty_desc")}
           action={
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建 Server
+              {t("mcp_new_server")}
             </Button>
           }
         />
@@ -114,7 +116,7 @@ export function McpPage() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={`确定删除 “${deleting?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -131,22 +133,23 @@ function RowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="操作">
+        <Button variant="ghost" size="icon-sm" aria-label={t("actions", { ns: "common" })}>
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          编辑
+          {t("edit", { ns: "common" })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
-          删除
+          {t("delete", { ns: "common" })}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

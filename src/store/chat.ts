@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { chatRepo } from "@/data/chatRepository";
+import i18n from "@/i18n/config";
 import type {
   ChatAttachment,
   ChatSession,
@@ -68,7 +69,7 @@ interface ChatState {
 
 function titleFromFirstMessage(content: string): string {
   const title = content.trim().replace(/\s+/g, " ").slice(0, 28);
-  return title || "新会话";
+  return title || i18n.t("pages:chat_new_session");
 }
 
 async function loadIntoState(set: (patch: Partial<ChatState>) => void, id: string) {
@@ -108,7 +109,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch (e) {
       set({
         loading: false,
-        error: e instanceof Error ? e.message : "加载聊天数据失败",
+        error: e instanceof Error ? e.message : i18n.t("pages:chat_load_error"),
       });
     }
   },
@@ -124,10 +125,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   renameSession: async (id, title) => {
-    await chatRepo.updateSession(id, { title: title.trim() || "新会话" });
+    await chatRepo.updateSession(id, { title: title.trim() || i18n.t("pages:chat_new_session") });
     set({
       sessions: get().sessions.map((s) =>
-        s.id === id ? { ...s, title: title.trim() || "新会话" } : s
+        s.id === id ? { ...s, title: title.trim() || i18n.t("pages:chat_new_session") } : s
       ),
     });
   },
@@ -156,7 +157,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().newSession();
       sessionId = get().activeSessionId;
     }
-    if (!sessionId) throw new Error("没有可用会话");
+    if (!sessionId) throw new Error(i18n.t("pages:chat_no_session"));
     return chatRepo.fileToAttachment(sessionId, file);
   },
 
@@ -166,7 +167,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().newSession();
       sessionId = get().activeSessionId;
     }
-    if (!sessionId) throw new Error("没有可用会话");
+    if (!sessionId) throw new Error(i18n.t("pages:chat_no_session"));
     const normalizedParts =
       input.parts ??
       (input.content
@@ -187,7 +188,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const messages = [...get().messages, message];
     set({ messages });
     const active = get().sessions.find((s) => s.id === sessionId);
-    if (active?.title === "新会话" && input.role === "user") {
+    if (active?.title === i18n.t("pages:chat_new_session") && input.role === "user") {
       const title = titleFromFirstMessage(input.content);
       await get().renameSession(sessionId, title);
     }

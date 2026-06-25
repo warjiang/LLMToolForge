@@ -6,6 +6,7 @@
  */
 
 import type { ModelInfo, ProviderCredential } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import {
   authHeader,
   endpoint,
@@ -40,7 +41,9 @@ export async function listModels(
 
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`拉取模型失败: HTTP ${res.status} ${text.slice(0, 300)}`);
+    throw new Error(
+      i18n.t("provider_fetch_models_failed", { ns: "common", status: res.status, text: text.slice(0, 300) })
+    );
   }
 
   const json = (await res.json()) as ModelListResponse;

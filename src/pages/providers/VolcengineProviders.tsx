@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
@@ -37,6 +38,7 @@ import {
 import { VolcCredentialDialog } from "./VolcCredentialDialog";
 
 export function VolcengineProviders() {
+  const { t } = useTranslation("pages");
   const { items, loaded, load } = useVolcCredentialStore();
   const remove = useVolcCredentialStore((s) => s.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -66,12 +68,12 @@ export function VolcengineProviders() {
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-border pb-4">
         <p className="text-label-13 text-muted-foreground">
-          录入 AK/SK，自动拉取已开通的模型与 Ark API Key，用于在 Playground 中测试。
+          {t("volc_providers_desc")}
         </p>
         {items.length > 0 && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" />
-            新建凭证
+            {t("volc_new_credential")}
           </Button>
         )}
       </div>
@@ -79,12 +81,12 @@ export function VolcengineProviders() {
       {items.length === 0 ? (
         <EmptyState
           icon={Cloud}
-          title="还没有火山引擎凭证"
-          description="添加你的 AccessKey / SecretKey，开始拉取已开通的模型。"
+          title={t("volc_empty_title")}
+          description={t("volc_empty_desc")}
           action={
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建凭证
+              {t("volc_new_credential")}
             </Button>
           }
         />
@@ -111,8 +113,7 @@ export function VolcengineProviders() {
                   </div>
                   <div className="truncate text-label-12 text-muted-foreground">
                     {c.region} · {c.apiKeys.length} Key
-                  </div>
-                </div>
+                  </div>                </div>
                 <RowMenu
                   onEdit={() => {
                     setEditing(c);
@@ -138,7 +139,7 @@ export function VolcengineProviders() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={`确定删除 “${deleting?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -149,6 +150,7 @@ export function VolcengineProviders() {
 }
 
 function CredentialDetail({ credential }: { credential: VolcCredential }) {
+  const { t } = useTranslation("pages");
   const edit = useVolcCredentialStore((s) => s.edit);
   const [models, setModels] = useState<ModelInfo[]>(credential.models ?? []);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -177,7 +179,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
       setModels(list);
       await edit(credential.id, { models: list });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拉取模型失败");
+      setError(e instanceof Error ? e.message : t("volc_fetch_models_failed"));
     } finally {
       setModelsLoading(false);
     }
@@ -200,7 +202,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
       }
       await edit(credential.id, { apiKeys: refs });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拉取 API Key 失败");
+      setError(e instanceof Error ? e.message : t("volc_fetch_keys_failed"));
     } finally {
       setKeysLoading(false);
     }
@@ -217,7 +219,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
         <TabsList>
           <TabsTrigger value="models">
             <Boxes className="h-3.5 w-3.5" />
-            模型 {models.length > 0 && `(${models.length})`}
+            {t("volc_tab_models")} {models.length > 0 && `(${models.length})`}
           </TabsTrigger>
           <TabsTrigger value="keys">
             <KeyRound className="h-3.5 w-3.5" />
@@ -228,7 +230,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
         <TabsContent value="models">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-label-13 text-muted-foreground">
-              已开通的模型（推理 Endpoint）
+              {t("volc_models_desc")}
             </p>
             <Button size="sm" variant="secondary" onClick={fetchModels} disabled={modelsLoading}>
               {modelsLoading ? (
@@ -236,12 +238,12 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
               ) : (
                 <RefreshCw className="h-3.5 w-3.5" />
               )}
-              拉取模型
+              {t("volc_fetch_models")}
             </Button>
           </div>
           {models.length === 0 ? (
             <p className="py-8 text-center text-label-13 text-muted-foreground">
-              点击「拉取模型」获取已开通的模型列表。
+              {t("volc_models_hint")}
             </p>
           ) : (
             <div className="flex flex-col divide-y divide-border">
@@ -264,7 +266,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
         <TabsContent value="keys">
           <div className="mb-3 flex items-center justify-between">
             <p className="text-label-13 text-muted-foreground">
-              用于调用模型的 Ark API Key（Bearer）
+              {t("volc_keys_desc")}
             </p>
             <Button size="sm" variant="secondary" onClick={fetchKeys} disabled={keysLoading}>
               {keysLoading ? (
@@ -272,12 +274,12 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
               ) : (
                 <RefreshCw className="h-3.5 w-3.5" />
               )}
-              拉取 API Key
+              {t("volc_fetch_keys")}
             </Button>
           </div>
           {credential.apiKeys.length === 0 ? (
             <p className="py-8 text-center text-label-13 text-muted-foreground">
-              点击「拉取 API Key」获取并保存可用于推理的密钥。
+              {t("volc_keys_hint")}
             </p>
           ) : (
             <div className="flex flex-col divide-y divide-border">
@@ -292,7 +294,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
                       {k.name}
                     </div>
                     <code className="font-mono text-label-12 text-muted-foreground">
-                      {k.key ? maskSecret(k.key) : "（未获取到密钥）"}
+                      {k.key ? maskSecret(k.key) : t("volc_key_not_fetched")}
                     </code>
                   </div>
                   {k.key && (
@@ -301,10 +303,10 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
                       variant="ghost"
                       onClick={() => navigator.clipboard?.writeText(k.key!)}
                     >
-                      复制
+                      {t("copy", { ns: "common" })}
                     </Button>
                   )}
-                  {!k.key && <Badge variant="warning">无值</Badge>}
+                  {!k.key && <Badge variant="warning">{t("volc_no_key")}</Badge>}
                 </div>
               ))}
             </div>
@@ -322,6 +324,7 @@ function RowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -329,7 +332,7 @@ function RowMenu({
           role="button"
           tabIndex={0}
           className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-background group-hover:opacity-100"
-          aria-label="操作"
+          aria-label={t("actions", { ns: "common" })}
           onClick={(e) => e.stopPropagation()}
         >
           <MoreHorizontal className="h-4 w-4" />
@@ -338,12 +341,12 @@ function RowMenu({
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          编辑
+          {t("edit", { ns: "common" })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
-          删除
+          {t("delete", { ns: "common" })}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

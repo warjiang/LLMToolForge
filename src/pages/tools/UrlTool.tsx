@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -8,6 +9,7 @@ import { urlDecode, urlEncode } from "@/lib/tools";
 type Mode = "encode" | "decode";
 
 export function UrlTool() {
+  const { t } = useTranslation("pages");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("encode");
   const [full, setFull] = useState(false);
@@ -25,19 +27,19 @@ export function UrlTool() {
       error={result.ok ? null : result.error}
       inputPlaceholder={
         mode === "encode"
-          ? "输入要编码的文本，例如 https://a.com/?q=你好 世界"
-          : "输入要解码的文本，例如 %E4%BD%A0%E5%A5%BD"
+          ? t("tool_url_encode_placeholder")
+          : t("tool_url_decode_placeholder")
       }
       onSwap={() => result.ok && setInput(result.value)}
       actions={
         <SegmentedControl
           size="sm"
-          aria-label="编码模式"
+          aria-label={t("tool_unicode_mode")}
           value={mode}
           onChange={setMode}
           options={[
-            { value: "encode", label: "编码" },
-            { value: "decode", label: "解码" },
+            { value: "encode", label: t("tool_encode") },
+            { value: "decode", label: t("tool_decode") },
           ]}
         />
       }
@@ -45,7 +47,7 @@ export function UrlTool() {
         <div className="flex items-center gap-2">
           <Switch id="url-full" checked={full} onCheckedChange={setFull} />
           <Label htmlFor="url-full" className="cursor-pointer font-normal">
-            整段 URL 模式 (encodeURI)
+            {t("tool_url_full_mode")}
           </Label>
         </div>
       }

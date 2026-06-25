@@ -122,31 +122,31 @@ export const PROVIDER_METAS: ProviderMeta[] = [
   {
     id: "volcengine",
     label: "Volcengine",
-    description: "AK/SK 拉取已开通的模型与 Ark API Key",
+    description: "provider_desc_volcengine",
     kind: "volc",
   },
   {
     id: "new-api",
     label: "New API",
-    description: "OpenAI 兼容网关，Base URL + API Key",
+    description: "provider_desc_new_api",
     kind: "gateway",
   },
   {
     id: "litellm",
     label: "LiteLLM",
-    description: "OpenAI 兼容代理，Base URL + API Key",
+    description: "provider_desc_litellm",
     kind: "gateway",
   },
   {
     id: "dmxapi",
     label: "DMX",
-    description: "OpenAI 兼容聚合平台，Base URL + API Key",
+    description: "provider_desc_dmxapi",
     kind: "gateway",
   },
   {
     id: "manual",
-    label: "自定义",
-    description: "手动录入 API Key 与可用模型，OpenAI 兼容调用",
+    label: "provider_label_manual",
+    description: "provider_desc_manual",
     kind: "manual",
   },
 ];
@@ -168,7 +168,7 @@ export const PROVIDERS = [
 ] as const;
 
 export const MCP_TRANSPORTS: { value: McpTransport; label: string }[] = [
-  { value: "stdio", label: "Stdio (本地进程)" },
-  { value: "sse", label: "SSE (Server-Sent Events)" },
-  { value: "http", label: "HTTP (Streamable)" },
+  { value: "stdio", label: "mcp_transport_stdio" },
+  { value: "sse", label: "mcp_transport_sse" },
+  { value: "http", label: "mcp_transport_http" },
 ];

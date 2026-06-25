@@ -6,6 +6,7 @@ import type {
   ProviderAdapter,
   ProviderCredential,
 } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import { chat, chatStream } from "./chat";
 import { imageGeneration } from "./images";
 import { listEndpoints, type VolcAkSk } from "./management";
@@ -13,7 +14,7 @@ import { getVideoGenerationTask, videoGeneration } from "./videos";
 
 function toAkSk(cred: ProviderCredential): VolcAkSk {
   if (!cred.accessKey || !cred.secretKey) {
-    throw new Error("缺少 AccessKey / SecretKey");
+    throw new Error(i18n.t("provider_missing_access_secret_key", { ns: "common" }));
   }
   return {
     accessKey: cred.accessKey,

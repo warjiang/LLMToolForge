@@ -55,10 +55,10 @@ export type ModelFeature =
   | "function-call";
 
 export const MODEL_FEATURES: { value: ModelFeature; label: string }[] = [
-  { value: "vision", label: "多模态" },
-  { value: "image-gen", label: "生图" },
-  { value: "video-gen", label: "生视频" },
-  { value: "function-call", label: "函数调用" },
+  { value: "vision", label: "feature_vision" },
+  { value: "image-gen", label: "feature_image_gen" },
+  { value: "video-gen", label: "feature_video_gen" },
+  { value: "function-call", label: "feature_function_call" },
 ];
 
 const FEATURE_LABEL: Record<ModelFeature, string> = MODEL_FEATURES.reduce(

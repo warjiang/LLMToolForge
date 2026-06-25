@@ -5,6 +5,7 @@ import type {
   ImageGenerationResult,
   ProviderCredential,
 } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import { ensureOk, postArkJson } from "./request";
 
 interface ArkImageItem {
@@ -70,7 +71,7 @@ export async function imageGeneration(
   const json = (await res.json()) as ArkImageResponse;
   const images = extractImages(json);
   if (images.length === 0) {
-    throw new Error("Images 失败: 响应中没有可用图片");
+    throw new Error(i18n.t("provider_images_empty", { ns: "common" }));
   }
   return {
     images,

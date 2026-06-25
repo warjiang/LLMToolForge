@@ -1,9 +1,11 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Check, Copy } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 
 function CodeBlock({ code }: { code: string }) {
+  const { t } = useTranslation("common");
   const [copied, setCopied] = useState(false);
   const copy = async () => {
     try {
@@ -25,7 +27,7 @@ function CodeBlock({ code }: { code: string }) {
         size="icon-sm"
         onClick={copy}
         className="absolute right-2 top-2 opacity-0 transition-opacity group-hover:opacity-100"
-        aria-label="复制"
+        aria-label={t("copy")}
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>
@@ -57,16 +59,17 @@ export function IntegrationGuide({
   localKey: string;
   sampleModel: string;
 }) {
-  const key = localKey || "<可留空，未设置本地 Key 时任意值即可>";
+  const { t } = useTranslation("pages");
+  const key = localKey || "<optional: any value is fine when local key auth is disabled>";
   const openaiBase = `${baseUrl}/v1`;
-  const model = sampleModel || "{连接名}/{model}";
+  const model = sampleModel || "{connName}/{model}";
 
   const curlChat = `curl ${openaiBase}/chat/completions \\
   -H "Content-Type: application/json" \\
   -H "Authorization: Bearer ${key}" \\
   -d '{
     "model": "${model}",
-    "messages": [{ "role": "user", "content": "你好" }],
+    "messages": [{ "role": "user", "content": "Hello" }],
     "stream": false
   }'`;
 
@@ -81,7 +84,7 @@ client = OpenAI(
 
 resp = client.chat.completions.create(
     model="${model}",
-    messages=[{"role": "user", "content": "你好"}],
+    messages=[{"role": "user", "content": "Hello"}],
 )
 print(resp.choices[0].message.content)`;
 
@@ -94,17 +97,17 @@ const client = new OpenAI({
 
 const resp = await client.chat.completions.create({
   model: "${model}",
-  messages: [{ role: "user", content: "你好" }],
+  messages: [{ role: "user", content: "Hello" }],
 });
 console.log(resp.choices[0].message.content);`;
 
-  const codex = `# 环境变量方式
+  const codex = `# Environment variables
 export OPENAI_BASE_URL="${openaiBase}"
 export OPENAI_API_KEY="${key}"
 
 codex --model "${model}"`;
 
-  const claude = `# Claude Code 走 Anthropic 兼容端点（${baseUrl}/v1/messages）
+  const claude = `# Claude Code via Anthropic-compatible endpoint (${baseUrl}/v1/messages)
 export ANTHROPIC_BASE_URL="${baseUrl}"
 export ANTHROPIC_API_KEY="${key}"
 export ANTHROPIC_MODEL="${model}"
@@ -166,12 +169,12 @@ console.log(resp.data[0].url);`;
         <div className="flex flex-wrap gap-2">
           <Button asChild variant="secondary" size="sm">
             <a href={`${baseUrl}/docs`} target="_blank" rel="noreferrer">
-              交互式文档 /docs
+              {t("ig_interactive_docs")}
             </a>
           </Button>
           <Button asChild variant="secondary" size="sm">
             <a href={`${baseUrl}/openapi.json`} target="_blank" rel="noreferrer">
-              OpenAPI /openapi.json
+              {t("ig_openapi")}
             </a>
           </Button>
         </div>
@@ -184,10 +187,10 @@ console.log(resp.data[0].url);`;
         <Section title="OpenAI Node SDK">
           <CodeBlock code={node} />
         </Section>
-        <Section title="curl · 对话补全">
+        <Section title={t("ig_curl_chat")}>
           <CodeBlock code={curlChat} />
         </Section>
-        <Section title="curl · 模型列表">
+        <Section title={t("ig_curl_models")}>
           <CodeBlock code={curlModels} />
         </Section>
         <Section title="Codex">
@@ -196,13 +199,13 @@ console.log(resp.data[0].url);`;
         <Section title="Claude Code">
           <CodeBlock code={claude} />
         </Section>
-        <Section title="Python · 图像生成">
+        <Section title={t("ig_py_image")}>
           <CodeBlock code={pyImage} />
         </Section>
-        <Section title="Node · 图像生成">
+        <Section title={t("ig_node_image")}>
           <CodeBlock code={nodeImage} />
         </Section>
-        <Section title="curl · 图像生成">
+        <Section title={t("ig_curl_image")}>
           <CodeBlock code={curlImage} />
         </Section>
       </Card>

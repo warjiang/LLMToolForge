@@ -1,4 +1,5 @@
 import { motion, useReducedMotion, type HTMLMotionProps } from "motion/react";
+import { useTranslation } from "react-i18next";
 
 const EASE = [0.16, 1, 0.3, 1] as const;
 
@@ -28,12 +29,13 @@ export function Reveal({
 
 /** Three-dot pulsing indicator for a pending assistant turn. */
 export function TypingDots() {
+  const { t } = useTranslation("common");
   const reduce = useReducedMotion();
   if (reduce) {
-    return <span className="text-muted-foreground">正在生成…</span>;
+    return <span className="text-muted-foreground">{t("typing")}</span>;
   }
   return (
-    <span className="inline-flex items-center gap-1 py-1" aria-label="正在生成">
+    <span className="inline-flex items-center gap-1 py-1" aria-label={t("typing")}>
       {[0, 1, 2].map((i) => (
         <motion.span
           key={i}

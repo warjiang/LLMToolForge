@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -66,6 +67,7 @@ function stringifyEnv(env: Record<string, string>): string {
 }
 
 export function McpDialog({ open, onOpenChange, editing }: Props) {
+  const { t } = useTranslation("pages");
   const add = useMcpStore((s) => s.add);
   const edit = useMcpStore((s) => s.edit);
   const [form, setForm] = useState(empty);
@@ -94,9 +96,9 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
   const isStdio = form.transport === "stdio";
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写名称");
-    if (isStdio && !form.command.trim()) return setError("请填写启动命令");
-    if (!isStdio && !form.url.trim()) return setError("请填写服务器 URL");
+    if (!form.name.trim()) return setError(t("mcp_name_required"));
+    if (isStdio && !form.command.trim()) return setError(t("mcp_command_required"));
+    if (!isStdio && !form.url.trim()) return setError(t("mcp_url_required"));
 
     const payload = {
       name: form.name.trim(),
@@ -119,26 +121,26 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {editing ? "编辑 MCP Server" : "新建 MCP Server"}
+            {editing ? t("mcp_edit_title") : t("mcp_create_title")}
           </DialogTitle>
           <DialogDescription>
-            配置 MCP 服务器连接方式，stdio 用于本地进程，SSE/HTTP 用于远程服务。
+            {t("mcp_dialog_desc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="mcp-name">名称</Label>
+            <Label htmlFor="mcp-name">{t("name", { ns: "common" })}</Label>
             <Input
               id="mcp-name"
-              placeholder="例如：filesystem"
+              placeholder="filesystem"
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>传输方式</Label>
+            <Label>{t("mcp_transport_label")}</Label>
             <Select
               value={form.transport}
               onValueChange={(v) =>
@@ -149,9 +151,9 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {MCP_TRANSPORTS.map((t) => (
-                  <SelectItem key={t.value} value={t.value}>
-                    {t.label}
+                {MCP_TRANSPORTS.map((transport) => (
+                  <SelectItem key={transport.value} value={transport.value}>
+                    {t(transport.label)}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -161,10 +163,10 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
           {isStdio ? (
             <>
               <div className="grid gap-1.5">
-                <Label htmlFor="mcp-cmd">启动命令</Label>
+                <Label htmlFor="mcp-cmd">{t("mcp_command_label")}</Label>
                 <Input
                   id="mcp-cmd"
-                  placeholder="例如：npx"
+                  placeholder={t("mcp_command_placeholder")}
                   value={form.command}
                   onChange={(e) =>
                     setForm({ ...form, command: e.target.value })
@@ -172,10 +174,10 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
                 />
               </div>
               <div className="grid gap-1.5">
-                <Label htmlFor="mcp-args">参数</Label>
+                <Label htmlFor="mcp-args">{t("mcp_args_label")}</Label>
                 <Input
                   id="mcp-args"
-                  placeholder="空格分隔，例如：-y @modelcontextprotocol/server-filesystem"
+                  placeholder={t("mcp_args_placeholder")}
                   value={form.args}
                   onChange={(e) => setForm({ ...form, args: e.target.value })}
                 />
@@ -183,7 +185,7 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
             </>
           ) : (
             <div className="grid gap-1.5">
-              <Label htmlFor="mcp-url">服务器 URL</Label>
+              <Label htmlFor="mcp-url">{t("mcp_url_label")}</Label>
               <Input
                 id="mcp-url"
                 placeholder="https://example.com/mcp"
@@ -194,10 +196,10 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
           )}
 
           <div className="grid gap-1.5">
-            <Label htmlFor="mcp-env">环境变量（可选）</Label>
+            <Label htmlFor="mcp-env">{t("mcp_env_label")}</Label>
             <Textarea
               id="mcp-env"
-              placeholder={"每行一个 KEY=VALUE\n例如：API_TOKEN=xxx"}
+              placeholder={t("mcp_env_placeholder")}
               value={form.env}
               onChange={(e) => setForm({ ...form, env: e.target.value })}
             />
@@ -205,9 +207,9 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
 
           <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
             <div className="space-y-0.5">
-              <Label>启用</Label>
+              <Label>{t("mcp_enable_label")}</Label>
               <p className="text-label-12 text-muted-foreground">
-                禁用后不会连接该服务器。
+                {t("mcp_disabled_hint")}
               </p>
             </div>
             <Switch
@@ -221,9 +223,9 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

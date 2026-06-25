@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -49,6 +50,7 @@ export function SkillProjectDialog({
   editing,
   skills,
 }: Props) {
+  const { t } = useTranslation("pages");
   const add = useSkillProjectConfigStore((s) => s.add);
   const edit = useSkillProjectConfigStore((s) => s.edit);
   const [form, setForm] = useState(empty);
@@ -72,10 +74,10 @@ export function SkillProjectDialog({
   }, [open, editing]);
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写项目名称");
-    if (!form.projectPath.trim()) return setError("请填写项目路径");
-    if (form.agentKeys.length === 0) return setError("请选择 Agent");
-    if (form.skillIds.length === 0) return setError("请选择 Skill");
+    if (!form.name.trim()) return setError(t("skill_project_name_required"));
+    if (!form.projectPath.trim()) return setError(t("skill_project_path_required"));
+    if (form.agentKeys.length === 0) return setError(t("skill_project_agent_required"));
+    if (form.skillIds.length === 0) return setError(t("skill_project_skill_required"));
 
     const payload = {
       name: form.name.trim(),
@@ -95,23 +97,23 @@ export function SkillProjectDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "编辑项目配置" : "新建项目配置"}</DialogTitle>
-          <DialogDescription>配置项目路径、Agent 与 Skill 组合。</DialogDescription>
+          <DialogTitle>{editing ? t("skill_project_edit_title") : t("skill_project_create_title")}</DialogTitle>
+          <DialogDescription>{t("skill_project_dialog_desc")}</DialogDescription>
         </DialogHeader>
 
         <div className="grid max-h-[68vh] gap-4 overflow-y-auto pr-1">
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label htmlFor="sp-name">名称</Label>
+              <Label htmlFor="sp-name">{t("name", { ns: "common" })}</Label>
               <Input
                 id="sp-name"
-                placeholder="例如：LLMToolForge"
+                placeholder="LLMToolForge"
                 value={form.name}
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="sp-path">项目路径</Label>
+              <Label htmlFor="sp-path">{t("skill_project_path_label")}</Label>
               <Input
                 id="sp-path"
                 placeholder="/path/to/project"
@@ -124,7 +126,7 @@ export function SkillProjectDialog({
           </div>
 
           <div className="grid gap-2">
-            <Label>Agent 目标</Label>
+            <Label>{t("skill_agent_targets")}</Label>
             <div className="grid grid-cols-2 gap-2 md:grid-cols-3">
               {SKILL_TARGETS.map((target) => {
                 const selected = form.agentKeys.includes(target.key);
@@ -190,7 +192,7 @@ export function SkillProjectDialog({
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="grid gap-1.5">
-              <Label>同步模式</Label>
+              <Label>{t("skill_sync_mode_label")}</Label>
               <Select
                 value={form.syncMode}
                 onValueChange={(syncMode) =>
@@ -203,7 +205,7 @@ export function SkillProjectDialog({
                 <SelectContent>
                   {SKILL_SYNC_MODES.map((mode) => (
                     <SelectItem key={mode.value} value={mode.value}>
-                      {mode.label}
+                      {t(mode.label, { ns: "common" })}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -211,7 +213,7 @@ export function SkillProjectDialog({
             </div>
 
             <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
-              <Label>启用</Label>
+              <Label>{t("enabled", { ns: "common" })}</Label>
               <Switch
                 checked={form.enabled}
                 onCheckedChange={(enabled) => setForm({ ...form, enabled })}
@@ -224,9 +226,9 @@ export function SkillProjectDialog({
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

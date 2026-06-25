@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useTranslation } from "react-i18next";
+import i18n from "@/i18n/config";
 import {
   Bot,
   Boxes,
@@ -123,7 +125,8 @@ const VIDEO_POLL_MAX_ATTEMPTS = 120;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 
 function providerLabel(provider: string): string {
-  return PROVIDER_METAS.find((p) => p.id === provider)?.label ?? provider;
+  const label = PROVIDER_METAS.find((p) => p.id === provider)?.label ?? provider;
+  return label.startsWith("provider_label_") ? i18n.t(`pages:${label}`) : label;
 }
 
 function safeToolName(prefix: string, value: string): string {
@@ -264,13 +267,14 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 function videoContentForStatus(taskId: string, status?: string, attempt?: number) {
-  const lines = ["视频生成任务轮询中。", `Task ID: ${taskId}`];
-  if (status) lines.push(`状态：${status}`);
-  if (attempt != null) lines.push(`查询次数：${attempt}`);
+  const lines = [i18n.t("pages:agent_video_polling"), `Task ID: ${taskId}`];
+  if (status) lines.push(i18n.t("pages:agent_video_status", { status }));
+  if (attempt != null) lines.push(i18n.t("pages:agent_video_attempt", { attempt }));
   return lines.join("\n");
 }
 
 export function AgentChatView() {
+  const { t } = useTranslation("pages");
   const volc = useVolcCredentialStore();
   const gateway = useGatewayStore();
   const apiKeys = useApiKeyStore();
@@ -463,14 +467,14 @@ export function AgentChatView() {
         await volc.edit(targetVolc.id, { models: list });
       } else if (targetGateway) {
         const adapter = getAdapter(targetGateway.provider);
-        if (!adapter) throw new Error(`未找到适配器: ${targetGateway.provider}`);
+        if (!adapter) throw new Error(t("agent_adapter_not_found", { provider: targetGateway.provider }));
         list = await adapter.listModels({
           baseUrl: targetGateway.baseUrl,
           apiKey: targetGateway.apiKey,
         });
         await gateway.edit(targetGateway.id, { models: list });
       } else if (targetKey) {
-        if (!targetKey.baseUrl) throw new Error("该 Key 未配置 Base URL，无法拉取模型");
+        if (!targetKey.baseUrl) throw new Error(t("agent_fetch_no_base_url"));
         const adapter = getAdapter("manual")!;
         list = await adapter.listModels({
           baseUrl: targetKey.baseUrl,
@@ -487,7 +491,7 @@ export function AgentChatView() {
         modelId: list[0]?.id ?? "",
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拉取模型失败");
+      setError(e instanceof Error ? e.message : t("agent_fetch_failed"));
     } finally {
       setModelsLoading(false);
     }
@@ -501,7 +505,7 @@ export function AgentChatView() {
       const next = await Promise.all(files.map((f) => chat.fileToAttachment(f)));
       setAttachments((prev) => [...prev, ...next]);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "读取附件失败");
+      setError(e instanceof Error ? e.message : t("agent_read_attachment_failed"));
     }
   };
 
@@ -581,7 +585,7 @@ export function AgentChatView() {
       const key = (cred?.apiKeys ?? []).filter((k) => k.key)[
         Number(settings?.keyIdx ?? "0")
       ]?.key;
-      if (!key) throw new Error("没有可用的 Ark API Key，请先在模型接入页拉取");
+      if (!key) throw new Error(t("agent_no_ark_key"));
       return { apiKey: key, region: cred?.region };
     }
     if (targetConnKey.startsWith("gw:")) {
@@ -591,7 +595,7 @@ export function AgentChatView() {
     if (targetConnKey.startsWith("key:")) {
       const conn = apiKeys.items.find((c) => `key:${c.id}` === targetConnKey);
       if (!conn?.baseUrl)
-        throw new Error("该 Key 未配置 Base URL，无法在 Playground 中调用");
+        throw new Error(t("agent_no_base_url"));
       return { baseUrl: conn.baseUrl, apiKey: conn.key };
     }
     return null;
@@ -655,16 +659,16 @@ export function AgentChatView() {
     content: string,
     inputAttachments: ChatAttachment[]
   ): string | null => {
-    if (!volcCred && !gwConn && !keyConn) return "请先选择连接";
-    if (!settings?.modelId) return "请先拉取并选择模型";
-    if (!selectedModel) return "请先选择模型";
-    if (!provider) return "无法识别 provider";
-    if (!content && inputAttachments.length === 0) return "请输入消息或添加附件";
+    if (!volcCred && !gwConn && !keyConn) return t("agent_select_connection");
+    if (!settings?.modelId) return t("agent_fetch_model_first");
+    if (!selectedModel) return t("agent_select_model_first");
+    if (!provider) return t("agent_no_provider");
+    if (!content && inputAttachments.length === 0) return t("agent_message_required");
     if (isImageGenerationModel(selectedModel) && !content) {
-      return "图像生成模型需要输入 prompt";
+      return t("agent_image_prompt_required");
     }
     if (isVideoGenerationModel(selectedModel) && !content) {
-      return "视频生成模型需要输入 prompt";
+      return t("agent_video_prompt_required");
     }
     return null;
   };
@@ -718,7 +722,7 @@ export function AgentChatView() {
     try {
       const adapter = getAdapter(adapterProvider);
       if (!adapter?.getVideoGenerationTask) {
-        throw new Error(`${providerLabel(adapterProvider)} 暂不支持查询视频任务`);
+        throw new Error(t("agent_no_video_query", { provider: providerLabel(adapterProvider) }));
       }
       let latestMessage = message;
       for (let attempt = 1; attempt <= VIDEO_POLL_MAX_ATTEMPTS; attempt += 1) {
@@ -733,7 +737,7 @@ export function AgentChatView() {
         }
         if (status === "succeeded" || result.videos.length > 0) {
           await chat.updateMessage(message.id, {
-            content: `已生成视频。\nTask ID: ${taskId}`,
+            content: t("agent_video_done") + `\nTask ID: ${taskId}`,
             status: "complete",
             raw: result.raw,
             error: "",
@@ -742,9 +746,9 @@ export function AgentChatView() {
         }
         if (VIDEO_FAILED_STATUSES.has(status)) {
           await chat.updateMessage(message.id, {
-            content: `视频生成任务结束。\nTask ID: ${taskId}\n状态：${status}`,
+            content: t("agent_video_ended", { taskId, status }),
             status: "error",
-            error: `视频生成失败：${status}`,
+            error: t("agent_video_failed", { status }),
             raw: result.raw,
           });
           return;
@@ -756,12 +760,12 @@ export function AgentChatView() {
         });
       }
       await chat.updateMessage(message.id, {
-        content: `视频生成任务仍在运行。\nTask ID: ${taskId}`,
+        content: t("agent_video_still_running", { taskId }),
         status: "complete",
       });
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") return;
-      const msg = e instanceof Error ? e.message : "查询视频任务失败";
+      const msg = e instanceof Error ? e.message : t("agent_request_failed");
       await chat.updateMessage(message.id, {
         status: "error",
         error: msg,
@@ -779,7 +783,7 @@ export function AgentChatView() {
       if (message.attachments.some((attachment) => attachment.kind === "video")) {
         continue;
       }
-      if (message.status === "error" || message.content.startsWith("已生成视频")) {
+      if (message.status === "error" || message.content.startsWith(t("agent_video_done"))) {
         continue;
       }
       const adapterProvider = message.provider ?? provider;
@@ -801,7 +805,7 @@ export function AgentChatView() {
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
   const handleGenerationError = async (e: unknown) => {
-    const msg = e instanceof Error ? e.message : "请求失败";
+    const msg = e instanceof Error ? e.message : t("agent_request_failed");
     const currentMessages = useChatStore.getState().messages;
     const last = currentMessages[currentMessages.length - 1];
     if (last?.role === "assistant" && last.status === "pending") {
@@ -829,7 +833,7 @@ export function AgentChatView() {
     if (!settings || !selectedModel || !provider) return;
     const adapter = getAdapter(provider)!;
     const cred = credential();
-    if (!cred) throw new Error("无法创建请求凭证");
+    if (!cred) throw new Error(t("agent_no_credential"));
     const controller = new AbortController();
     abortRef.current = controller;
     const tools = toolDefinitions();
@@ -838,7 +842,7 @@ export function AgentChatView() {
 
     if (videoGenerationModel) {
       if (!adapter.videoGeneration) {
-        throw new Error(`${providerLabel(provider)} 暂不支持视频生成接口`);
+        throw new Error(t("agent_no_video_api", { provider: providerLabel(provider) }));
       }
       const result = await adapter.videoGeneration(
         {
@@ -853,14 +857,14 @@ export function AgentChatView() {
         },
         cred
       );
-      const statusText = result.status ? `\n状态：${result.status}` : "";
+      const statusText = result.status ? `\n${t("agent_status_prefix")}${result.status}` : "";
       const taskText = result.taskId ? `\nTask ID: ${result.taskId}` : "";
       const videoAssistant = await chat.addMessage({
         role: "assistant",
         content:
           result.videos.length > 0
-            ? "已生成视频。"
-            : `视频生成任务已提交。${taskText}${statusText}`,
+            ? t("agent_video_done")
+            : t("agent_video_submitted") + `${taskText}${statusText}`,
         status: result.videos.length > 0 || !result.taskId ? "complete" : "pending",
         connKey: settings.connKey ?? undefined,
         provider,
@@ -886,7 +890,7 @@ export function AgentChatView() {
 
     if (imageGenerationModel) {
       if (!adapter.imageGeneration) {
-        throw new Error(`${providerLabel(provider)} 暂不支持图像生成接口`);
+        throw new Error(t("agent_no_image_api", { provider: providerLabel(provider) }));
       }
       const result = await adapter.imageGeneration(
         {
@@ -919,8 +923,8 @@ export function AgentChatView() {
         role: "assistant",
         content:
           generatedAttachments.length > 1
-            ? `已生成 ${generatedAttachments.length} 张图片。`
-            : "已生成图片。",
+            ? t("agent_images_done", { count: generatedAttachments.length })
+            : t("agent_image_done"),
         status: "complete",
         parts: generatedParts,
         attachments: generatedAttachments,
@@ -982,8 +986,7 @@ export function AgentChatView() {
             toolName: call.function.name,
             title: call.function.name,
             argumentsJson: call.function.arguments || "{}",
-            resultText:
-              "模型已发起工具调用；Playground 已记录该调用。",
+            resultText: t("agent_tool_call_recorded"),
             status: "success",
             startedAt: new Date().toISOString(),
             completedAt: new Date().toISOString(),
@@ -1064,7 +1067,7 @@ export function AgentChatView() {
       .slice(0, index)
       .reverse()
       .find((m) => m.role === "user");
-    if (!userMsg) return setError("未找到可重试的用户消息");
+    if (!userMsg) return setError(t("agent_no_retry_msg"));
     const prompt = userMsg.content.trim();
     const validationError = validateGenerationInput(prompt, userMsg.attachments);
     if (validationError) return setError(validationError);
@@ -1098,7 +1101,7 @@ export function AgentChatView() {
     try {
       await chat.deleteMessagesFrom(message.sessionId, message.id, true);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "删除消息失败");
+      setError(e instanceof Error ? e.message : t("agent_delete_failed"));
     }
   };
 
@@ -1111,7 +1114,7 @@ export function AgentChatView() {
     if (sending || message.role !== "user") return;
     const prompt = editingDraft.trim();
     if (!prompt && message.attachments.length === 0) {
-      setError("编辑后的消息不能为空");
+      setError(t("agent_edit_empty"));
       return;
     }
     const validationError = validateGenerationInput(prompt, message.attachments);
@@ -1149,8 +1152,8 @@ export function AgentChatView() {
       <div className="flex h-full w-full items-center justify-center p-6">
         <EmptyState
           icon={Bot}
-          title="还没有可用的连接"
-          description="请先在「模型接入」页添加凭证、网关连接或自定义 API Key。"
+          title={t("agent_no_connection_title")}
+          description={t("agent_no_connection_desc")}
         />
       </div>
     );
@@ -1166,14 +1169,14 @@ export function AgentChatView() {
               </div>
               <div className="min-w-0">
                 <div className="truncate text-label-13 font-medium">
-                  {activeSession?.title ?? "新会话"}
+                  {activeSession?.title ?? t("agent_new_session")}
                 </div>
                 <div className="truncate text-label-12 text-muted-foreground">
                   <span className="inline-flex min-w-0 items-center gap-1.5">
                     {selectedModel && <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />}
                     <span className="truncate">
-                      {chat.messages.length} 条消息
-                      {selectedModel ? ` · ${selectedModel.name}` : " · 未选择模型"}
+                      {t("agent_message_count", { count: chat.messages.length })}
+                      {selectedModel ? ` · ${selectedModel.name}` : ` · ${t("agent_no_model_selected")}`}
                     </span>
                   </span>
                 </div>
@@ -1184,7 +1187,7 @@ export function AgentChatView() {
                 size="icon-sm"
                 variant={configOpen ? "secondary" : "ghost"}
                 onClick={() => setConfigOpen((open) => !open)}
-                title={configOpen ? "隐藏配置" : "显示配置"}
+                title={configOpen ? t("agent_hide_config") : t("agent_show_config")}
               >
                 <Settings2 className="h-4 w-4" />
               </Button>
@@ -1194,7 +1197,7 @@ export function AgentChatView() {
           {!isLiveRequestSupported() && (
             <div className="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-2 text-label-12 text-warning-foreground/90">
               <span className="inline-block h-1.5 w-1.5 rounded-full bg-warning" />
-              浏览器模式下模型请求、SQLite 和沙箱能力有限，请在桌面应用中测试完整链路。
+              {t("agent_browser_mode_warning")}
             </div>
           )}
 
@@ -1208,7 +1211,7 @@ export function AgentChatView() {
                     <Bot className="h-5 w-5" />
                   </div>
                   <div className="text-label-13 text-muted-foreground">
-                    发送一条消息开始持久化会话
+                    {t("agent_chat_start_hint")}
                   </div>
                 </div>
               ) : (
@@ -1270,7 +1273,7 @@ export function AgentChatView() {
             <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-[16px] border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-shadow duration-150 ease-geist">
               <Textarea
                 className="h-[48px] min-h-0 max-h-28 resize-none border-0 bg-transparent px-4 py-3 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
-                placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+                placeholder={t("agent_textarea_placeholder")}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -1300,7 +1303,7 @@ export function AgentChatView() {
                     variant="ghost"
                     className="h-7 w-7"
                     disabled={!settings}
-                    title="添加图片或文件"
+                    title={t("agent_add_attachment")}
                     onClick={() => fileRef.current?.click()}
                   >
                     <Plus className="h-4 w-4" />
@@ -1309,7 +1312,7 @@ export function AgentChatView() {
                     <Badge
                       variant="outline"
                       className="h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12"
-                      title="当前沙箱模式"
+                      title={t("agent_current_sandbox")}
                     >
                       <ShieldIcon className="h-3.5 w-3.5" />
                       {SANDBOX_MODES.find((m) => m.value === settings.sandboxMode)
@@ -1333,7 +1336,7 @@ export function AgentChatView() {
                   <ComposerToolMenu
                     icon={Boxes}
                     label="Skills"
-                    empty="还没有可用 Skill"
+                    empty={t("agent_no_skills")}
                     items={skills.items}
                     activeIds={settings?.enabledSkillIds ?? []}
                     onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
@@ -1341,7 +1344,7 @@ export function AgentChatView() {
                   <ComposerToolMenu
                     icon={Server}
                     label="MCP"
-                    empty="还没有可用 MCP Server"
+                    empty={t("agent_no_mcp")}
                     items={mcp.items}
                     activeIds={settings?.enabledMcpServerIds ?? []}
                     onChange={(enabledMcpServerIds) =>
@@ -1355,7 +1358,7 @@ export function AgentChatView() {
                     variant="secondary"
                     className="h-8 w-8 rounded-full"
                     onClick={stop}
-                    title="停止"
+                    title={t("agent_stop")}
                   >
                     <X className="h-4 w-4" />
                   </Button>
@@ -1366,7 +1369,7 @@ export function AgentChatView() {
                     className="h-8 w-8 rounded-full shadow-geist-md"
                     onClick={send}
                     disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
-                    title="发送"
+                    title={t("agent_send")}
                   >
                     <Send className="h-4 w-4" />
                   </Button>
@@ -1393,7 +1396,7 @@ export function AgentChatView() {
 }
 
 function summarizeToolCalls(count: number): string {
-  return count > 0 ? `模型发起了 ${count} 个工具调用，已写入工具记录。` : "";
+  return count > 0 ? i18n.t("pages:agent_tool_calls_summary", { count }) : "";
 }
 
 function MessageSkeletons() {
@@ -1438,10 +1441,11 @@ function ConfigRail({
   ) => void;
   onClose: () => void;
 }) {
+  const { t } = useTranslation("pages");
   if (!settings) {
     return (
       <aside className="flex h-full w-full items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
-        加载会话设置…
+        {t("agent_loading_settings")}
       </aside>
     );
   }
@@ -1449,15 +1453,15 @@ function ConfigRail({
     <aside className="flex h-full w-full min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
       <div className="mb-4 flex items-center justify-between">
         <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
-          配置
+          {t("agent_config_title")}
         </div>
-        <Button size="icon-sm" variant="ghost" onClick={onClose} title="隐藏配置">
+        <Button size="icon-sm" variant="ghost" onClick={onClose} title={t("agent_hide_config")}>
           <X className="h-4 w-4" />
         </Button>
       </div>
-      <RailSection icon={Settings2} title="请求">
+      <RailSection icon={Settings2} title={t("agent_request_section")}>
         <div className="rounded-sm border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
-          连接与模型已移入输入栏，常用切换不再占用侧栏。
+          {t("agent_conn_model_hint")}
         </div>
         {isVolc && (
           <>
@@ -1468,7 +1472,7 @@ function ConfigRail({
                 onValueChange={(keyIdx) => onSettings({ keyIdx })}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="无可用 Key" />
+                  <SelectValue placeholder={t("agent_no_key")} />
                 </SelectTrigger>
                 <SelectContent>
                   {usableKeys.map((k, i) => (
@@ -1480,7 +1484,7 @@ function ConfigRail({
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>请求格式</Label>
+              <Label>{t("agent_wire_format")}</Label>
               <Select
                 value={settings.wireFormat}
                 onValueChange={(v) => onSettings({ wireFormat: v as WireFormat })}
@@ -1503,7 +1507,7 @@ function ConfigRail({
 
       <Separator className="my-4" />
 
-      <RailSection icon={SlidersIcon} title="参数">
+      <RailSection icon={SlidersIcon} title={t("agent_params_section")}>
         <div className="grid gap-1.5">
           <Label>System Prompt</Label>
           <Textarea
@@ -1535,7 +1539,7 @@ function ConfigRail({
           </div>
         </div>
         <div className="flex items-center justify-between rounded-sm bg-secondary/60 px-3 py-2">
-          <Label className="cursor-pointer">流式输出</Label>
+          <Label className="cursor-pointer">{t("agent_streaming")}</Label>
           <Switch
             checked={settings.streaming}
             onCheckedChange={(streaming) => onSettings({ streaming })}
@@ -1543,7 +1547,7 @@ function ConfigRail({
         </div>
       </RailSection>
 
-      <RailSection icon={ShieldIcon} title="沙箱">
+      <RailSection icon={ShieldIcon} title={t("agent_sandbox_section")}>
         <Select
           value={settings.sandboxMode}
           onValueChange={(sandboxMode) =>
@@ -1562,16 +1566,16 @@ function ConfigRail({
           </SelectContent>
         </Select>
         <div className="rounded-sm border border-border p-3 text-label-12 text-muted-foreground">
-          沙箱模式保留给本地工具执行；macOS 会优先使用 Seatbelt 兼容沙箱。
+          {t("agent_sandbox_hint")}
         </div>
       </RailSection>
 
       <Separator className="my-4" />
 
-      <RailSection icon={Database} title="工具记录">
+      <RailSection icon={Database} title={t("agent_tool_records")}>
         {toolCalls.length === 0 ? (
           <div className="rounded-sm border border-dashed border-border p-3 text-label-12 text-muted-foreground">
-            暂无工具调用
+            {t("agent_no_tool_calls")}
           </div>
         ) : (
           <div className="grid gap-2">
@@ -1625,13 +1629,14 @@ function ComposerModelCascade({
   onRefresh: (connKey: string) => void;
   onSelect: (connKey: string, modelId: string) => void;
 }) {
+  const { t } = useTranslation("pages");
   const refreshConn = currentConn ?? options[0] ?? null;
   const title =
     currentConn && selectedModel
       ? `${currentConn.name} / ${selectedModel.name}`
       : currentConn
-        ? `${currentConn.name} / 先选择模型`
-        : "选择模型";
+        ? `${currentConn.name} / ${t("agent_select_model_first_short")}`
+        : t("agent_select_model");
 
   return (
     <div className="flex h-7 min-w-0 items-center gap-1 rounded-md border border-border bg-background">
@@ -1655,7 +1660,7 @@ function ComposerModelCascade({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-72">
-          <DropdownMenuLabel>模型配置</DropdownMenuLabel>
+          <DropdownMenuLabel>{t("agent_model_config")}</DropdownMenuLabel>
           {options.map((option) => {
             const optionModels = modelsForOption(option);
             const isActiveConn = currentConn?.key === option.key;
@@ -1675,7 +1680,7 @@ function ComposerModelCascade({
                 </DropdownMenuSubTrigger>
                 <DropdownMenuSubContent className="max-h-80 w-80 overflow-y-auto">
                   {optionModels.length === 0 ? (
-                    <DropdownMenuItem disabled>请到模型接入刷新模型</DropdownMenuItem>
+                    <DropdownMenuItem disabled>{t("agent_refresh_models_hint")}</DropdownMenuItem>
                   ) : (
                     optionModels.map((model) => {
                       const active =
@@ -1705,7 +1710,7 @@ function ComposerModelCascade({
         variant="ghost"
         className="h-[26px] w-[26px] shrink-0 rounded-[5px] text-muted-foreground hover:bg-secondary hover:text-foreground"
         disabled={disabled || modelsLoading || !refreshConn}
-        title={refreshConn ? `刷新 ${refreshConn.name}` : "刷新模型"}
+        title={refreshConn ? t("agent_refresh_conn", { name: refreshConn.name }) : t("agent_refresh_models")}
         onClick={() => {
           if (refreshConn) onRefresh(refreshConn.key);
         }}
@@ -1825,6 +1830,7 @@ function AttachmentPill({
   attachment: ChatAttachment;
   onRemove?: () => void;
 }) {
+  const { t } = useTranslation("pages");
   const isImage = attachment.kind === "image";
   const isVideo = attachment.kind === "video";
   const isAudio = attachment.kind === "audio";
@@ -1852,10 +1858,10 @@ function AttachmentPill({
           {attachment.size > 0
             ? `${Math.ceil(attachment.size / 1024)} KB`
             : attachment.kind === "video"
-              ? "生成视频"
+              ? t("agent_attachment_video")
               : attachment.kind === "image"
-                ? "生成图片"
-                : "附件"}
+                ? t("agent_attachment_image")
+                : t("agent_attachment")}
         </div>
       </div>
       {onRemove && (
@@ -1894,6 +1900,7 @@ function ChatBubble({
   onDelete: () => void;
   onRetry: () => void;
 }) {
+  const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isUser = message.role === "user";
@@ -2018,11 +2025,11 @@ function ChatBubble({
               <div className="flex justify-end gap-1.5 border-t border-border/70 pt-1.5">
                 <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onCancelEdit}>
                   <X className="h-3.5 w-3.5" />
-                  取消
+                  {t("agent_cancel")}
                 </Button>
                 <Button size="sm" variant="primary" className="h-7 px-2.5" onClick={onSaveEdit}>
                   <Check className="h-3.5 w-3.5" />
-                  保存并重试
+                  {t("agent_save_retry")}
                 </Button>
               </div>
             </div>
@@ -2030,7 +2037,7 @@ function ChatBubble({
             <div className="grid min-w-48 gap-2">
               <div className="flex items-center gap-2 text-label-13 text-muted-foreground">
                 <TypingDots />
-                <span>正在生成回复</span>
+                <span>{t("agent_generating")}</span>
               </div>
               <div className="h-2 w-36 overflow-hidden rounded-full bg-muted">
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/50" />
@@ -2065,7 +2072,7 @@ function ChatBubble({
               <Button
                 size="icon-sm"
                 variant="ghost"
-                title="编辑消息"
+                title={t("agent_edit_message")}
                 disabled={actionsDisabled}
                 onClick={onStartEdit}
               >
@@ -2076,7 +2083,7 @@ function ChatBubble({
               <Button
                 size="icon-sm"
                 variant="ghost"
-                title="重试"
+                title={t("agent_retry")}
                 disabled={actionsDisabled}
                 onClick={onRetry}
               >
@@ -2086,7 +2093,7 @@ function ChatBubble({
             <Button
               size="icon-sm"
               variant="ghost"
-              title="删除此处及后续消息"
+              title={t("agent_delete_from_here")}
               disabled={actionsDisabled}
               onClick={onDelete}
             >

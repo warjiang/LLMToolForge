@@ -14,6 +14,7 @@ import type {
   ContentPart,
   ProviderCredential,
 } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import {
   authHeader,
   endpoint,
@@ -80,7 +81,9 @@ async function postChat(
 async function ensureOk(res: Response, label: string) {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${label} 失败: HTTP ${res.status} ${text.slice(0, 300)}`);
+    throw new Error(
+      i18n.t("provider_http_failed", { ns: "common", label, status: res.status, text: text.slice(0, 300) })
+    );
   }
 }
 
@@ -115,7 +118,7 @@ export async function* chatStream(
 ): AsyncGenerator<ChatStreamChunk, void, unknown> {
   const res = await postChat(cred, buildChatBody(req, true), req.signal);
   await ensureOk(res, "Chat(stream)");
-  if (!res.body) throw new Error("流式响应缺少 body");
+  if (!res.body) throw new Error(i18n.t("provider_stream_missing_body", { ns: "common" }));
 
   const reader = res.body.getReader();
   const decoder = new TextDecoder();

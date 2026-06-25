@@ -1,4 +1,5 @@
 import type { Skill, SkillSyncMode } from "@/types";
+import i18n from "@/i18n/config";
 import type { SkillTarget } from "@/lib/skillTargets";
 import { projectTargetDir } from "@/lib/skillTargets";
 
@@ -81,7 +82,7 @@ export async function syncSkillsToTargets(
   request: SyncSkillsRequest
 ): Promise<SyncSkillResult[]> {
   if (!isTauriRuntime()) {
-    throw new Error("Skill 文件同步需要在 Tauri 桌面端运行。");
+    throw new Error(i18n.t("skill_sync_requires_tauri", { ns: "common" }));
   }
 
   const { invoke } = await import("@tauri-apps/api/core");

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ const empty = {
 };
 
 export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
+  const { t } = useTranslation("pages");
   const add = useVolcCredentialStore((s) => s.add);
   const edit = useVolcCredentialStore((s) => s.edit);
   const [form, setForm] = useState(empty);
@@ -62,9 +64,9 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
   }, [open, editing]);
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写名称");
-    if (!form.accessKey.trim()) return setError("请填写 AccessKey");
-    if (!form.secretKey.trim()) return setError("请填写 SecretKey");
+    if (!form.name.trim()) return setError(t("volc_err_name"));
+    if (!form.accessKey.trim()) return setError(t("volc_err_ak"));
+    if (!form.secretKey.trim()) return setError(t("volc_err_sk"));
 
     const payload = {
       name: form.name.trim(),
@@ -84,19 +86,19 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editing ? "编辑火山引擎凭证" : "新建火山引擎凭证"}
+            {editing ? t("volc_edit_title") : t("volc_create_title")}
           </DialogTitle>
           <DialogDescription>
-            AK/SK 用于拉取已开通的模型与 Ark API Key，仅保存在本地设备。
+            {t("volc_dialog_desc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="vc-name">名称</Label>
+            <Label htmlFor="vc-name">{t("name", { ns: "common" })}</Label>
             <Input
               id="vc-name"
-              placeholder="例如：火山方舟 - 主账号"
+              placeholder={t("volc_name_placeholder")}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -126,7 +128,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label>区域 Region</Label>
+            <Label>{t("volc_region_label")}</Label>
             <Select
               value={form.region}
               onValueChange={(v) => setForm({ ...form, region: v })}
@@ -145,7 +147,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="vc-project">项目 Project</Label>
+            <Label htmlFor="vc-project">{t("volc_project_label")}</Label>
             <Input
               id="vc-project"
               placeholder="default"
@@ -154,7 +156,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
               onChange={(e) => setForm({ ...form, project: e.target.value })}
             />
             <p className="text-label-12 text-muted-foreground">
-              Ark 资源所属项目，拉取 API Key 时必填，一般为 default。
+              {t("volc_project_hint")}
             </p>
           </div>
 
@@ -163,9 +165,9 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

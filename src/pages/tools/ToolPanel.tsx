@@ -1,5 +1,6 @@
 import { useState, type ReactNode } from "react";
 import { ArrowRightLeft, Check, Clipboard, Copy, Trash2 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -27,14 +28,17 @@ export function ToolPanel({
   onInputChange,
   output,
   error,
-  inputLabel = "输入",
-  outputLabel = "输出",
+  inputLabel,
+  outputLabel,
   inputPlaceholder,
   actions,
   options,
   onSwap,
   outputMono = true,
 }: ToolPanelProps) {
+  const { t } = useTranslation("common");
+  const resolvedInputLabel = inputLabel ?? t("input");
+  const resolvedOutputLabel = outputLabel ?? t("output");
   const [copied, setCopied] = useState(false);
 
   const copyOutput = async () => {
@@ -67,26 +71,26 @@ export function ToolPanel({
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>{inputLabel}</Label>
+            <Label>{resolvedInputLabel}</Label>
             <div className="flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={paste}
-                title="粘贴"
+                title={t("paste")}
               >
                 <Clipboard className="h-3.5 w-3.5" />
-                粘贴
+                {t("paste")}
               </Button>
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={() => onInputChange("")}
-                title="清空"
+                title={t("clear")}
                 disabled={!input}
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                清空
+                {t("clear")}
               </Button>
             </div>
           </div>
@@ -101,18 +105,18 @@ export function ToolPanel({
 
         <div className="space-y-1.5">
           <div className="flex items-center justify-between">
-            <Label>{outputLabel}</Label>
+            <Label>{resolvedOutputLabel}</Label>
             <div className="flex items-center gap-1">
               {onSwap && (
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={onSwap}
-                  title="将输出作为输入"
+                  title={t("fill_back")}
                   disabled={!output}
                 >
                   <ArrowRightLeft className="h-3.5 w-3.5" />
-                  回填
+                  {t("fill_back")}
                 </Button>
               )}
               <Button
@@ -120,14 +124,14 @@ export function ToolPanel({
                 size="sm"
                 onClick={copyOutput}
                 disabled={!output}
-                title="复制"
+                title={t("copy")}
               >
                 {copied ? (
                   <Check className="h-3.5 w-3.5 text-success" />
                 ) : (
                   <Copy className="h-3.5 w-3.5" />
                 )}
-                {copied ? "已复制" : "复制"}
+                {copied ? t("copied") : t("copy")}
               </Button>
             </div>
           </div>
@@ -135,7 +139,7 @@ export function ToolPanel({
             value={error ? "" : output}
             readOnly
             spellCheck={false}
-            placeholder="结果将显示在这里"
+            placeholder={t("result_placeholder")}
             className={cn(
               "min-h-[320px] resize-y bg-background-secondary text-copy-13 leading-relaxed",
               outputMono && "font-mono"

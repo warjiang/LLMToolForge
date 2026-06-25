@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ export function GatewayConnectionDialog({
   provider,
   editing,
 }: Props) {
+  const { t } = useTranslation("pages");
   const add = useGatewayStore((s) => s.add);
   const edit = useGatewayStore((s) => s.edit);
   const [form, setForm] = useState({ name: "", baseUrl: "", apiKey: "" });
@@ -62,9 +64,9 @@ export function GatewayConnectionDialog({
   }, [open, editing, provider.id]);
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写名称");
-    if (!form.baseUrl.trim()) return setError("请填写 Base URL");
-    if (!form.apiKey.trim()) return setError("请填写 API Key");
+    if (!form.name.trim()) return setError(t("gw_name_required"));
+    if (!form.baseUrl.trim()) return setError(t("gw_base_url_required"));
+    if (!form.apiKey.trim()) return setError(t("gw_api_key_required"));
 
     const payload = {
       name: form.name.trim(),
@@ -83,19 +85,19 @@ export function GatewayConnectionDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {editing ? `编辑 ${provider.label} 连接` : `新建 ${provider.label} 连接`}
+            {editing ? t("gw_edit_title", { label: provider.label }) : t("gw_create_title", { label: provider.label })}
           </DialogTitle>
           <DialogDescription>
-            OpenAI 兼容网关，填写 Base URL 与 API Key，仅保存在本地设备。
+            {t("gw_dialog_desc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="gw-name">名称</Label>
+            <Label htmlFor="gw-name">{t("name", { ns: "common" })}</Label>
             <Input
               id="gw-name"
-              placeholder={`例如：${provider.label} - 主账号`}
+              placeholder={t("gw_name_placeholder", { label: provider.label })}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
@@ -111,7 +113,7 @@ export function GatewayConnectionDialog({
               onChange={(e) => setForm({ ...form, baseUrl: e.target.value })}
             />
             <p className="text-label-12 text-muted-foreground">
-              通常以 /v1 结尾，调用 /v1/models 与 /v1/chat/completions。
+              {t("gw_base_url_hint")}
             </p>
           </div>
 
@@ -132,9 +134,9 @@ export function GatewayConnectionDialog({
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

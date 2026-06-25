@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Boxes,
   CheckCircle2,
@@ -50,6 +51,7 @@ interface SyncState {
 }
 
 export function SkillsPage() {
+  const { t } = useTranslation("pages");
   const { items, loaded, load, edit, remove } = useSkillStore();
   const projects = useSkillProjectConfigStore();
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -107,11 +109,11 @@ export function SkillsPage() {
         results.push(...(await syncGlobalSkill(item)));
       }
       setSyncState({
-        title: skill ? `${skill.name} 全局同步` : "全局同步",
+        title: skill ? t("skill_global_sync_title", { name: skill.name }) : t("skill_global_sync_all"),
         results,
       });
     } catch (e) {
-      setSyncError(e instanceof Error ? e.message : "同步失败");
+      setSyncError(e instanceof Error ? e.message : t("skill_sync_failed"));
     } finally {
       setSyncing(false);
     }
@@ -132,9 +134,9 @@ export function SkillsPage() {
         skills: skills.map(skillPayload),
         targets,
       });
-      setSyncState({ title: `${project.name} 项目同步`, results });
+      setSyncState({ title: t("skill_project_sync_title", { name: project.name }), results });
     } catch (e) {
-      setSyncError(e instanceof Error ? e.message : "同步失败");
+      setSyncError(e instanceof Error ? e.message : t("skill_sync_failed"));
     } finally {
       setSyncing(false);
     }
@@ -144,16 +146,16 @@ export function SkillsPage() {
     <div>
       <PageHeader
         title="Skills"
-        description="管理可复用技能，并同步到全局或项目级 Agent 目录。"
+        description={t("skills_desc")}
         actions={
           <>
             <Button variant="secondary" onClick={openProjectCreate}>
               <FolderKanban className="h-4 w-4" />
-              新建项目
+              {t("skill_new_project")}
             </Button>
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建 Skill
+              {t("skill_new_skill")}
             </Button>
           </>
         }
@@ -163,15 +165,15 @@ export function SkillsPage() {
 
       <Tabs defaultValue="library">
         <TabsList>
-          <TabsTrigger value="library">Skill 库</TabsTrigger>
-          <TabsTrigger value="projects">项目配置</TabsTrigger>
+          <TabsTrigger value="library">{t("skill_library_tab")}</TabsTrigger>
+          <TabsTrigger value="projects">{t("skill_projects_tab")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="library">
           <div className="mb-4 flex items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
               <Badge variant="outline">{items.length} Skills</Badge>
-              <Badge variant="outline">{syncableSkills.length} 已分配</Badge>
+              <Badge variant="outline">{t("skill_assigned_count", { count: syncableSkills.length })}</Badge>
             </div>
             <Button
               variant="secondary"
@@ -179,19 +181,19 @@ export function SkillsPage() {
               onClick={() => runGlobalSync()}
             >
               <UploadCloud className="h-4 w-4" />
-              同步全局
+              {t("skill_sync_global")}
             </Button>
           </div>
 
           {items.length === 0 ? (
             <EmptyState
               icon={Boxes}
-              title="还没有 Skill"
-              description="创建第一个技能，描述它的用途并打上标签便于检索。"
+              title={t("skill_empty_title")}
+              description={t("skill_empty_desc")}
               action={
                 <Button onClick={openCreate}>
                   <Plus className="h-4 w-4" />
-                  新建 Skill
+                  {t("skill_new_skill")}
                 </Button>
               }
             />
@@ -218,22 +220,22 @@ export function SkillsPage() {
 
         <TabsContent value="projects">
           <div className="mb-4 flex items-center justify-between gap-3">
-            <Badge variant="outline">{projects.items.length} 项目</Badge>
+            <Badge variant="outline">{t("skill_project_count", { count: projects.items.length })}</Badge>
             <Button variant="secondary" onClick={openProjectCreate}>
               <FolderKanban className="h-4 w-4" />
-              新建项目
+              {t("skill_new_project")}
             </Button>
           </div>
 
           {projects.items.length === 0 ? (
             <EmptyState
               icon={FolderKanban}
-              title="还没有项目配置"
-              description="为仓库配置项目级 Skill 目录。"
+              title={t("skill_project_empty_title")}
+              description={t("skill_project_empty_desc")}
               action={
                 <Button onClick={openProjectCreate}>
                   <Plus className="h-4 w-4" />
-                  新建项目
+                  {t("skill_new_project")}
                 </Button>
               }
             />
@@ -276,7 +278,7 @@ export function SkillsPage() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={`确定删除 “${deleting?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -285,7 +287,7 @@ export function SkillsPage() {
       <ConfirmDialog
         open={!!deletingProject}
         onOpenChange={(o) => !o && setDeletingProject(null)}
-        description={`确定删除 “${deletingProject?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deletingProject?.name ?? "" })}
         onConfirm={() => {
           if (deletingProject) projects.remove(deletingProject.id);
           setDeletingProject(null);
@@ -310,6 +312,7 @@ function SkillCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   const targets = (skill.agentKeys ?? [])
     .map(getSkillTarget)
     .filter((target) => target !== null);
@@ -329,12 +332,12 @@ function SkillCard({
       </div>
 
       <p className="mt-3 line-clamp-2 min-h-[40px] text-copy-13 text-muted-foreground">
-        {skill.description || "暂无描述"}
+        {skill.description || t("skill_no_description")}
       </p>
 
       <div className="mt-3 flex flex-wrap gap-1.5">
         {targets.length === 0 ? (
-          <Badge variant="outline">未分配 Agent</Badge>
+          <Badge variant="outline">{t("skill_unassigned")}</Badge>
         ) : (
           targets.map((target) => (
             <Badge
@@ -361,7 +364,7 @@ function SkillCard({
         <div className="flex items-center gap-2">
           <Switch checked={skill.enabled} onCheckedChange={onToggle} />
           <span className="text-label-12 text-muted-foreground">
-            {skill.enabled ? "已启用" : "已禁用"}
+            {skill.enabled ? t("skill_enabled") : t("skill_disabled")}
           </span>
         </div>
         <Button
@@ -371,7 +374,7 @@ function SkillCard({
           onClick={onSync}
         >
           <RefreshCw className="h-4 w-4" />
-          同步
+          {t("skill_sync")}
         </Button>
       </div>
     </Card>
@@ -395,6 +398,7 @@ function ProjectCard({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   const selectedSkills = skills.filter((skill) =>
     project.skillIds.includes(skill.id)
   );
@@ -438,7 +442,7 @@ function ProjectCard({
         </div>
         <div className="flex flex-wrap gap-1.5">
           {selectedSkills.length === 0 ? (
-            <Badge variant="outline">未选择 Skill</Badge>
+            <Badge variant="outline">{t("skill_unselected")}</Badge>
           ) : (
             selectedSkills.map((skill) => (
               <Badge
@@ -456,7 +460,7 @@ function ProjectCard({
         <div className="flex items-center gap-2">
           <Switch checked={project.enabled} onCheckedChange={onToggle} />
           <span className="text-label-12 text-muted-foreground">
-            {project.syncMode === "symlink" ? "软链" : "复制"}
+            {project.syncMode === "symlink" ? t("skill_symlink_mode") : t("skill_copy_mode")}
           </span>
         </div>
         <Button
@@ -466,7 +470,7 @@ function ProjectCard({
           onClick={onSync}
         >
           <UploadCloud className="h-4 w-4" />
-          同步
+          {t("skill_sync")}
         </Button>
       </div>
     </Card>
@@ -480,6 +484,7 @@ function SyncResultPanel({
   state: SyncState | null;
   error: string | null;
 }) {
+  const { t } = useTranslation("pages");
   if (!state && !error) return null;
   const ok = state?.results.filter((result) => result.status === "success") ?? [];
   const failed = state?.results.filter((result) => result.status === "error") ?? [];
@@ -493,13 +498,13 @@ function SyncResultPanel({
           ) : (
             <CheckCircle2 className="h-4 w-4 text-success" />
           )}
-          {error ? "同步失败" : state?.title}
+          {error ? t("skill_sync_failed") : state?.title}
         </div>
         {state && (
           <div className="flex gap-2">
-            <Badge variant="success">{ok.length} 成功</Badge>
+            <Badge variant="success">{t("skill_sync_success", { count: ok.length })}</Badge>
             {failed.length > 0 && (
-              <Badge variant="destructive">{failed.length} 失败</Badge>
+              <Badge variant="destructive">{t("skill_sync_error_count", { count: failed.length })}</Badge>
             )}
           </div>
         )}
@@ -531,22 +536,23 @@ function RowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="操作">
+        <Button variant="ghost" size="icon-sm" aria-label={t("actions", { ns: "common" })}>
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          编辑
+          {t("edit", { ns: "common" })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
-          删除
+          {t("delete", { ns: "common" })}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

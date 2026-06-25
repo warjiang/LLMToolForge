@@ -10,6 +10,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,17 +18,21 @@ import { FormModeToggle } from "./FormModeToggle";
 import { useChatStore } from "@/store";
 import { useSidebarStore } from "@/store/sidebar";
 import { useThemeStore } from "@/store/theme";
+import { useLocaleStore } from "@/store/locale";
 import { cn, formatDate } from "@/lib/utils";
 
 const EXPANDED = 240;
 const COLLAPSED = 64;
 
 export function AgentSidebar() {
+  const { t } = useTranslation("common");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const chat = useChatStore();
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
+  const language = useLocaleStore((s) => s.language);
+  const setLanguage = useLocaleStore((s) => s.setLanguage);
 
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
@@ -63,15 +68,15 @@ export function AgentSidebar() {
       >
         {!collapsed && (
           <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
-            会话
+            {t("sessions")}
           </div>
         )}
         <Button
           size="icon-sm"
           variant="ghost"
           onClick={() => chat.newSession()}
-          title="新建会话"
-          aria-label="新建会话"
+          title={t("new_session")}
+          aria-label={t("new_session")}
         >
           <MessageSquarePlus className="h-4 w-4" />
         </Button>
@@ -117,7 +122,7 @@ export function AgentSidebar() {
                       size="icon-sm"
                       variant="ghost"
                       className="h-7 w-7 shrink-0"
-                      title="保存"
+                      title={t("save")}
                       onClick={() => commitRename(session.id)}
                     >
                       <Check className="h-3.5 w-3.5" />
@@ -126,7 +131,7 @@ export function AgentSidebar() {
                       size="icon-sm"
                       variant="ghost"
                       className="h-7 w-7 shrink-0"
-                      title="取消"
+                      title={t("cancel")}
                       onClick={() => setRenamingId(null)}
                     >
                       <X className="h-3.5 w-3.5" />
@@ -153,7 +158,7 @@ export function AgentSidebar() {
                         size="icon-sm"
                         variant="ghost"
                         className="h-7 w-7"
-                        title="重命名会话"
+                        title={t("rename_session")}
                         onClick={() => startRename(session.id, session.title)}
                       >
                         <Pencil className="h-3.5 w-3.5" />
@@ -163,7 +168,7 @@ export function AgentSidebar() {
                           size="icon-sm"
                           variant="ghost"
                           className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
-                          title="删除会话"
+                          title={t("delete_session")}
                           onClick={() => setDeleteSessionId(session.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
@@ -186,31 +191,58 @@ export function AgentSidebar() {
             : "items-center justify-between px-3"
         )}
       >
-        <button
-          onClick={toggleTheme}
-          aria-label="切换主题"
-          title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
-          className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
+        <div
+          className={cn(
+            "flex items-center",
+            collapsed ? "flex-col gap-1" : "gap-1"
+          )}
         >
-          <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+          <button
+            onClick={toggleTheme}
+            aria-label={t("theme_toggle")}
+            title={theme === "dark" ? t("switch_to_light") : t("switch_to_dark")}
+            className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
+          >
+            <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={theme}
+                  initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
+                  animate={{ opacity: 1, rotate: 0, scale: 1 }}
+                  exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
+                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+                  className="absolute inset-0 flex items-center justify-center"
+                >
+                  {theme === "dark" ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                </motion.span>
+              </AnimatePresence>
+            </span>
+          </button>
+
+          <button
+            onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
+            aria-label={t("language")}
+            title={t("select_language")}
+            className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
+          >
             <AnimatePresence mode="wait" initial={false}>
               <motion.span
-                key={theme}
-                initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
-                animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
-                transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                className="absolute inset-0 flex items-center justify-center"
+                key={language}
+                initial={reduce ? false : { opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={reduce ? undefined : { opacity: 0, scale: 0.7 }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                className="text-[11px] font-semibold leading-none"
               >
-                {theme === "dark" ? (
-                  <Sun className="h-4 w-4" />
-                ) : (
-                  <Moon className="h-4 w-4" />
-                )}
+                {language === "zh" ? t("lang_short_zh") : t("lang_short_en")}
               </motion.span>
             </AnimatePresence>
-          </span>
-        </button>
+          </button>
+        </div>
         <FormModeToggle />
       </div>
 
@@ -219,9 +251,9 @@ export function AgentSidebar() {
         onOpenChange={(open) => {
           if (!open) setDeleteSessionId(null);
         }}
-        title="删除会话"
-        description={`确定删除「${pendingDelete?.title ?? "该会话"}」吗？此操作会删除会话中的所有消息，无法撤销。`}
-        confirmLabel="删除"
+        title={t("delete_session")}
+        description={t("confirm_delete_session", { name: pendingDelete?.title ?? t("sessions") })}
+        confirmLabel={t("delete")}
         onConfirm={() => {
           if (pendingDelete) void chat.deleteSession(pendingDelete.id);
           setDeleteSessionId(null);

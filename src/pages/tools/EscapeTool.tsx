@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { ToolPanel } from "./ToolPanel";
 import { jsonEscape, jsonUnescape } from "@/lib/tools";
@@ -6,6 +7,7 @@ import { jsonEscape, jsonUnescape } from "@/lib/tools";
 type Mode = "escape" | "unescape";
 
 export function EscapeTool() {
+  const { t } = useTranslation("pages");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("escape");
 
@@ -22,19 +24,19 @@ export function EscapeTool() {
       error={result.ok ? null : result.error}
       inputPlaceholder={
         mode === "escape"
-          ? '输入原始文本，将转义为 JSON 字符串字面量（换行→\\n、引号→\\"）'
-          : '输入带转义的文本，例如 line1\\nline2\\t\\"quoted\\"'
+          ? t("tool_escape_input_placeholder")
+          : t("tool_unescape_input_placeholder")
       }
       onSwap={() => result.ok && setInput(result.value)}
       actions={
         <SegmentedControl
           size="sm"
-          aria-label="转义模式"
+          aria-label={t("tool_escape_mode")}
           value={mode}
           onChange={setMode}
           options={[
-            { value: "escape", label: "转义" },
-            { value: "unescape", label: "去转义" },
+            { value: "escape", label: t("tool_escape") },
+            { value: "unescape", label: t("tool_unescape") },
           ]}
         />
       }

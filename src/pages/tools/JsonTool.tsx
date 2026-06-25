@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
@@ -10,6 +11,7 @@ const SAMPLE =
   '{"name":"demo","payload":"{\\"nested\\":\\"{\\\\\\"deep\\\\\\":true}\\",\\"count\\":3}","tags":"[\\"a\\",\\"b\\"]"}';
 
 export function JsonTool() {
+  const { t } = useTranslation("pages");
   const [input, setInput] = useState("");
   const [deep, setDeep] = useState(true);
   const [indent, setIndent] = useState(2);
@@ -25,12 +27,12 @@ export function JsonTool() {
       onInputChange={setInput}
       output={result.ok ? result.value : ""}
       error={result.ok ? null : result.error}
-      inputLabel="JSON 输入"
-      outputLabel="美化结果"
-      inputPlaceholder='粘贴 JSON，支持被转义 / 双重编码的嵌套字段，如 {"data":"{\"a\":1}"}'
+      inputLabel={t("tool_json_input")}
+      outputLabel={t("tool_json_output")}
+      inputPlaceholder={t("tool_json_placeholder")}
       actions={
         <Button variant="secondary" size="sm" onClick={() => setInput(SAMPLE)}>
-          填充示例
+          {t("tool_fill_sample")}
         </Button>
       }
       options={
@@ -38,17 +40,17 @@ export function JsonTool() {
           <div className="flex items-center gap-2">
             <Switch id="json-deep" checked={deep} onCheckedChange={setDeep} />
             <Label htmlFor="json-deep" className="cursor-pointer font-normal">
-              递归解开嵌套/转义字段
+              {t("tool_json_deep")}
             </Label>
           </div>
           <SegmentedControl
             size="sm"
-            aria-label="缩进空格"
+            aria-label={t("tool_indent_label")}
             value={String(indent)}
             onChange={(v) => setIndent(Number(v))}
             options={[
-              { value: "2", label: "2 空格" },
-              { value: "4", label: "4 空格" },
+              { value: "2", label: t("tool_2_spaces") },
+              { value: "4", label: t("tool_4_spaces") },
             ]}
           />
         </div>

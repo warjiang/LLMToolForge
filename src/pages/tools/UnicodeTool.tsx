@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -8,6 +9,7 @@ import { unicodeDecode, unicodeEncode } from "@/lib/tools";
 type Mode = "encode" | "decode";
 
 export function UnicodeTool() {
+  const { t } = useTranslation("pages");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<Mode>("encode");
   const [asciiOnly, setAsciiOnly] = useState(true);
@@ -27,19 +29,19 @@ export function UnicodeTool() {
       error={result.ok ? null : result.error}
       inputPlaceholder={
         mode === "encode"
-          ? "输入文本，例如 你好 → \\u4f60\\u597d"
-          : "输入 \\uXXXX / \\xXX / &#...; 序列，例如 \\u4f60\\u597d"
+          ? t("tool_encode_placeholder")
+          : t("tool_decode_placeholder")
       }
       onSwap={() => result.ok && setInput(result.value)}
       actions={
         <SegmentedControl
           size="sm"
-          aria-label="编码模式"
+          aria-label={t("tool_unicode_mode")}
           value={mode}
           onChange={setMode}
           options={[
-            { value: "encode", label: "编码" },
-            { value: "decode", label: "解码" },
+            { value: "encode", label: t("tool_encode") },
+            { value: "decode", label: t("tool_decode") },
           ]}
         />
       }
@@ -52,7 +54,7 @@ export function UnicodeTool() {
               onCheckedChange={setAsciiOnly}
             />
             <Label htmlFor="uni-ascii" className="cursor-pointer font-normal">
-              保留可见 ASCII
+              {t("tool_keep_ascii")}
             </Label>
           </div>
         ) : undefined
