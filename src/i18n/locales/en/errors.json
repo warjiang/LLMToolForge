@@ -1,0 +1,12 @@
+{
+  "network_error": "Network Error",
+  "request_failed": "Request Failed",
+  "invalid_input": "Invalid Input",
+  "required_field": "This field is required",
+  "server_error": "Server Error",
+  "unauthorized": "Unauthorized",
+  "forbidden": "Forbidden",
+  "not_found": "Not Found",
+  "timeout": "Request Timeout",
+  "something_went_wrong": "Something went wrong, please try again"
+}

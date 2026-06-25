@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import { Link } from "react-router-dom";
+import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
   Boxes,
@@ -17,6 +18,7 @@ import { useApiKeyStore, useMcpStore, useSkillStore } from "@/store";
 import { useAppModeStore } from "@/store/appMode";
 
 export function DashboardPage() {
+  const { t } = useTranslation("dashboard");
   const apiKeys = useApiKeyStore();
   const skills = useSkillStore();
   const mcp = useMcpStore();
@@ -34,32 +36,32 @@ export function DashboardPage() {
     apiKeys.items.length === 0
       ? {
           to: "/providers",
-          label: "添加第一个 API Key",
-          description: "先接入模型凭据，Playground 和工具编排才有可用模型。",
+          label: t("setup_model_label"),
+          description: t("setup_model_desc"),
         }
       : skills.items.length === 0
         ? {
             to: "/skills",
-            label: "创建第一个 Skill",
-            description: "把常用提示词、工具说明和调用方式整理成可复用能力。",
+            label: t("setup_skills_label"),
+            description: t("setup_skills_desc"),
           }
         : mcp.items.length === 0
           ? {
               to: "/mcp",
-              label: "接入 MCP Server",
-              description: "为模型接入本地或远端工具，扩展可调用能力。",
+              label: t("setup_mcp_label"),
+              description: t("setup_mcp_desc"),
             }
           : {
-              label: "进入 Agent 形态",
-              description: "用已配置的模型、Skill 和工具组合，在独立的聊天界面里测试真实对话。",
+              label: t("ready_playground_label"),
+              description: t("ready_playground_desc"),
               onClick: () => useAppModeStore.getState().setMode("agent"),
             };
 
   return (
     <div className="space-y-5">
       <PageHeader
-        title="概览"
-        description="管理大模型的工具：API Key、Skill 与 MCP 服务器。"
+        title={t("title")}
+        description={t("description")}
       />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -67,27 +69,27 @@ export function DashboardPage() {
           <StatCard
             to="/providers"
             icon={KeyRound}
-            label="模型接入"
+            label={t("model_integration")}
             value={apiKeys.items.length}
-            hint="已配置的密钥"
+            hint={t("configured_keys")}
           />
         </Reveal>
         <Reveal index={1} className="flex">
           <StatCard
             to="/skills"
             icon={Boxes}
-            label="Skills"
+            label={t("skills")}
             value={skills.items.length}
-            hint={`${activeSkills} 个已启用`}
+            hint={t("enabled_skills", { count: activeSkills })}
           />
         </Reveal>
         <Reveal index={2} className="flex">
           <StatCard
             to="/mcp"
             icon={Server}
-            label="MCP Servers"
+            label={t("mcp_servers")}
             value={mcp.items.length}
-            hint={`${activeMcp} 个已启用`}
+            hint={t("enabled_mcp", { count: activeMcp })}
           />
         </Reveal>
       </div>
@@ -97,9 +99,9 @@ export function DashboardPage() {
           <Card className="flex min-h-[276px] flex-1 flex-col p-5 md:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <h3 className="text-heading-20">工作台</h3>
+                <h3 className="text-heading-20">{t("workspace")}</h3>
                 <p className="mt-1 max-w-2xl text-copy-14 text-muted-foreground">
-                  先接入模型，再沉淀 Skills，并按需连接 MCP Server。
+                  {t("workspace_description")}
                 </p>
               </div>
               <div className="hidden h-10 w-10 items-center justify-center rounded-md bg-accent-subtle text-accent sm:flex">
@@ -111,23 +113,23 @@ export function DashboardPage() {
               <WorkspaceLink
                 to="/providers"
                 icon={KeyRound}
-                title="模型接入"
-                description="管理 API Key 与模型供应商连接。"
-                meta={`${apiKeys.items.length} 个密钥`}
+                title={t("model_integration_card")}
+                description={t("model_integration_desc")}
+                meta={t("keys_count", { count: apiKeys.items.length })}
               />
               <WorkspaceLink
                 to="/skills"
                 icon={Boxes}
-                title="Skills"
-                description="创建可复用的技能说明与标签。"
-                meta={`${activeSkills}/${skills.items.length} 已启用`}
+                title={t("skills_card")}
+                description={t("skills_desc")}
+                meta={t("skills_enabled", { enabled: activeSkills, total: skills.items.length })}
               />
               <WorkspaceLink
                 to="/mcp"
                 icon={Server}
-                title="MCP Servers"
-                description="接入 stdio、SSE 或 HTTP 工具服务。"
-                meta={`${activeMcp}/${mcp.items.length} 已启用`}
+                title={t("mcp_servers_card")}
+                description={t("mcp_desc")}
+                meta={t("mcp_enabled", { enabled: activeMcp, total: mcp.items.length })}
               />
             </div>
           </Card>
@@ -136,11 +138,11 @@ export function DashboardPage() {
         <div className="grid gap-4">
           <Reveal index={4}>
             <Card className="p-5">
-              <h3 className="text-heading-16">本地状态</h3>
+              <h3 className="text-heading-16">{t("local_status")}</h3>
               <div className="mt-4 space-y-3">
-                <StatusRow label="数据位置" value="本地设备" />
-                <StatusRow label="可用 Skills" value={`${activeSkills} 个`} />
-                <StatusRow label="可用 MCP" value={`${activeMcp} 个`} />
+                <StatusRow label={t("data_location")} value={t("local_device")} />
+                <StatusRow label={t("available_skills")} value={`${activeSkills}`} />
+                <StatusRow label={t("available_mcp")} value={`${activeMcp}`} />
               </div>
             </Card>
           </Reveal>
@@ -152,7 +154,7 @@ export function DashboardPage() {
                   <PlayCircle className="h-4 w-4" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="text-heading-16">下一步</h3>
+                  <h3 className="text-heading-16">{t("next_step")}</h3>
                   <p className="mt-1 text-copy-14 text-muted-foreground">
                     {nextAction.description}
                   </p>

@@ -18,12 +18,38 @@ export interface ApiKey extends BaseEntity {
 
 export type SkillStatus = "enabled" | "disabled";
 
+export type SkillAgentKey =
+  | "claude_code"
+  | "codex"
+  | "cursor"
+  | "opencode"
+  | "gemini_cli"
+  | "github_copilot"
+  | "kiro"
+  | "qoder"
+  | "droid"
+  | "openclaw"
+  | "hermes";
+
+export type SkillSyncMode = "copy" | "symlink";
+
 export interface Skill extends BaseEntity {
   name: string;
   description: string;
   enabled: boolean;
   tags: string[];
   content?: string;
+  agentKeys?: SkillAgentKey[];
+  syncMode?: SkillSyncMode;
+}
+
+export interface SkillProjectConfig extends BaseEntity {
+  name: string;
+  projectPath: string;
+  agentKeys: SkillAgentKey[];
+  skillIds: string[];
+  syncMode: SkillSyncMode;
+  enabled: boolean;
 }
 
 export type McpTransport = "stdio" | "sse" | "http";

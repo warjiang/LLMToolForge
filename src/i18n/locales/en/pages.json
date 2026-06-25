@@ -1,0 +1,27 @@
+{
+  "page_not_found": "Page Not Found",
+  "error_title": "Oops!",
+  "error_message": "An unexpected error occurred",
+  "go_home": "Go Home",
+  "back": "Back",
+  "confirm_delete": "Confirm Delete",
+  "delete_confirm_message": "This action cannot be undone. Are you sure you want to delete?",
+  "yes_delete": "Yes, Delete",
+  "cancel_action": "Cancel",
+  "settings_title": "Settings",
+  "settings_description": "Manage application appearance and data storage information.",
+  "appearance": "Appearance",
+  "choose_theme": "Choose the application theme.",
+  "light_theme": "Light",
+  "dark_theme": "Dark",
+  "data_storage": "Data Storage",
+  "storage_description": "Currently in local mode. All API Keys, Skills, and MCP configurations are saved locally. Future versions will support encrypted storage and cloud synchronization.",
+  "tools_title": "Tools",
+  "tools_description": "Common encoding/decoding and text processing tools. All calculations are done locally.",
+  "url_codec": "URL Codec",
+  "json_viewer": "JSON Viewer",
+  "escape_tool": "Escape/Unescape",
+  "unicode_tool": "Unicode"
+}
+
+
