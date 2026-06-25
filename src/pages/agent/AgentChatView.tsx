@@ -122,6 +122,7 @@ const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
 
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
+const STREAM_CONTENT_FLUSH_MS = 50;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 
 function providerLabel(provider: string): string {
@@ -964,9 +965,14 @@ export function AgentChatView() {
 
     if (settings.streaming && adapter.chatStream && tools.length === 0) {
       let acc = "";
+      let lastFlush = 0;
       for await (const chunk of adapter.chatStream(req, cred)) {
         acc += chunk.delta;
-        await chat.updateMessage(assistant.id, { content: acc });
+        const now = Date.now();
+        if (now - lastFlush >= STREAM_CONTENT_FLUSH_MS) {
+          lastFlush = now;
+          await chat.updateMessage(assistant.id, { content: acc });
+        }
       }
       await chat.updateMessage(assistant.id, { content: acc, status: "complete" });
     } else {
@@ -1216,15 +1222,16 @@ export function AgentChatView() {
                 </div>
               ) : (
                 <div className="space-y-5">
-                  <AnimatePresence initial={false}>
-                    {chat.messages.map((m, i) => (
+                  {chat.messages.map((m, i) => {
+                    const editingThisMessage = editingMessageId === m.id;
+                    return (
                       <ChatBubble
                         key={m.id}
                         message={m}
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
-                        editing={editingMessageId === m.id}
-                        editingDraft={editingDraft}
+                        editing={editingThisMessage}
+                        editingDraft={editingThisMessage ? editingDraft : ""}
                         onEditDraftChange={setEditingDraft}
                         onStartEdit={() => startEditingMessage(m)}
                         onCancelEdit={() => {
@@ -1240,8 +1247,8 @@ export function AgentChatView() {
                         }
                         actionsDisabled={sending}
                       />
-                    ))}
-                  </AnimatePresence>
+                    );
+                  })}
                 </div>
               )}
             </div>
