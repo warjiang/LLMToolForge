@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Loader2, Plus, X } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -39,6 +40,7 @@ const empty = {
 };
 
 export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
+  const { t } = useTranslation("pages");
   const add = useApiKeyStore((s) => s.add);
   const edit = useApiKeyStore((s) => s.edit);
   const [form, setForm] = useState(empty);
@@ -79,8 +81,8 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
 
   const fetchModels = async () => {
     setError(null);
-    if (!form.baseUrl.trim()) return setError("拉取模型需要先填写 Base URL");
-    if (!form.key.trim()) return setError("拉取模型需要先填写密钥");
+    if (!form.baseUrl.trim()) return setError(t("api_key_fetch_base_url_required"));
+    if (!form.key.trim()) return setError(t("api_key_fetch_key_required"));
     setFetching(true);
     try {
       const adapter = getAdapter("manual")!;
@@ -94,15 +96,15 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
         return [...merged];
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拉取模型失败");
+      setError(e instanceof Error ? e.message : t("api_key_fetch_failed"));
     } finally {
       setFetching(false);
     }
   };
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写名称");
-    if (!form.key.trim()) return setError("请填写密钥");
+    if (!form.name.trim()) return setError(t("api_key_name_required"));
+    if (!form.key.trim()) return setError(t("api_key_key_required"));
 
     const payload = {
       name: form.name.trim(),
@@ -122,25 +124,25 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{editing ? "编辑 API Key" : "新建 API Key"}</DialogTitle>
+          <DialogTitle>{editing ? t("api_key_edit_title") : t("api_key_create_title")}</DialogTitle>
           <DialogDescription>
-            密钥仅存储在本地设备，列表中以掩码展示。
+            {t("api_key_local_only")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
           <div className="grid gap-1.5">
-            <Label htmlFor="ak-name">名称</Label>
+            <Label htmlFor="ak-name">{t("name", { ns: "common" })}</Label>
             <Input
               id="ak-name"
-              placeholder="例如：生产环境 OpenAI"
+              placeholder={t("api_key_name_placeholder")}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label>提供商</Label>
+            <Label>{t("provider", { ns: "common" })}</Label>
             <Select
               value={form.provider}
               onValueChange={(v) => setForm({ ...form, provider: v })}
@@ -159,7 +161,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="ak-key">密钥</Label>
+            <Label htmlFor="ak-key">{t("key", { ns: "common" })}</Label>
             <Input
               id="ak-key"
               type="password"
@@ -171,7 +173,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="ak-base">Base URL（OpenAI 兼容，Playground 调用时需要）</Label>
+            <Label htmlFor="ak-base">{t("api_key_base_url_label")}</Label>
             <Input
               id="ak-base"
               placeholder="https://api.openai.com/v1"
@@ -182,7 +184,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
 
           <div className="grid gap-1.5">
             <div className="flex items-center justify-between">
-              <Label htmlFor="ak-model">可用模型</Label>
+              <Label htmlFor="ak-model">{t("api_key_models_label")}</Label>
               <Button
                 size="sm"
                 variant="ghost"
@@ -190,13 +192,13 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
                 disabled={fetching}
               >
                 {fetching && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-                尝试拉取
+                {t("api_key_fetch_models")}
               </Button>
             </div>
             <div className="flex gap-2">
               <Input
                 id="ak-model"
-                placeholder="输入 model id，例如 gpt-4o-mini"
+                placeholder={t("api_key_model_placeholder")}
                 value={modelInput}
                 onChange={(e) => setModelInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -211,7 +213,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
                 variant="secondary"
                 size="icon"
                 onClick={() => addModel(modelInput)}
-                aria-label="添加模型"
+                aria-label={t("api_key_add_model")}
               >
                 <Plus className="h-4 w-4" />
               </Button>
@@ -226,7 +228,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
                       type="button"
                       onClick={() => removeModel(m)}
                       className="rounded-sm text-muted-foreground hover:text-foreground"
-                      aria-label={`移除 ${m}`}
+                      aria-label={t("api_key_remove_model", { id: m })}
                     >
                       <X className="h-3 w-3" />
                     </button>
@@ -241,9 +243,9 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

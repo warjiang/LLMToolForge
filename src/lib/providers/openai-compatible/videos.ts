@@ -4,6 +4,7 @@ import type {
   VideoGenerationRequest,
   VideoGenerationResult,
 } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import {
   videoContentItems,
   videoResultFromResponse,
@@ -48,7 +49,14 @@ export async function videoGeneration(
   const res = await postVideoTask(cred, body, req.signal);
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Video 失败: HTTP ${res.status} ${text.slice(0, 300)}`);
+    throw new Error(
+      i18n.t("provider_http_failed", {
+        ns: "common",
+        label: "Video",
+        status: res.status,
+        text: text.slice(0, 300),
+      })
+    );
   }
   const json = (await res.json()) as VideoGenerationApiResponse;
   return videoResultFromResponse(json);
@@ -73,7 +81,14 @@ export async function getVideoGenerationTask(
   );
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Video(task) 失败: HTTP ${res.status} ${text.slice(0, 300)}`);
+    throw new Error(
+      i18n.t("provider_http_failed", {
+        ns: "common",
+        label: "Video(task)",
+        status: res.status,
+        text: text.slice(0, 300),
+      })
+    );
   }
   const json = (await res.json()) as VideoGenerationApiResponse;
   return videoResultFromResponse(json);

@@ -15,6 +15,7 @@ import type {
   ProviderCredential,
   WireFormat,
 } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 import { ensureOk, postArkJson } from "./request";
 
 // ---- message conversion ----
@@ -185,7 +186,7 @@ export async function* chatStream(
   );
   await ensureOk(res, "Chat(stream)");
   if (!res.body) {
-    throw new Error("流式响应缺少 body");
+    throw new Error(i18n.t("provider_stream_missing_body", { ns: "common" }));
   }
 
   const reader = res.body.getReader();

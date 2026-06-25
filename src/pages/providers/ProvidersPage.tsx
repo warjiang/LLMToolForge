@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
@@ -14,6 +15,7 @@ import { GatewayProviders } from "./GatewayProviders";
 import { ManualKeyProviders } from "./ManualKeyProviders";
 
 export function ProvidersPage() {
+  const { t } = useTranslation("pages");
   const [active, setActive] = useState<ProviderKind>("volcengine");
   const activeMeta =
     PROVIDER_METAS.find((p) => p.id === active) ?? PROVIDER_METAS[0];
@@ -22,23 +24,23 @@ export function ProvidersPage() {
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="shrink-0">
         <PageHeader
-          title="模型接入"
-          description="统一管理各模型 provider 的接入：Volcengine、New API、LiteLLM、DMX 以及自定义 API Key。新增接入时请先选择 provider。"
+          title={t("providers_title")}
+          description={t("providers_desc")}
         />
 
         <SegmentedControl
-          aria-label="选择 provider"
+          aria-label={t("providers_select_label")}
           value={active}
           onChange={setActive}
           options={PROVIDER_METAS.map((p) => ({
             value: p.id,
-            label: <ProviderIconLabel provider={p.id}>{p.label}</ProviderIconLabel>,
+            label: <ProviderIconLabel provider={p.id}>{p.label.startsWith("provider_label_") ? t(p.label) : p.label}</ProviderIconLabel>,
           }))}
         />
 
         {!isLiveRequestSupported() && (
           <div className="mt-4 rounded-sm border border-amber-200 bg-amber-50 px-4 py-2.5 text-label-13 text-amber-900">
-            浏览器开发模式下，跨域请求会被拦截。请在桌面应用（pnpm tauri:dev）中使用拉取功能。
+            {t("providers_cors_warning")}
           </div>
         )}
       </div>

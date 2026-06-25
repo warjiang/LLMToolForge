@@ -11,7 +11,6 @@ import {
   Network,
   Moon,
   Sun,
-  Globe,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar";
@@ -152,20 +151,18 @@ export function Sidebar() {
             title={t("select_language")}
             className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
           >
-            <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.span
-                  key={language}
-                  initial={reduce ? false : { opacity: 0, rotate: -90, scale: 0.6 }}
-                  animate={{ opacity: 1, rotate: 0, scale: 1 }}
-                  exit={reduce ? undefined : { opacity: 0, rotate: 90, scale: 0.6 }}
-                  transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  className="absolute inset-0 flex items-center justify-center"
-                >
-                  <Globe className="h-4 w-4" />
-                </motion.span>
-              </AnimatePresence>
-            </span>
+            <AnimatePresence mode="wait" initial={false}>
+              <motion.span
+                key={language}
+                initial={reduce ? false : { opacity: 0, scale: 0.7 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={reduce ? undefined : { opacity: 0, scale: 0.7 }}
+                transition={{ duration: 0.15, ease: [0.16, 1, 0.3, 1] }}
+                className="text-[11px] font-semibold leading-none"
+              >
+                {language === "zh" ? "中" : "EN"}
+              </motion.span>
+            </AnimatePresence>
           </button>
         </div>
         <FormModeToggle />

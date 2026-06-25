@@ -4,15 +4,23 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useThemeStore, type Theme } from "@/store/theme";
+import { useLocaleStore, type Language } from "@/store/locale";
 
 export function SettingsPage() {
   const { t } = useTranslation("pages");
   const theme = useThemeStore((s) => s.theme);
   const setTheme = useThemeStore((s) => s.setTheme);
+  const language = useLocaleStore((s) => s.language);
+  const setLanguage = useLocaleStore((s) => s.setLanguage);
 
   const themeOptions: { value: Theme; label: string; icon: typeof Sun }[] = [
     { value: "light", label: t("light_theme"), icon: Sun },
     { value: "dark", label: t("dark_theme"), icon: Moon },
+  ];
+
+  const languageOptions: { value: Language; label: string }[] = [
+    { value: "zh", label: t("lang_zh") },
+    { value: "en", label: t("lang_en") },
   ];
 
   return (
@@ -24,7 +32,7 @@ export function SettingsPage() {
         <p className="mt-1 text-copy-14 text-muted-foreground">
           {t("choose_theme")}
         </p>
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           {themeOptions.map(({ value, label, icon: Icon }) => (
             <Button
               key={value}
@@ -32,6 +40,16 @@ export function SettingsPage() {
               onClick={() => setTheme(value)}
             >
               <Icon className="h-4 w-4" />
+              {label}
+            </Button>
+          ))}
+          <div className="mx-1 h-5 w-px bg-border" />
+          {languageOptions.map(({ value, label }) => (
+            <Button
+              key={value}
+              variant={language === value ? "primary" : "secondary"}
+              onClick={() => setLanguage(value)}
+            >
               {label}
             </Button>
           ))}

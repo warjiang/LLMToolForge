@@ -1,4 +1,5 @@
 import { Brain, Eye, ImageIcon, Video, Wrench } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Badge } from "@/components/ui/badge";
 import {
   isImageGenerationModel,
@@ -20,9 +21,9 @@ export function getModelFeatureLabels(model: ModelInfo): string[] {
 
   if (ctx) labels.push(ctx);
   if (model.supportsFunctionCall) labels.push("Function Call");
-  if (model.supportsVision) labels.push("多模态");
-  if (supportsImageGeneration) labels.push("生图");
-  if (supportsVideoGeneration) labels.push("生视频");
+  if (model.supportsVision) labels.push("Multimodal");
+  if (supportsImageGeneration) labels.push("Image Gen");
+  if (supportsVideoGeneration) labels.push("Video Gen");
   if (model.tags?.includes("thinking")) labels.push("Thinking");
   labels.push(
     ...(model.tags?.filter(
@@ -45,6 +46,7 @@ export function getModelFeatureTitle(model: ModelInfo | null): string | undefine
 
 /** Renders capability badges (context window, tools, vision, tags) for a model. */
 export function ModelFeatureBadges({ model }: { model: ModelInfo }) {
+  const { t } = useTranslation("common");
   const supportsImageGeneration = isImageGenerationModel(model);
   const supportsVideoGeneration = isVideoGenerationModel(model);
   const ctx = formatContext(model.contextWindow);
@@ -60,19 +62,19 @@ export function ModelFeatureBadges({ model }: { model: ModelInfo }) {
       {model.supportsVision && (
         <Badge variant="success">
           <Eye className="h-3 w-3" />
-          多模态
+          {t("multimodal")}
         </Badge>
       )}
       {supportsImageGeneration && (
         <Badge variant="success">
           <ImageIcon className="h-3 w-3" />
-          生图
+          {t("image_gen")}
         </Badge>
       )}
       {supportsVideoGeneration && (
         <Badge variant="success">
           <Video className="h-3 w-3" />
-          生视频
+          {t("video_gen")}
         </Badge>
       )}
       {model.tags?.includes("thinking") && (

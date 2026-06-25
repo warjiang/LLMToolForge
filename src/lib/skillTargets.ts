@@ -10,8 +10,8 @@ export interface SkillTarget {
 }
 
 export const SKILL_SYNC_MODES: { value: SkillSyncMode; label: string }[] = [
-  { value: "copy", label: "复制" },
-  { value: "symlink", label: "软链" },
+  { value: "copy", label: "skill_sync_mode_copy" },
+  { value: "symlink", label: "skill_sync_mode_symlink" },
 ];
 
 export const SKILL_TARGETS: SkillTarget[] = [
@@ -91,7 +91,7 @@ export const SKILL_TARGETS: SkillTarget[] = [
     category: "lobster",
     globalSkillsDir: "~/.hermes/skills",
     projectSkillsDir: ".hermes/skills",
-    note: "Hermes 支持嵌套扫描；本项目按标准 skills 根目录写入。",
+    note: "skill_target_hermes_note",
   },
 ];
 

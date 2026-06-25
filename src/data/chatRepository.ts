@@ -1,4 +1,5 @@
 import Database from "@tauri-apps/plugin-sql";
+import i18n from "@/i18n/config";
 import type {
   ChatAttachment,
   ChatSession,
@@ -241,7 +242,8 @@ class ChatRepository {
     const dataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader();
       reader.onload = () => resolve(reader.result as string);
-      reader.onerror = () => reject(reader.error ?? new Error("读取附件失败"));
+      reader.onerror = () =>
+        reject(reader.error ?? new Error(i18n.t("read_attachment_failed", { ns: "common" })));
       reader.readAsDataURL(file);
     });
     return makeAttachment(sessionId, file, dataUrl);
@@ -260,7 +262,7 @@ class ChatRepository {
     return rows.map(rowToSession);
   }
 
-  async createSession(title = "新会话"): Promise<SessionBundle> {
+  async createSession(title = i18n.t("new_session", { ns: "common" })): Promise<SessionBundle> {
     await this.ensureInit();
     const timestamp = nowIso();
     const session: ChatSession = {
@@ -701,7 +703,7 @@ class ChatRepository {
     if (!isTauri()) {
       const state = readFallback();
       const message = state.messages.find((m) => m.id === messageId);
-      if (!message) throw new Error("消息不存在");
+      if (!message) throw new Error(i18n.t("message_not_found", { ns: "common" }));
       const nextParts = (
         parts ?? [{ id: uid("part"), kind: "text" as const, text: content, sortOrder: 0 }]
       ).map((part, index) => ({
@@ -733,7 +735,7 @@ class ChatRepository {
       [messageId]
     );
     const sessionId = rows[0]?.session_id ? String(rows[0].session_id) : null;
-    if (!sessionId) throw new Error("消息不存在");
+    if (!sessionId) throw new Error(i18n.t("message_not_found", { ns: "common" }));
     const nextParts = (
       parts ?? [{ id: uid("part"), kind: "text" as const, text: content, sortOrder: 0 }]
     ).map((part, index) => ({
@@ -750,7 +752,7 @@ class ChatRepository {
     await this.touchSession(sessionId);
     const bundle = await this.getSessionBundle(sessionId);
     const message = bundle?.messages.find((m) => m.id === messageId);
-    if (!message) throw new Error("消息不存在");
+    if (!message) throw new Error(i18n.t("message_not_found", { ns: "common" }));
     return message;
   }
 
@@ -769,7 +771,7 @@ class ChatRepository {
     if (!isTauri()) {
       const state = readFallback();
       const message = state.messages.find((m) => m.id === messageId);
-      if (!message) throw new Error("消息不存在");
+      if (!message) throw new Error(i18n.t("message_not_found", { ns: "common" }));
       const parts = (input.parts ?? []).map((part, index) => ({
         ...part,
         messageId,
@@ -796,7 +798,7 @@ class ChatRepository {
       [messageId]
     );
     const sessionId = rows[0]?.session_id ? String(rows[0].session_id) : null;
-    if (!sessionId) throw new Error("消息不存在");
+    if (!sessionId) throw new Error(i18n.t("message_not_found", { ns: "common" }));
     const parts = (input.parts ?? []).map((part, index) => ({
       ...part,
       messageId,

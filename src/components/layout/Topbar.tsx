@@ -6,6 +6,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { cn, isMacOS, isTauri } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar";
 
@@ -14,6 +15,7 @@ function historyIdx(): number {
 }
 
 export function Topbar() {
+  const { t } = useTranslation("common");
   const navigate = useNavigate();
   const location = useLocation();
   const collapsed = useSidebarStore((s) => s.collapsed);
@@ -48,8 +50,8 @@ export function Topbar() {
     >
       <button
         onClick={toggleSidebar}
-        aria-label={collapsed ? "展开侧边栏" : "收起侧边栏"}
-        title={collapsed ? "展开侧边栏" : "收起侧边栏"}
+        aria-label={collapsed ? t("expand_sidebar") : t("collapse_sidebar")}
+        title={collapsed ? t("expand_sidebar") : t("collapse_sidebar")}
         className={cn(btn)}
       >
         {collapsed ? (
@@ -63,8 +65,8 @@ export function Topbar() {
         <button
           onClick={() => navigate(-1)}
           disabled={!canBack}
-          aria-label="后退"
-          title="后退"
+          aria-label={t("back")}
+          title={t("back")}
           className={cn(btn)}
         >
           <ChevronLeft className="h-4 w-4" strokeWidth={1.75} />
@@ -72,8 +74,8 @@ export function Topbar() {
         <button
           onClick={() => navigate(1)}
           disabled={!canForward}
-          aria-label="前进"
-          title="前进"
+          aria-label={t("forward")}
+          title={t("forward")}
           className={cn(btn)}
         >
           <ChevronRight className="h-4 w-4" strokeWidth={1.75} />

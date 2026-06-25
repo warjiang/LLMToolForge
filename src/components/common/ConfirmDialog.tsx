@@ -8,13 +8,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { useTranslation } from "react-i18next";
 
 export function ConfirmDialog({
   open,
   onOpenChange,
-  title = "确认删除",
-  description = "此操作无法撤销。",
-  confirmLabel = "删除",
+  title,
+  description,
+  confirmLabel,
+  cancelLabel,
   onConfirm,
 }: {
   open: boolean;
@@ -22,19 +24,26 @@ export function ConfirmDialog({
   title?: string;
   description?: string;
   confirmLabel?: string;
+  cancelLabel?: string;
   onConfirm: () => void;
 }) {
+  const { t } = useTranslation("common");
+  const resolvedTitle = title ?? t("confirm_delete");
+  const resolvedDescription = description ?? t("delete_confirm_message");
+  const resolvedConfirm = confirmLabel ?? t("delete");
+  const resolvedCancel = cancelLabel ?? t("cancel");
+
   return (
     <AlertDialog open={open} onOpenChange={onOpenChange}>
       <AlertDialogContent>
         <AlertDialogHeader>
-          <AlertDialogTitle>{title}</AlertDialogTitle>
-          <AlertDialogDescription>{description}</AlertDialogDescription>
+          <AlertDialogTitle>{resolvedTitle}</AlertDialogTitle>
+          <AlertDialogDescription>{resolvedDescription}</AlertDialogDescription>
         </AlertDialogHeader>
         <AlertDialogFooter>
-          <AlertDialogCancel>取消</AlertDialogCancel>
+          <AlertDialogCancel>{resolvedCancel}</AlertDialogCancel>
           <AlertDialogAction onClick={onConfirm}>
-            {confirmLabel}
+            {resolvedConfirm}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>

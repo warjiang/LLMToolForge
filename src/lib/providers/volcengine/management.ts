@@ -7,6 +7,7 @@
  */
 
 import { httpFetch } from "@/lib/http";
+import i18n from "@/i18n/config";
 import { signVolcRequest } from "@/lib/volc/sign";
 import type { ModelInfo } from "@/lib/providers/types";
 import { lookupCatalog } from "./catalog";
@@ -65,16 +66,28 @@ async function callArk<T>(
     json = JSON.parse(text) as ArkResponse<T>;
   } catch {
     throw new Error(
-      `Ark ${action} 返回非 JSON 响应 (HTTP ${res.status}): ${text.slice(0, 200)}`
+      i18n.t("provider_ark_non_json", {
+        ns: "common",
+        action,
+        status: res.status,
+        text: text.slice(0, 200),
+      })
     );
   }
 
   const err = json.ResponseMetadata?.Error;
   if (err?.Code) {
-    throw new Error(`Ark ${action} 失败: ${err.Code} - ${err.Message ?? ""}`);
+    throw new Error(
+      i18n.t("provider_ark_failed_code", {
+        ns: "common",
+        action,
+        code: err.Code,
+        message: err.Message ?? "",
+      })
+    );
   }
   if (!res.ok) {
-    throw new Error(`Ark ${action} 失败: HTTP ${res.status}`);
+    throw new Error(i18n.t("provider_ark_failed_http", { ns: "common", action, status: res.status }));
   }
   return json.Result as T;
 }
@@ -199,7 +212,7 @@ export async function getRawApiKey(
     cred
   );
   if (!result?.ApiKey) {
-    throw new Error("GetRawApiKey 未返回密钥");
+    throw new Error(i18n.t("provider_get_raw_api_key_empty", { ns: "common" }));
   }
   return result.ApiKey;
 }

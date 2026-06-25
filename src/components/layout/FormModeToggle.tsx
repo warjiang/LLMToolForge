@@ -2,29 +2,31 @@ import { motion, useReducedMotion } from "motion/react";
 import { Bot, Settings } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import type { ComponentType } from "react";
+import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
 import { useAppModeStore, type AppMode } from "@/store/appMode";
 import { useSidebarStore } from "@/store/sidebar";
 
-const OPTIONS: {
-  value: AppMode;
-  label: string;
-  icon: ComponentType<LucideProps>;
-}[] = [
-  { value: "tool", label: "设置", icon: Settings },
-  { value: "agent", label: "Agent", icon: Bot },
-];
-
 export function FormModeToggle() {
+  const { t } = useTranslation("common");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const mode = useAppModeStore((s) => s.mode);
   const setMode = useAppModeStore((s) => s.setMode);
 
+  const OPTIONS: {
+    value: AppMode;
+    label: string;
+    icon: ComponentType<LucideProps>;
+  }[] = [
+    { value: "tool", label: t("settings"), icon: Settings },
+    { value: "agent", label: "Agent", icon: Bot },
+  ];
+
   if (collapsed) {
     const toAgent = mode === "tool";
     const Icon = toAgent ? Bot : Settings;
-    const title = toAgent ? "切换到 Agent 形态" : "返回设置";
+    const title = toAgent ? t("switch_to_agent") : t("back_to_settings");
     return (
       <button
         onClick={() => setMode(toAgent ? "agent" : "tool")}
@@ -45,8 +47,8 @@ export function FormModeToggle() {
           <button
             key={value}
             onClick={() => setMode(value)}
-            title={`切换到${label}`}
-            aria-label={`切换到${label}`}
+            title={t("switch_to", { label })}
+            aria-label={t("switch_to", { label })}
             className={cn(
               "relative flex h-7 w-7 items-center justify-center rounded-sm transition-colors duration-200 ease-geist",
               active

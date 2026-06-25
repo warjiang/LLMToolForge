@@ -9,6 +9,7 @@ import {
   RefreshCw,
   Trash2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
@@ -38,6 +39,7 @@ export function GatewayProviders({
 }: {
   provider: ProviderMeta & { id: GatewayProvider };
 }) {
+  const { t } = useTranslation("pages");
   const { items, loaded, load } = useGatewayStore();
   const remove = useGatewayStore((s) => s.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -71,12 +73,12 @@ export function GatewayProviders({
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-border pb-4">
         <p className="text-label-13 text-muted-foreground">
-          {provider.description}，通过 /v1/models 拉取模型，用于在 Playground 中测试。
+          {t(provider.description, { ns: "pages" })}{t("gw_provider_suffix")}
         </p>
         {conns.length > 0 && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" />
-            新建连接
+            {t("gw_new_conn")}
           </Button>
         )}
       </div>
@@ -84,12 +86,12 @@ export function GatewayProviders({
       {conns.length === 0 ? (
         <EmptyState
           icon={Plug}
-          title={`还没有 ${provider.label} 连接`}
-          description="填写 Base URL 与 API Key，开始拉取可用模型。"
+          title={t("gw_empty_title", { label: provider.label })}
+          description={t("gw_empty_desc")}
           action={
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建连接
+              {t("gw_new_conn")}
             </Button>
           }
         />
@@ -144,7 +146,7 @@ export function GatewayProviders({
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={`确定删除 “${deleting?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -155,6 +157,7 @@ export function GatewayProviders({
 }
 
 function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
+  const { t } = useTranslation("pages");
   const edit = useGatewayStore((s) => s.edit);
   const [models, setModels] = useState<ModelInfo[]>(connection.models ?? []);
   const [loading, setLoading] = useState(false);
@@ -170,7 +173,7 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
     setLoading(true);
     try {
       const adapter = getAdapter(connection.provider);
-      if (!adapter) throw new Error(`未找到适配器: ${connection.provider}`);
+      if (!adapter) throw new Error(t("gw_adapter_not_found", { provider: connection.provider }));
       const list = await adapter.listModels({
         baseUrl: connection.baseUrl,
         apiKey: connection.apiKey,
@@ -178,7 +181,7 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
       setModels(list);
       await edit(connection.id, { models: list });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "拉取模型失败");
+      setError(e instanceof Error ? e.message : t("gw_fetch_failed"));
     } finally {
       setLoading(false);
     }
@@ -194,7 +197,7 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
       <div className="mb-3 flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-label-13 text-muted-foreground">
           <Boxes className="h-3.5 w-3.5" />
-          可用模型 {models.length > 0 && `(${models.length})`}
+          {t("gw_available_models")} {models.length > 0 && `(${models.length})`}
         </p>
         <Button size="sm" variant="secondary" onClick={fetchModels} disabled={loading}>
           {loading ? (
@@ -202,12 +205,12 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          拉取模型
+          {t("gw_fetch_models")}
         </Button>
       </div>
       {models.length === 0 ? (
         <p className="py-8 text-center text-label-13 text-muted-foreground">
-          点击「拉取模型」获取可用模型列表。
+          {t("gw_models_hint")}
         </p>
       ) : (
         <div className="flex flex-col divide-y divide-border">
@@ -233,6 +236,7 @@ function RowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -240,7 +244,7 @@ function RowMenu({
           role="button"
           tabIndex={0}
           className="inline-flex h-8 w-8 items-center justify-center rounded-sm text-muted-foreground opacity-0 transition-opacity hover:bg-background group-hover:opacity-100"
-          aria-label="操作"
+          aria-label={t("actions", { ns: "common" })}
           onClick={(e) => e.stopPropagation()}
         >
           <MoreHorizontal className="h-4 w-4" />
@@ -249,12 +253,12 @@ function RowMenu({
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          编辑
+          {t("edit", { ns: "common" })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
-          删除
+          {t("delete", { ns: "common" })}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

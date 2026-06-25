@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Activity,
   AlertTriangle,
@@ -44,6 +45,7 @@ import { IntegrationGuide } from "./IntegrationGuide";
 import { MonitorPanel } from "./MonitorPanel";
 
 function CopyButton({ text, label }: { text: string; label?: string }) {
+  const { t } = useTranslation("common");
   const [copied, setCopied] = useState(false);
   return (
     <button
@@ -58,8 +60,8 @@ function CopyButton({ text, label }: { text: string; label?: string }) {
         }
       }}
       className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary hover:text-foreground focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)]"
-      aria-label={label ?? "复制"}
-      title={label ?? "复制"}
+      aria-label={label ?? t("copy")}
+      title={label ?? t("copy")}
     >
       {copied ? (
         <Check className="h-3.5 w-3.5 text-success" />
@@ -92,6 +94,7 @@ function EndpointRow({
   usage: string;
   url: string;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <div className="group flex items-center gap-2.5 rounded-md border border-border bg-background/70 px-2.5 py-2 transition-colors duration-150 hover:border-muted-foreground/30">
       <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-sm bg-secondary">
@@ -107,12 +110,13 @@ function EndpointRow({
           {url}
         </code>
       </div>
-      <CopyButton text={url} label={`复制 ${protocol} 地址`} />
+      <CopyButton text={url} label={t("unified_copy_url", { protocol })} />
     </div>
   );
 }
 
 export function UnifiedApiPage() {
+  const { t } = useTranslation("pages");
   const {
     supported,
     config,
@@ -206,15 +210,15 @@ export function UnifiedApiPage() {
   return (
     <div>
       <PageHeader
-        title="本地 Unified API"
-        description="把已接入的模型统一暴露为本地 OpenAI / Anthropic 兼容服务，供 Codex、Claude Code 与本地 agent 使用。"
+        title={t("unified_title")}
+        description={t("unified_desc")}
       />
 
       {!supported && (
         <div className="mb-5 flex items-start gap-2.5 rounded-md border border-warning/30 bg-warning/10 px-4 py-3 text-copy-14">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" />
           <span>
-            本地服务需要桌面端（Tauri）运行环境。浏览器开发模式下可预览配置与接入文档，但无法启动 HTTP 服务。
+            {t("unified_no_desktop")}
           </span>
         </div>
       )}
@@ -228,9 +232,9 @@ export function UnifiedApiPage() {
 
       <Tabs defaultValue="overview">
         <TabsList>
-          <TabsTrigger value="overview">服务</TabsTrigger>
-          <TabsTrigger value="integration">接入方式</TabsTrigger>
-          <TabsTrigger value="monitor">监控</TabsTrigger>
+          <TabsTrigger value="overview">{t("unified_service_tab")}</TabsTrigger>
+          <TabsTrigger value="integration">{t("unified_integration_tab")}</TabsTrigger>
+          <TabsTrigger value="monitor">{t("unified_monitor_tab")}</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview">
@@ -266,23 +270,23 @@ export function UnifiedApiPage() {
                     </span>
                     <div>
                       <h3 className="text-heading-16 text-foreground">
-                        {running ? "运行中" : "已停止"}
+                        {running ? t("unified_running") : t("unified_stopped")}
                       </h3>
                       <p className="text-copy-13 text-muted-foreground">
                         {running
                           ? config.localKey
-                            ? "已开启本地 Key 访问校验"
-                            : "未设置访问校验 · 仅本机可达"
-                          : "启动服务以开始监听本地请求"}
+                            ? t("unified_key_auth")
+                            : t("unified_no_auth")
+                          : t("unified_start_msg")}
                       </p>
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4 self-start sm:gap-5 sm:self-auto">
                     <div className="flex items-center divide-x divide-border/70">
-                      <Metric value={port} label="端口" />
-                      <Metric value={enabledCount} label="已暴露模型" />
-                      <Metric value={providerCount} label="Provider" />
+                      <Metric value={port} label={t("unified_port_label")} />
+                      <Metric value={enabledCount} label={t("unified_exposed_models_label")} />
+                      <Metric value={providerCount} label={t("unified_providers_label")} />
                     </div>
                     {supported && (
                       <Button
@@ -300,11 +304,11 @@ export function UnifiedApiPage() {
                         )}
                         {busy
                           ? running
-                            ? "停止中"
-                            : "启动中"
+                            ? t("unified_stopping")
+                            : t("unified_starting")
                           : running
-                            ? "停止服务"
-                            : "启动服务"}
+                            ? t("unified_stop_service")
+                            : t("unified_start_service")}
                       </Button>
                     )}
                   </div>
@@ -313,13 +317,13 @@ export function UnifiedApiPage() {
                 <div className="relative grid gap-2.5 border-b border-border p-4 sm:grid-cols-2">
                   <EndpointRow
                     provider="openai"
-                    protocol="OpenAI 兼容"
+                   protocol={t("unified_openai_compat")}
                     usage="Codex · SDK · agent"
                     url={`${baseUrl}/v1`}
                   />
                   <EndpointRow
                     provider="anthropic"
-                    protocol="Anthropic 兼容"
+                   protocol={t("unified_anthropic_compat")}
                     usage="Claude Code"
                     url={baseUrl}
                   />
@@ -332,7 +336,7 @@ export function UnifiedApiPage() {
                       htmlFor="port"
                       className="text-label-12 text-muted-foreground"
                     >
-                      端口
+                      {t("unified_port_label")}
                     </Label>
                     <Input
                       id="port"
@@ -348,14 +352,14 @@ export function UnifiedApiPage() {
                       htmlFor="localkey"
                       className="text-label-12 text-muted-foreground"
                     >
-                      本地 API Key（可选）
+                      {t("unified_local_key_label")}
                     </Label>
                     <div className="relative">
                       <Input
                         id="localkey"
                         value={keyInput}
                         onChange={(e) => setKeyInput(e.target.value)}
-                        placeholder="留空表示不校验"
+                        placeholder={t("unified_local_key_placeholder")}
                         className="pr-[68px] font-mono"
                       />
                       <Button
@@ -365,13 +369,13 @@ export function UnifiedApiPage() {
                         className="absolute right-1 top-1/2 h-7 -translate-y-1/2 px-2 text-muted-foreground"
                       >
                         <KeyRound className="h-3.5 w-3.5" />
-                        生成
+                        {t("unified_generate_key")}
                       </Button>
                     </div>
                   </div>
                   <Button onClick={applyConfig} className="w-full sm:w-auto">
                     <RefreshCw className="h-4 w-4" />
-                    保存并应用
+                    {t("unified_save_apply")}
                   </Button>
                 </div>
 
@@ -382,11 +386,11 @@ export function UnifiedApiPage() {
                       checked={config.autoStart}
                       onCheckedChange={(v) => setConfig({ autoStart: v })}
                     />
-                    启动应用时自动开启服务
+                   {t("unified_autostart")}
                   </label>
                   {running && (
                     <p className="text-copy-12 text-muted-foreground">
-                      修改端口后需停止并重新启动服务才会生效
+                     {t("unified_restart_hint")}
                     </p>
                   )}
                 </div>
@@ -399,11 +403,10 @@ export function UnifiedApiPage() {
                 <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-2.5">
                   <div className="flex items-center gap-2">
                     <Sparkles className="h-4 w-4 text-muted-foreground" />
-                    <h3 className="text-heading-16">暴露的模型</h3>
+                    <h3 className="text-heading-16">{t("unified_exposed_models_title")}</h3>
                   </div>
                   <p className="hidden text-copy-13 text-muted-foreground sm:block">
-                    id 形如{" "}
-                    <code className="font-mono">{"{连接名}/{model}"}</code>
+                    {t("unified_model_id_format")}
                   </p>
                 </div>
 
@@ -413,10 +416,10 @@ export function UnifiedApiPage() {
                       <Activity className="h-5 w-5 text-muted-foreground" />
                     </span>
                     <p className="text-copy-14 text-foreground">
-                      还没有可暴露的模型
+                      {t("unified_no_models_title")}
                     </p>
                     <p className="max-w-sm text-copy-13 text-muted-foreground">
-                      请先在「模型接入」中接入 Provider 并拉取模型，这里会自动列出。
+                      {t("unified_no_models_desc")}
                     </p>
                   </div>
                 ) : (
@@ -427,7 +430,7 @@ export function UnifiedApiPage() {
                         <Input
                           value={query}
                           onChange={(e) => setQuery(e.target.value)}
-                          placeholder="搜索模型名 / 实际模型 / 连接…"
+                          placeholder={t("unified_search_placeholder")}
                           className="pl-8"
                         />
                       </div>
@@ -439,7 +442,7 @@ export function UnifiedApiPage() {
                           <SelectValue placeholder="Provider" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">全部 Provider</SelectItem>
+                          <SelectItem value="all">{t("unified_all_providers")}</SelectItem>
                           {providerOptions.map((p) => (
                             <SelectItem key={p} value={p}>
                               <span className="flex items-center gap-2">
@@ -460,13 +463,13 @@ export function UnifiedApiPage() {
                         }
                       >
                         <SelectTrigger className="w-[130px]">
-                          <SelectValue placeholder="能力" />
+                          <SelectValue placeholder={t("unified_feature_col")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="all">全部能力</SelectItem>
+                          <SelectItem value="all">{t("unified_all_features")}</SelectItem>
                           {MODEL_FEATURES.map((f) => (
                             <SelectItem key={f.value} value={f.value}>
-                              {f.label}
+                              {t(f.label, { ns: "common" })}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -478,7 +481,7 @@ export function UnifiedApiPage() {
                           onClick={clearFilters}
                         >
                           <X className="h-4 w-4" />
-                          清除
+                          {t("unified_clear_filters")}
                         </Button>
                       )}
                       <span className="ml-auto font-mono text-copy-12 tabular-nums text-muted-foreground">
@@ -487,15 +490,15 @@ export function UnifiedApiPage() {
                     </div>
 
                     <div className="grid grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_minmax(0,0.8fr)_auto] gap-3 border-b border-border bg-secondary/40 px-4 py-1.5 text-label-12 text-muted-foreground">
-                      <span>模型</span>
-                      <span>实际模型</span>
-                      <span>能力</span>
-                      <span className="text-right">启用</span>
+                     <span>{t("unified_model_col")}</span>
+                     <span>{t("unified_real_model_col")}</span>
+                     <span>{t("unified_feature_col")}</span>
+                     <span className="text-right">{t("unified_enabled_col")}</span>
                     </div>
 
                     {filtered.length === 0 ? (
                       <div className="px-5 py-8 text-center text-copy-14 text-muted-foreground">
-                        没有匹配的模型，试试调整筛选条件。
+                       {t("unified_no_match")}
                       </div>
                     ) : (
                       <div className="max-h-[400px] overflow-y-auto">
@@ -527,7 +530,7 @@ export function UnifiedApiPage() {
                                     >
                                       {m.id}
                                     </code>
-                                    <CopyButton text={m.id} label="复制模型 id" />
+                                    <CopyButton text={m.id} label={t("copy", { ns: "common" })} />
                                   </div>
                                   <div className="min-w-0">
                                     {sameAsId ? (
@@ -551,7 +554,7 @@ export function UnifiedApiPage() {
                                           variant="accent"
                                           className="px-1.5 py-0 text-[10px]"
                                         >
-                                          {featureLabel(f)}
+                                          {t(featureLabel(f), { ns: "common" })}
                                         </Badge>
                                       ))
                                     ) : (

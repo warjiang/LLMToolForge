@@ -10,6 +10,7 @@
 
 import { httpFetch } from "@/lib/http";
 import type { ProviderCredential } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 
 /** Characters allowed in an HTTP header value (visible ASCII + space/tab). */
 const INVALID_HEADER_VALUE = /[^\t\x20-\x7e\x80-\xff]/;
@@ -20,19 +21,19 @@ const INVALID_HEADER_VALUE = /[^\t\x20-\x7e\x80-\xff]/;
  */
 export function normalizeBaseUrl(cred: ProviderCredential): string {
   const raw = (cred.baseUrl ?? "").trim();
-  if (!raw) throw new Error("缺少 Base URL");
+  if (!raw) throw new Error(i18n.t("provider_missing_base_url", { ns: "common" }));
 
   let parsed: URL;
   try {
     parsed = new URL(raw);
   } catch {
     throw new Error(
-      `Base URL 格式不正确：「${raw}」。请填写完整地址，例如 http://host/v1`
+      i18n.t("provider_invalid_base_url", { ns: "common", raw })
     );
   }
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(
-      `Base URL 协议不支持：「${parsed.protocol}」，仅支持 http/https`
+      i18n.t("provider_unsupported_protocol", { ns: "common", protocol: parsed.protocol })
     );
   }
   return raw.replace(/\/+$/, "");
@@ -45,10 +46,10 @@ export function normalizeBaseUrl(cred: ProviderCredential): string {
  */
 export function authHeader(cred: ProviderCredential): string {
   const key = (cred.apiKey ?? "").trim();
-  if (!key) throw new Error("缺少 API Key");
+  if (!key) throw new Error(i18n.t("provider_missing_api_key", { ns: "common" }));
   if (INVALID_HEADER_VALUE.test(key)) {
     throw new Error(
-      "API Key 含有非法字符（换行或非 ASCII），请重新复制粘贴后再试"
+      i18n.t("provider_invalid_api_key_chars", { ns: "common" })
     );
   }
   return `Bearer ${key}`;
@@ -71,6 +72,6 @@ export async function gatewayFetch(
     return await httpFetch(url, init);
   } catch (e) {
     const detail = e instanceof Error ? e.message : String(e);
-    throw new Error(`请求失败（${url}）：${detail}`);
+    throw new Error(i18n.t("provider_request_failed", { ns: "common", url, detail }));
   }
 }

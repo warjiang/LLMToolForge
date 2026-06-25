@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import i18n from "@/i18n/config";
 import type { BaseEntity } from "@/types";
 import type {
   CreateInput,
@@ -35,7 +36,7 @@ export function createCollectionStore<T extends BaseEntity>(
       } catch (e) {
         set({
           loading: false,
-          error: e instanceof Error ? e.message : "加载失败",
+          error: e instanceof Error ? e.message : i18n.t("load_failed", { ns: "common" }),
         });
       }
     },

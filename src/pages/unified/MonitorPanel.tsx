@@ -1,4 +1,5 @@
 import { useEffect, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Download, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -139,6 +140,7 @@ function toCsv(logs: CallLogRecord[]): string {
 }
 
 export function MonitorPanel() {
+  const { t } = useTranslation("pages");
   const logs = useUnifiedStore((s) => s.logs);
   const loadLogs = useUnifiedStore((s) => s.loadLogs);
   const clearLogs = useUnifiedStore((s) => s.clearLogs);
@@ -189,32 +191,32 @@ export function MonitorPanel() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Stat label="总请求" value={String(metrics.total)} />
-        <Stat label="成功率" value={`${metrics.successRate}%`} sub={`${metrics.ok}/${metrics.total}`} />
-        <Stat label="平均耗时" value={`${metrics.avg}ms`} />
-        <Stat label="P95 耗时" value={`${metrics.p95}ms`} />
-        <Stat label="累计 Tokens" value={metrics.tokens.toLocaleString()} />
+        <Stat label={t("monitor_total_requests")} value={String(metrics.total)} />
+        <Stat label={t("monitor_success_rate")} value={`${metrics.successRate}%`} sub={`${metrics.ok}/${metrics.total}`} />
+        <Stat label={t("monitor_avg_time")} value={`${metrics.avg}ms`} />
+        <Stat label={t("monitor_p95_time")} value={`${metrics.p95}ms`} />
+        <Stat label={t("monitor_tokens")} value={metrics.tokens.toLocaleString()} />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-5">
-          <h3 className="text-heading-14">请求量（近 30 分钟）</h3>
+          <h3 className="text-heading-14">{t("monitor_request_timeline")}</h3>
           <div className="mt-3">
             <Timeline logs={logs} />
           </div>
         </Card>
         <Card className="p-5">
-          <h3 className="text-heading-14">按模型请求数（Top 8）</h3>
+          <h3 className="text-heading-14">{t("monitor_by_model")}</h3>
           <div className="mt-3">
-            <BarChart data={byModel} empty="暂无调用" />
+            <BarChart data={byModel} empty={t("monitor_no_data")} />
           </div>
         </Card>
         <Card className="p-5 lg:col-span-2">
-          <h3 className="text-heading-14">Token 消耗（Top 8）</h3>
+          <h3 className="text-heading-14">{t("monitor_token_by_model")}</h3>
           <div className="mt-3">
             <BarChart
               data={tokenByModel.map((d) => ({ ...d, hint: d.value.toLocaleString() }))}
-              empty="暂无 token 统计"
+              empty={t("monitor_no_tokens")}
             />
           </div>
         </Card>
@@ -222,7 +224,7 @@ export function MonitorPanel() {
 
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="text-heading-14">调用记录</h3>
+          <h3 className="text-heading-14">{t("monitor_call_records")}</h3>
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -247,7 +249,7 @@ export function MonitorPanel() {
               <Download className="h-3.5 w-3.5" /> CSV
             </Button>
             <Button variant="secondary" size="sm" onClick={() => void clearLogs()}>
-              <Trash2 className="h-3.5 w-3.5" /> 清空
+              <Trash2 className="h-3.5 w-3.5" /> {t("clear", { ns: "common" })}
             </Button>
           </div>
         </div>
@@ -255,19 +257,19 @@ export function MonitorPanel() {
           <table className="w-full text-copy-13">
             <thead className="sticky top-0 bg-chrome text-label-12 text-muted-foreground">
               <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
-                <th>时间</th>
-                <th>模型</th>
-                <th>协议</th>
-                <th>状态</th>
-                <th className="text-right">耗时</th>
-                <th className="text-right">Tokens</th>
+                <th>{t("monitor_time_col")}</th>
+                <th>{t("monitor_model_col")}</th>
+                <th>{t("monitor_protocol_col")}</th>
+                <th>{t("monitor_status_col")}</th>
+                <th className="text-right">{t("monitor_duration_col")}</th>
+                <th className="text-right">{t("monitor_tokens_col")}</th>
               </tr>
             </thead>
             <tbody>
               {logs.length === 0 ? (
                 <tr>
                   <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
-                    暂无调用记录
+                    {t("monitor_no_calls")}
                   </td>
                 </tr>
               ) : (

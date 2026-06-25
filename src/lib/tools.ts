@@ -2,6 +2,7 @@
  * Pure helpers behind the developer utility tools.
  * Each returns a discriminated result so the UI can show errors inline.
  */
+import i18n from "@/i18n/config";
 
 export type ToolResult =
   | { ok: true; value: string }
@@ -16,7 +17,7 @@ export function urlEncode(input: string, full: boolean): ToolResult {
   try {
     return ok(full ? encodeURI(input) : encodeURIComponent(input));
   } catch (e) {
-    return err(e instanceof Error ? e.message : "编码失败");
+    return err(e instanceof Error ? e.message : i18n.t("tool_encode_failed", { ns: "common" }));
   }
 }
 
@@ -24,7 +25,9 @@ export function urlDecode(input: string, full: boolean): ToolResult {
   try {
     return ok(full ? decodeURI(input) : decodeURIComponent(input));
   } catch (e) {
-    return err(e instanceof Error ? e.message : "解码失败：包含无效的转义序列");
+    return err(
+      e instanceof Error ? e.message : i18n.t("tool_decode_invalid_escape", { ns: "common" })
+    );
   }
 }
 
@@ -36,7 +39,7 @@ export function jsonEscape(input: string): ToolResult {
     const quoted = JSON.stringify(input);
     return ok(quoted.slice(1, -1));
   } catch (e) {
-    return err(e instanceof Error ? e.message : "转义失败");
+    return err(e instanceof Error ? e.message : i18n.t("tool_escape_failed", { ns: "common" }));
   }
 }
 
@@ -47,7 +50,9 @@ export function jsonUnescape(input: string): ToolResult {
     const wrapped = `"${input.replace(/\\?"/g, '\\"')}"`;
     return ok(JSON.parse(wrapped) as string);
   } catch (e) {
-    return err(e instanceof Error ? e.message : "去转义失败：包含无效的转义序列");
+    return err(
+      e instanceof Error ? e.message : i18n.t("tool_unescape_invalid_escape", { ns: "common" })
+    );
   }
 }
 
@@ -78,7 +83,7 @@ export function unicodeEncode(input: string, asciiOnly: boolean): ToolResult {
     }
     return ok(out);
   } catch (e) {
-    return err(e instanceof Error ? e.message : "编码失败");
+    return err(e instanceof Error ? e.message : i18n.t("tool_encode_failed", { ns: "common" }));
   }
 }
 
@@ -101,7 +106,7 @@ export function unicodeDecode(input: string): ToolResult {
       .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(parseInt(d, 10)));
     return ok(out);
   } catch (e) {
-    return err(e instanceof Error ? e.message : "解码失败");
+    return err(e instanceof Error ? e.message : i18n.t("tool_decode_failed", { ns: "common" }));
   }
 }
 
@@ -187,7 +192,7 @@ export function jsonPreview(
   }
 
   if (parsed === undefined) {
-    return err("无法解析为 JSON：请检查语法是否正确");
+    return err(i18n.t("tool_json_parse_failed", { ns: "common" }));
   }
 
   const result = opts.deep ? deepUnwrap(parsed) : parsed;
@@ -195,6 +200,8 @@ export function jsonPreview(
   try {
     return ok(JSON.stringify(result, null, opts.indent));
   } catch (e) {
-    return err(e instanceof Error ? e.message : "序列化失败（可能存在循环引用）");
+    return err(
+      e instanceof Error ? e.message : i18n.t("tool_json_serialize_failed", { ns: "common" })
+    );
   }
 }

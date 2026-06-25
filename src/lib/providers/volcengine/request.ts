@@ -1,5 +1,6 @@
 import { httpFetch } from "@/lib/http";
 import type { ProviderCredential } from "@/lib/providers/types";
+import i18n from "@/i18n/config";
 
 const DEFAULT_BASE_URL = "https://ark.cn-beijing.volces.com/api/v3";
 
@@ -8,7 +9,7 @@ export function baseUrl(cred: ProviderCredential): string {
 }
 
 export function requireArkApiKey(cred: ProviderCredential): string {
-  if (!cred.apiKey) throw new Error("缺少 Ark API Key");
+  if (!cred.apiKey) throw new Error(i18n.t("provider_missing_ark_api_key", { ns: "common" }));
   return cred.apiKey;
 }
 
@@ -46,6 +47,8 @@ export async function getArkJson(
 export async function ensureOk(res: Response, label: string) {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`${label} 失败: HTTP ${res.status} ${text.slice(0, 300)}`);
+    throw new Error(
+      i18n.t("provider_http_failed", { ns: "common", label, status: res.status, text: text.slice(0, 300) })
+    );
   }
 }

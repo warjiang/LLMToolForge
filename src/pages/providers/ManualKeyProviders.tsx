@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
 } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ProviderIcon } from "@/components/common/ProviderModelIcon";
@@ -26,6 +27,7 @@ import { formatDate, maskSecret } from "@/lib/utils";
 import { ApiKeyDialog } from "@/pages/api-keys/ApiKeyDialog";
 
 export function ManualKeyProviders() {
+  const { t } = useTranslation("pages");
   const { items, loaded, load } = useApiKeyStore();
   const remove = useApiKeyStore((s) => s.remove);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -49,12 +51,12 @@ export function ManualKeyProviders() {
     <div className="flex h-full flex-col">
       <div className="flex shrink-0 items-center justify-between border-b border-border pb-4">
         <p className="text-label-13 text-muted-foreground">
-          手动录入 API Key 与可用模型（OpenAI 兼容），可直接在 Playground 中使用。
+          {t("manual_desc")}
         </p>
         {items.length > 0 && (
           <Button onClick={openCreate}>
             <Plus className="h-4 w-4" />
-            新建 Key
+            {t("manual_new_key")}
           </Button>
         )}
       </div>
@@ -62,12 +64,12 @@ export function ManualKeyProviders() {
       {items.length === 0 ? (
         <EmptyState
           icon={KeyRound}
-          title="还没有 API Key"
-          description="添加你的第一个提供商密钥，并配置可用模型。"
+          title={t("manual_empty_title")}
+          description={t("manual_empty_desc")}
           action={
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
-              新建 Key
+              {t("manual_new_key")}
             </Button>
           }
         />
@@ -90,7 +92,7 @@ export function ManualKeyProviders() {
                   <Badge variant="outline">{item.provider}</Badge>
                   {item.models && item.models.length > 0 && (
                     <Badge variant="accent">
-                      {item.models.length} 模型
+                      {t("manual_model_count", { count: item.models.length })}
                     </Badge>
                   )}
                 </div>
@@ -123,7 +125,7 @@ export function ManualKeyProviders() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={`确定删除 “${deleting?.name}” 吗？此操作无法撤销。`}
+        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -142,26 +144,27 @@ function RowMenu({
   onEdit: () => void;
   onDelete: () => void;
 }) {
+  const { t } = useTranslation("pages");
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label="操作">
+        <Button variant="ghost" size="icon-sm" aria-label={t("actions", { ns: "common" })}>
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
         <DropdownMenuItem onClick={onCopy}>
           <Copy className="h-4 w-4" />
-          复制密钥
+          {t("manual_copy_key")}
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
-          编辑
+          {t("edit", { ns: "common" })}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
-          删除
+          {t("delete", { ns: "common" })}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

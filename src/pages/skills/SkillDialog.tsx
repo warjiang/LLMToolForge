@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -51,6 +52,7 @@ function parseTags(raw: string): string[] {
 }
 
 export function SkillDialog({ open, onOpenChange, editing }: Props) {
+  const { t } = useTranslation("pages");
   const add = useSkillStore((s) => s.add);
   const edit = useSkillStore((s) => s.edit);
   const [form, setForm] = useState(empty);
@@ -76,7 +78,7 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
   }, [open, editing]);
 
   const submit = async () => {
-    if (!form.name.trim()) return setError("请填写名称");
+    if (!form.name.trim()) return setError(t("skill_name_required"));
 
     const payload = {
       name: form.name.trim(),
@@ -97,28 +99,28 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>{editing ? "编辑 Skill" : "新建 Skill"}</DialogTitle>
+          <DialogTitle>{editing ? t("skill_edit_title") : t("skill_create_title")}</DialogTitle>
           <DialogDescription>
-            定义技能的名称、用途和标签，供大模型按需调用。
+            {t("skill_dialog_desc")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="grid max-h-[68vh] gap-4 overflow-y-auto pr-1">
           <div className="grid gap-1.5">
-            <Label htmlFor="sk-name">名称</Label>
+            <Label htmlFor="sk-name">{t("name", { ns: "common" })}</Label>
             <Input
               id="sk-name"
-              placeholder="例如：网页搜索"
+              placeholder={t("skill_name_placeholder")}
               value={form.name}
               onChange={(e) => setForm({ ...form, name: e.target.value })}
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="sk-desc">描述</Label>
+            <Label htmlFor="sk-desc">{t("skill_description_label")}</Label>
             <Textarea
               id="sk-desc"
-              placeholder="这个技能做什么、何时使用…"
+              placeholder={t("skill_description_placeholder")}
               value={form.description}
               onChange={(e) =>
                 setForm({ ...form, description: e.target.value })
@@ -127,28 +129,28 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="sk-tags">标签</Label>
+            <Label htmlFor="sk-tags">{t("skill_tags_label")}</Label>
             <Input
               id="sk-tags"
-              placeholder="用逗号或空格分隔，例如：search, web"
+              placeholder={t("skill_tags_placeholder")}
               value={form.tags}
               onChange={(e) => setForm({ ...form, tags: e.target.value })}
             />
           </div>
 
           <div className="grid gap-1.5">
-            <Label htmlFor="sk-content">内容 / 脚本（可选）</Label>
+            <Label htmlFor="sk-content">{t("skill_content_label")}</Label>
             <Textarea
               id="sk-content"
               className="min-h-[120px] font-mono text-label-12"
-              placeholder={"说明型 Skill 可填写详细指令；脚本型 Skill 可填写 shell 脚本，由 Playground 沙箱运行。"}
+              placeholder={t("skill_content_placeholder")}
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
             />
           </div>
 
           <div className="grid gap-2">
-            <Label>Agent 目标</Label>
+            <Label>{t("skill_agent_targets")}</Label>
             <div className="grid grid-cols-2 gap-2">
               {SKILL_TARGETS.map((target) => {
                 const selected = form.agentKeys.includes(target.key);
@@ -180,7 +182,7 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
           </div>
 
           <div className="grid gap-1.5">
-            <Label>同步模式</Label>
+            <Label>{t("skill_sync_mode_label")}</Label>
             <Select
               value={form.syncMode}
               onValueChange={(syncMode) =>
@@ -193,7 +195,7 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
               <SelectContent>
                 {SKILL_SYNC_MODES.map((mode) => (
                   <SelectItem key={mode.value} value={mode.value}>
-                    {mode.label}
+                    {t(mode.label, { ns: "common" })}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -202,9 +204,9 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
 
           <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
             <div className="space-y-0.5">
-              <Label>启用</Label>
+              <Label>{t("enabled", { ns: "common" })}</Label>
               <p className="text-label-12 text-muted-foreground">
-                禁用后大模型将不会调用此技能。
+                {t("skill_disabled_hint")}
               </p>
             </div>
             <Switch
@@ -218,9 +220,9 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
 
         <DialogFooter>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
-            取消
+            {t("cancel", { ns: "common" })}
           </Button>
-          <Button onClick={submit}>{editing ? "保存" : "创建"}</Button>
+          <Button onClick={submit}>{editing ? t("save", { ns: "common" }) : t("create", { ns: "common" })}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
