@@ -7,7 +7,6 @@ import {
   Wrench,
   Settings,
   Cloud,
-  MessageSquare,
   Network,
   Moon,
   Sun,
@@ -15,11 +14,11 @@ import {
 import { cn } from "@/lib/utils";
 import { useSidebarStore } from "@/store/sidebar";
 import { useThemeStore } from "@/store/theme";
+import { FormModeToggle } from "./FormModeToggle";
 
 const navItems = [
   { to: "/", label: "概览", icon: LayoutDashboard, end: true },
   { to: "/providers", label: "模型接入", icon: Cloud },
-  { to: "/playground", label: "Playground", icon: MessageSquare },
   { to: "/unified", label: "Unified API", icon: Network },
   { to: "/skills", label: "Skills", icon: Boxes },
   { to: "/mcp", label: "MCP Servers", icon: Server },
@@ -66,14 +65,14 @@ export function Sidebar() {
                   "relative z-10 flex items-center gap-2.5 rounded-sm py-2 text-label-14 transition-colors duration-150",
                   collapsed ? "justify-center px-0" : "px-2.5",
                   isActive
-                    ? "text-foreground"
+                    ? "font-medium text-foreground"
                     : "text-muted-foreground group-hover:bg-secondary/60 group-hover:text-foreground"
                 )}
               >
                 {isActive && (
                   <motion.span
                     layoutId="nav-active"
-                    className="absolute inset-0 -z-10 rounded-sm bg-secondary"
+                    className="absolute inset-0 -z-10 rounded-sm bg-muted ring-1 ring-inset ring-border"
                     transition={
                       reduce
                         ? { duration: 0 }
@@ -103,18 +102,17 @@ export function Sidebar() {
 
       <div
         className={cn(
-          "flex flex-col gap-1 border-t border-border/60 py-3",
-          collapsed ? "items-center px-2" : "px-3"
+          "flex border-t border-border/60 py-3",
+          collapsed
+            ? "flex-col items-center gap-1 px-2"
+            : "items-center justify-between px-3"
         )}
       >
         <button
           onClick={toggleTheme}
           aria-label="切换主题"
           title={theme === "dark" ? "切换到亮色" : "切换到暗色"}
-          className={cn(
-            "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
-            collapsed ? "w-9 justify-center px-0" : "px-2.5"
-          )}
+          className="flex h-9 w-9 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
         >
           <span className="relative flex h-4 w-4 shrink-0 items-center justify-center">
             <AnimatePresence mode="wait" initial={false}>
@@ -134,12 +132,8 @@ export function Sidebar() {
               </motion.span>
             </AnimatePresence>
           </span>
-          {!collapsed && (
-            <span className="whitespace-nowrap">
-              {theme === "dark" ? "亮色模式" : "暗色模式"}
-            </span>
-          )}
         </button>
+        <FormModeToggle />
       </div>
     </motion.aside>
   );
