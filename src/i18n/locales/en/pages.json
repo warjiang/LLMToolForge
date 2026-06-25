@@ -21,7 +21,11 @@
   "url_codec": "URL Codec",
   "json_viewer": "JSON Viewer",
   "escape_tool": "Escape/Unescape",
-  "unicode_tool": "Unicode"
+  "unicode_tool": "Unicode",
+  "language_section": "Language",
+  "choose_language": "Choose the interface display language.",
+  "lang_zh": "中文",
+  "lang_en": "English"
 }
 
 

@@ -23,7 +23,7 @@ const EXPANDED = 240;
 const COLLAPSED = 64;
 
 export function Sidebar() {
-  const { t } = useTranslation("navigation");
+  const { t } = useTranslation(["navigation", "common"]);
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const theme = useThemeStore((s) => s.theme);
@@ -115,8 +115,8 @@ export function Sidebar() {
       >
         <button
           onClick={toggleTheme}
-          aria-label={t("theme_toggle")}
-          title={theme === "dark" ? t("switch_to_light") : t("switch_to_dark")}
+          aria-label={t("common:theme_toggle")}
+          title={theme === "dark" ? t("common:switch_to_light") : t("common:switch_to_dark")}
           className={cn(
             "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
             collapsed ? "w-9 justify-center px-0" : "px-2.5"
@@ -142,15 +142,15 @@ export function Sidebar() {
           </span>
           {!collapsed && (
             <span className="whitespace-nowrap">
-              {theme === "dark" ? t("light_mode") : t("dark_mode")}
+              {theme === "dark" ? t("common:light_mode") : t("common:dark_mode")}
             </span>
           )}
         </button>
 
         <button
           onClick={() => setLanguage(language === "zh" ? "en" : "zh")}
-          aria-label={t("language")}
-          title={t("select_language")}
+          aria-label={t("common:language")}
+          title={t("common:select_language")}
           className={cn(
             "flex h-9 items-center gap-2.5 rounded-sm text-label-13 text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground",
             collapsed ? "w-9 justify-center px-0" : "px-2.5"
@@ -172,7 +172,7 @@ export function Sidebar() {
           </span>
           {!collapsed && (
             <span className="whitespace-nowrap">
-              {language === "zh" ? t("english") : t("chinese")}
+              {language === "zh" ? t("common:english") : t("common:chinese")}
             </span>
           )}
         </button>

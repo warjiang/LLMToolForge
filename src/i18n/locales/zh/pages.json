@@ -21,7 +21,11 @@
   "url_codec": "URL 编解码",
   "json_viewer": "JSON 预览",
   "escape_tool": "转义/去转义",
-  "unicode_tool": "Unicode"
+  "unicode_tool": "Unicode",
+  "language_section": "语言",
+  "choose_language": "选择界面显示语言。",
+  "lang_zh": "中文",
+  "lang_en": "English"
 }
 
 
