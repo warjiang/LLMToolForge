@@ -10,10 +10,18 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import { SKILL_SYNC_MODES, SKILL_TARGETS } from "@/lib/skillTargets";
 import { useSkillStore } from "@/store";
-import type { Skill } from "@/types";
+import type { Skill, SkillAgentKey, SkillSyncMode } from "@/types";
 
 interface Props {
   open: boolean;
@@ -27,6 +35,8 @@ const empty = {
   tags: "",
   content: "",
   enabled: true,
+  agentKeys: [] as SkillAgentKey[],
+  syncMode: "copy" as SkillSyncMode,
 };
 
 function parseTags(raw: string): string[] {
@@ -54,9 +64,11 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
           ? {
               name: editing.name,
               description: editing.description,
-              tags: editing.tags.join(", "),
+              tags: (editing.tags ?? []).join(", "),
               content: editing.content ?? "",
               enabled: editing.enabled,
+              agentKeys: editing.agentKeys ?? [],
+              syncMode: editing.syncMode ?? "copy",
             }
           : empty
       );
@@ -72,6 +84,8 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
       tags: parseTags(form.tags),
       content: form.content.trim() || undefined,
       enabled: form.enabled,
+      agentKeys: form.agentKeys,
+      syncMode: form.syncMode,
     };
 
     if (editing) await edit(editing.id, payload);
@@ -81,7 +95,7 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle>{editing ? "编辑 Skill" : "新建 Skill"}</DialogTitle>
           <DialogDescription>
@@ -89,7 +103,7 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid gap-4">
+        <div className="grid max-h-[68vh] gap-4 overflow-y-auto pr-1">
           <div className="grid gap-1.5">
             <Label htmlFor="sk-name">名称</Label>
             <Input
@@ -133,6 +147,59 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
             />
           </div>
 
+          <div className="grid gap-2">
+            <Label>Agent 目标</Label>
+            <div className="grid grid-cols-2 gap-2">
+              {SKILL_TARGETS.map((target) => {
+                const selected = form.agentKeys.includes(target.key);
+                return (
+                  <Button
+                    key={target.key}
+                    type="button"
+                    variant={selected ? "secondary" : "ghost"}
+                    className="justify-start"
+                    onClick={() =>
+                      setForm({
+                        ...form,
+                        agentKeys: toggleKey(form.agentKeys, target.key),
+                      })
+                    }
+                  >
+                    <span
+                      className={
+                        selected
+                          ? "h-1.5 w-1.5 rounded-full bg-accent"
+                          : "h-1.5 w-1.5 rounded-full bg-muted"
+                      }
+                    />
+                    {target.name}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label>同步模式</Label>
+            <Select
+              value={form.syncMode}
+              onValueChange={(syncMode) =>
+                setForm({ ...form, syncMode: syncMode as SkillSyncMode })
+              }
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SKILL_SYNC_MODES.map((mode) => (
+                  <SelectItem key={mode.value} value={mode.value}>
+                    {mode.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
           <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
             <div className="space-y-0.5">
               <Label>启用</Label>
@@ -158,4 +225,10 @@ export function SkillDialog({ open, onOpenChange, editing }: Props) {
       </DialogContent>
     </Dialog>
   );
+}
+
+function toggleKey(keys: SkillAgentKey[], key: SkillAgentKey): SkillAgentKey[] {
+  return keys.includes(key)
+    ? keys.filter((item) => item !== key)
+    : [...keys, key];
 }
