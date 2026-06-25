@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 use wait_timeout::ChildExt;
 
+mod mcp;
 mod unified;
 
 #[derive(Debug, Deserialize)]
@@ -432,6 +433,10 @@ pub fn run() {
             unified::unified_api_logs,
             unified::unified_api_clear_logs,
             unified::unified_api_stats,
+            mcp::mcp_inspect,
+            mcp::mcp_call_tool,
+            mcp::mcp_read_resource,
+            mcp::mcp_get_prompt,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -27,7 +27,7 @@
   - 内置接入指南：OpenAI Python / Node SDK、curl、Codex、Claude Code 一键复制示例
   - 调用监控：实时调用日志、成功率 / P95 耗时 / token 统计与 SVG 图表，支持过滤、清空、导出（JSON/CSV）
 - **Skills**：技能的增删改查、启用开关、标签
-- **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关
+- **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关；支持从标准 `mcpServers` JSON 一键导入（重名自动跳过并提示）；内置 **Inspector**：连接服务器完成 `initialize` 握手，浏览并调用其 Tools（按 JSON Schema 生成参数表单 / 原始 JSON 两种模式）、读取 Resources、获取 Prompts，结果实时展示（仅桌面端可用）
 - **实用工具**：URL 编解码、JSON 预览（尽力解开被转义/双重编码的嵌套字段）、转义/去转义、Unicode 编解码，纯本地计算
 - **设置**：主题切换、数据存储说明
 
