@@ -1,21 +1,28 @@
 import { Outlet } from "react-router-dom";
-import { useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
-import { AgentSidebar } from "./AgentSidebar";
 import { Topbar } from "./Topbar";
-import { AgentChatView } from "@/pages/agent/AgentChatView";
-import { useUnifiedStore } from "@/store/unified";
 import { useChatStore } from "@/store";
 import { useAppModeStore } from "@/store/appMode";
 
+const AgentSidebar = lazy(() =>
+  import("./AgentSidebar").then((m) => ({ default: m.AgentSidebar }))
+);
+const AgentChatView = lazy(() =>
+  import("@/pages/agent/AgentChatView").then((m) => ({ default: m.AgentChatView }))
+);
+
+function AgentFallback() {
+  return (
+    <div className="flex h-full w-full items-center justify-center text-label-13 text-muted-foreground">
+      Loading...
+    </div>
+  );
+}
+
 export function AppLayout() {
-  const init = useUnifiedStore((s) => s.init);
   const mode = useAppModeStore((s) => s.mode);
   const initChat = useChatStore((s) => s.init);
-
-  useEffect(() => {
-    void init();
-  }, [init]);
 
   useEffect(() => {
     if (mode === "agent") void initChat();
@@ -26,12 +33,12 @@ export function AppLayout() {
       <Topbar />
       <div className="flex min-h-0 flex-1">
         {mode === "agent" ? (
-          <>
+          <Suspense fallback={<AgentFallback />}>
             <AgentSidebar />
             <main className="min-w-0 flex-1 overflow-hidden">
               <AgentChatView />
             </main>
-          </>
+          </Suspense>
         ) : (
           <>
             <Sidebar />

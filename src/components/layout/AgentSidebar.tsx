@@ -28,7 +28,12 @@ export function AgentSidebar() {
   const { t } = useTranslation("common");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
-  const chat = useChatStore();
+  const sessions = useChatStore((s) => s.sessions);
+  const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const newSession = useChatStore((s) => s.newSession);
+  const selectSession = useChatStore((s) => s.selectSession);
+  const renameSession = useChatStore((s) => s.renameSession);
+  const deleteSession = useChatStore((s) => s.deleteSession);
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const language = useLocaleStore((s) => s.language);
@@ -38,15 +43,15 @@ export function AgentSidebar() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
-  const pendingDelete = chat.sessions.find((s) => s.id === deleteSessionId);
-  const canDeleteSession = chat.sessions.length > 1;
+  const pendingDelete = sessions.find((s) => s.id === deleteSessionId);
+  const canDeleteSession = sessions.length > 1;
 
   const startRename = (id: string, title: string) => {
     setRenamingId(id);
     setRenameDraft(title);
   };
   const commitRename = (id: string) => {
-    void chat.renameSession(id, renameDraft);
+    void renameSession(id, renameDraft);
     setRenamingId(null);
     setRenameDraft("");
   };
@@ -74,7 +79,7 @@ export function AgentSidebar() {
         <Button
           size="icon-sm"
           variant="ghost"
-          onClick={() => chat.newSession()}
+          onClick={() => newSession()}
           title={t("new_session")}
           aria-label={t("new_session")}
         >
@@ -84,14 +89,14 @@ export function AgentSidebar() {
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         <div className="flex flex-col gap-1">
-          {chat.sessions.map((session) => {
-            const active = chat.activeSessionId === session.id;
+          {sessions.map((session) => {
+            const active = activeSessionId === session.id;
             if (collapsed) {
               return (
                 <button
                   key={session.id}
                   title={session.title}
-                  onClick={() => chat.selectSession(session.id)}
+                  onClick={() => selectSession(session.id)}
                   className={cn(
                     "flex h-9 w-9 items-center justify-center self-center rounded-sm transition-colors",
                     active
@@ -144,7 +149,7 @@ export function AgentSidebar() {
                         "grid w-full gap-1 rounded-sm py-2 pl-3 pr-16 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
                         active && "bg-muted ring-1 ring-inset ring-border"
                       )}
-                      onClick={() => chat.selectSession(session.id)}
+                      onClick={() => selectSession(session.id)}
                     >
                       <span className="truncate text-label-13 font-medium">
                         {session.title}
@@ -255,7 +260,7 @@ export function AgentSidebar() {
         description={t("confirm_delete_session", { name: pendingDelete?.title ?? t("sessions") })}
         confirmLabel={t("delete")}
         onConfirm={() => {
-          if (pendingDelete) void chat.deleteSession(pendingDelete.id);
+          if (pendingDelete) void deleteSession(pendingDelete.id);
           setDeleteSessionId(null);
         }}
       />
