@@ -8,6 +8,7 @@ import {
   Pencil,
   Plus,
   RefreshCw,
+  Store,
   Trash2,
   UploadCloud,
   XCircle,
@@ -44,6 +45,9 @@ import { useSkillProjectConfigStore, useSkillStore } from "@/store";
 import type { Skill, SkillProjectConfig } from "@/types";
 import { SkillDialog } from "./SkillDialog";
 import { SkillProjectDialog } from "./SkillProjectDialog";
+import { SkillMarketDialog } from "./SkillMarketDialog";
+import { SkillUpdatesDialog } from "./SkillUpdatesDialog";
+import { SkillRequires } from "./SkillRequires";
 
 interface SyncState {
   title: string;
@@ -56,6 +60,8 @@ export function SkillsPage() {
   const projects = useSkillProjectConfigStore();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
+  const [marketOpen, setMarketOpen] = useState(false);
+  const [updatesOpen, setUpdatesOpen] = useState(false);
   const [editing, setEditing] = useState<Skill | null>(null);
   const [editingProject, setEditingProject] =
     useState<SkillProjectConfig | null>(null);
@@ -76,6 +82,11 @@ export function SkillsPage() {
       items.filter(
         (skill) => skill.enabled && (skill.agentKeys ?? []).length > 0
       ),
+    [items]
+  );
+
+  const marketSkillCount = useMemo(
+    () => items.filter((s) => s.sourceType === "github" && s.source).length,
     [items]
   );
 
@@ -149,6 +160,10 @@ export function SkillsPage() {
         description={t("skills_desc")}
         actions={
           <>
+            <Button variant="secondary" onClick={() => setMarketOpen(true)}>
+              <Store className="h-4 w-4" />
+              {t("skill_market_button")}
+            </Button>
             <Button variant="secondary" onClick={openProjectCreate}>
               <FolderKanban className="h-4 w-4" />
               {t("skill_new_project")}
@@ -175,14 +190,24 @@ export function SkillsPage() {
               <Badge variant="outline">{items.length} Skills</Badge>
               <Badge variant="outline">{t("skill_assigned_count", { count: syncableSkills.length })}</Badge>
             </div>
-            <Button
-              variant="secondary"
-              disabled={syncing || syncableSkills.length === 0}
-              onClick={() => runGlobalSync()}
-            >
-              <UploadCloud className="h-4 w-4" />
-              {t("skill_sync_global")}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                disabled={marketSkillCount === 0}
+                onClick={() => setUpdatesOpen(true)}
+              >
+                <RefreshCw className="h-4 w-4" />
+                {t("skill_updates_button")}
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={syncing || syncableSkills.length === 0}
+                onClick={() => runGlobalSync()}
+              >
+                <UploadCloud className="h-4 w-4" />
+                {t("skill_sync_global")}
+              </Button>
+            </div>
           </div>
 
           {items.length === 0 ? (
@@ -269,6 +294,8 @@ export function SkillsPage() {
         onOpenChange={setDialogOpen}
         editing={editing}
       />
+      <SkillMarketDialog open={marketOpen} onOpenChange={setMarketOpen} />
+      <SkillUpdatesDialog open={updatesOpen} onOpenChange={setUpdatesOpen} />
       <SkillProjectDialog
         open={projectDialogOpen}
         onOpenChange={setProjectDialogOpen}
@@ -327,6 +354,11 @@ function SkillCard({
           <span className="truncate text-label-14 font-medium">
             {skill.name}
           </span>
+          {skill.sourceType === "github" && (
+            <Badge variant="outline" className="shrink-0">
+              {skill.source ?? "GitHub"}
+            </Badge>
+          )}
         </div>
         <RowMenu onEdit={onEdit} onDelete={onDelete} />
       </div>
@@ -348,7 +380,16 @@ function SkillCard({
             </Badge>
           ))
         )}
+        {(skill.files?.length ?? 0) > 1 && (
+          <Badge variant="default">
+            {t("skill_files_count", { count: skill.files!.length })}
+          </Badge>
+        )}
       </div>
+
+      {skill.requires?.bins?.length ? (
+        <SkillRequires requires={skill.requires} className="mt-3" />
+      ) : null}
 
       {skill.tags.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-1.5">

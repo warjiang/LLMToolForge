@@ -33,6 +33,28 @@ export type SkillAgentKey =
 
 export type SkillSyncMode = "copy" | "symlink";
 
+/** Origin of a skill's content. `manual` skills are authored in-app. */
+export type SkillSourceType = "manual" | "github";
+
+/** A single file belonging to a multi-file skill, stored verbatim. */
+export interface SkillFile {
+  /** POSIX-relative path within the skill directory, e.g. "references/x.md". */
+  path: string;
+  /** File content: UTF-8 text, or base64 when `encoding` is "base64". */
+  content: string;
+  encoding: "utf8" | "base64";
+}
+
+/**
+ * External prerequisites a skill needs at runtime, declared in its SKILL.md
+ * `metadata.requires` block. We surface these to the user (and detect missing
+ * ones) but never auto-install them.
+ */
+export interface SkillRequirements {
+  /** Executables that must be on PATH, e.g. ["lark-cli"]. */
+  bins?: string[];
+}
+
 export interface Skill extends BaseEntity {
   name: string;
   description: string;
@@ -41,6 +63,65 @@ export interface Skill extends BaseEntity {
   content?: string;
   agentKeys?: SkillAgentKey[];
   syncMode?: SkillSyncMode;
+  /** How the skill was obtained. Absent means legacy/manual. */
+  sourceType?: SkillSourceType;
+  /** For github skills: "owner/repo". */
+  source?: string;
+  /** For github skills: path to SKILL.md within the repo. */
+  skillPath?: string;
+  /** For github skills: branch / tag / commit the content was pulled from. */
+  sourceRef?: string;
+  /** sha256 of the installed SKILL.md content, for update detection. */
+  installedHash?: string;
+  /** Optional popularity hint carried over from a market listing. */
+  installs?: number;
+  /**
+   * Full file set for multi-file skills (SKILL.md plus references/scripts).
+   * When present, these are written verbatim on sync; otherwise SKILL.md is
+   * generated from name/description/content.
+   */
+  files?: SkillFile[];
+  /** External tools the skill expects to exist (from `metadata.requires`). */
+  requires?: SkillRequirements;
+}
+
+/** A market that can be searched for installable skills. */
+export type SkillMarketProviderId = "github" | "skills_sh";
+
+/** A skill entry as listed by a market search, before its body is fetched. */
+export interface MarketSkillSummary {
+  /** Stable identity within the provider, e.g. "owner/repo/skillId". */
+  id: string;
+  /** Display name (skill folder / frontmatter name). */
+  name: string;
+  /** "owner/repo" the content lives in. */
+  source: string;
+  /** Path to SKILL.md within the repo, when already known. */
+  skillPath?: string;
+  /** Branch / tag the listing points at. */
+  ref?: string;
+  description?: string;
+  installs?: number;
+  provider: SkillMarketProviderId;
+}
+
+/** A fully-resolved skill ready to be installed. */
+export interface MarketSkillDetail {
+  name: string;
+  description: string;
+  content: string;
+  source: string;
+  skillPath: string;
+  ref: string;
+  hash: string;
+  installs?: number;
+  provider: SkillMarketProviderId;
+  /** All files in the skill directory (incl. SKILL.md) for multi-file skills. */
+  files?: SkillFile[];
+  /** External tools the skill expects to exist (from `metadata.requires`). */
+  requires?: SkillRequirements;
+  /** Count of sibling files skipped during fetch (too large / too many). */
+  skippedFiles?: number;
 }
 
 export interface SkillProjectConfig extends BaseEntity {

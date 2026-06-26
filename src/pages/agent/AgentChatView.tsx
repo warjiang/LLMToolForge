@@ -162,7 +162,7 @@ function buildAdHocAgentDef(
     description: "",
     systemPrompt: settings.system ?? "",
     modelId: unifiedModelId,
-    enabledInternalTools: [],
+    enabledInternalTools: ["bash"],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,

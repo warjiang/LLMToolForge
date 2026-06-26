@@ -26,7 +26,7 @@
   - 内置交互式文档：`GET /openapi.json`（OpenAPI 3.1）、`GET /docs`（Redoc）
   - 内置接入指南：OpenAI Python / Node SDK、curl、Codex、Claude Code 一键复制示例
   - 调用监控：实时调用日志、成功率 / P95 耗时 / token 统计与 SVG 图表，支持过滤、清空、导出（JSON/CSV）
-- **Skills**：技能的增删改查、启用开关、标签
+- **Skills**：技能的增删改查、启用开关、标签；支持**从市场安装**——可输入 GitHub 仓库（`owner/repo`）列出其中的 `SKILL.md`，或通过 [skills.sh](https://www.skills.sh) 市场搜索并安装（内容仍从对应 GitHub 仓库拉取）。安装会拉取**整个 skill 目录**（`SKILL.md` + `references/` / 脚本 / 资源等多文件，文本原样保存、二进制经 base64），记录来源与内容哈希以便检测更新（可选配置 GitHub Token 提升请求限额）
 - **Agent（基于 Pi 的智能体）**：基于 [`earendil-works/pi`](https://github.com/earendil-works/pi)（`@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）的真实 agent，支持多轮 tool loop、流式输出与工具的真正执行（仅桌面端可用）
   - **模型接入**：经本地 Unified 网关路由（`http://127.0.0.1:<port>/v1`），使用 pi-ai 原生 `openai-completions` provider；运行前需先在 Unified 页面启动网关并启用模型
   - **内部工具**：`bash` 与文件工具 `read / write / edit / ls / grep`（Rust 实现），按沙箱模式（read-only / workspace-write / danger-full-access）门控，限定在工作目录内

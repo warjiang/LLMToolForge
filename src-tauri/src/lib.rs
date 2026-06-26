@@ -52,6 +52,16 @@ struct SyncSkillPayload {
     tags: Vec<String>,
     content: Option<String>,
     enabled: bool,
+    #[serde(default)]
+    files: Vec<SkillFilePayload>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SkillFilePayload {
+    path: String,
+    content: String,
+    encoding: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -77,7 +87,10 @@ struct SyncSkillResult {
 }
 
 #[tauri::command]
-fn run_sandboxed_command(req: SandboxRunRequest) -> Result<SandboxRunResponse, String> {
+fn run_sandboxed_command(
+    app: tauri::AppHandle,
+    req: SandboxRunRequest,
+) -> Result<SandboxRunResponse, String> {
     if req.command.trim().is_empty() {
         return Err("缺少命令".to_string());
     }
@@ -90,7 +103,12 @@ fn run_sandboxed_command(req: SandboxRunRequest) -> Result<SandboxRunResponse, S
 
     let timeout = Duration::from_millis(req.timeout_ms.unwrap_or(30_000).clamp(1_000, 120_000));
     let started = Instant::now();
-    let cwd = req.cwd.clone().unwrap_or_else(|| ".".to_string());
+    // Fall back to a managed sandbox directory when no workspace path is set,
+    // so command execution works even before the user picks a workspace.
+    let cwd = match req.cwd.as_deref().map(str::trim) {
+        Some(c) if !c.is_empty() && c != "." => c.to_string(),
+        _ => default_sandbox_dir(&app)?,
+    };
     let mut command = build_platform_command(&req, &cwd)?;
     command.current_dir(&cwd);
     command.env_clear();
@@ -170,6 +188,76 @@ fn sync_skills_to_targets(
     Ok(results)
 }
 
+#[derive(Serialize)]
+struct BinStatus {
+    name: String,
+    found: bool,
+    path: Option<String>,
+}
+
+/// Check whether each named executable is resolvable on the user's PATH. Used
+/// to surface a skill's declared external requirements (`metadata.requires`)
+/// without ever installing anything.
+#[tauri::command]
+fn check_skill_bins(bins: Vec<String>) -> Vec<BinStatus> {
+    bins.into_iter()
+        .map(|name| {
+            let path = which_bin(&name);
+            BinStatus {
+                found: path.is_some(),
+                path,
+                name,
+            }
+        })
+        .collect()
+}
+
+/// Minimal cross-platform `which`: scans PATH (honoring Windows PATHEXT) for an
+/// executable file matching `name`. Names containing a path separator are
+/// checked directly.
+fn which_bin(name: &str) -> Option<String> {
+    let trimmed = name.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    let exts: Vec<String> = if cfg!(windows) {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT;.COM".to_string())
+            .split(';')
+            .map(|s| s.to_string())
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+
+    if trimmed.contains('/') || trimmed.contains('\\') {
+        let direct = expand_home(trimmed);
+        for ext in &exts {
+            let candidate = if ext.is_empty() {
+                direct.clone()
+            } else {
+                direct.with_extension(ext.trim_start_matches('.'))
+            };
+            if candidate.is_file() {
+                return Some(candidate.display().to_string());
+            }
+        }
+        return None;
+    }
+
+    let path_var = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path_var) {
+        for ext in &exts {
+            let candidate = dir.join(format!("{trimmed}{ext}"));
+            if candidate.is_file() {
+                return Some(candidate.display().to_string());
+            }
+        }
+    }
+    None
+}
+
 fn sync_one_skill(
     app: &tauri::AppHandle,
     skill: &SyncSkillPayload,
@@ -203,6 +291,17 @@ fn source_skill_dir(app: &tauri::AppHandle, skill: &SyncSkillPayload) -> Result<
     Ok(dir)
 }
 
+/// Managed working directory used by the sandbox when no workspace is selected.
+fn default_sandbox_dir(app: &tauri::AppHandle) -> Result<String, String> {
+    let mut dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("获取应用配置目录失败: {e}"))?;
+    dir.push("agent-sandbox");
+    fs::create_dir_all(&dir).map_err(|e| format!("创建沙箱目录失败: {e}"))?;
+    Ok(dir.display().to_string())
+}
+
 fn write_skill_dir(dir: &Path, skill: &SyncSkillPayload, replace_dir: bool) -> Result<(), String> {
     if replace_dir {
         remove_existing(dir)?;
@@ -210,9 +309,106 @@ fn write_skill_dir(dir: &Path, skill: &SyncSkillPayload, replace_dir: bool) -> R
         remove_file_or_symlink(dir)?;
     }
     fs::create_dir_all(dir).map_err(|e| format!("创建 Skill 目录失败: {e}"))?;
+
+    if !skill.files.is_empty() {
+        return write_skill_files(dir, skill);
+    }
+
     fs::write(dir.join("SKILL.md"), skill_document(skill))
         .map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
     Ok(())
+}
+
+/// Write a multi-file skill verbatim, guarding against path traversal.
+fn write_skill_files(dir: &Path, skill: &SyncSkillPayload) -> Result<(), String> {
+    let mut wrote_skill_md = false;
+    for file in &skill.files {
+        let rel = sanitize_rel_path(&file.path)
+            .ok_or_else(|| format!("非法的文件路径: {}", file.path))?;
+        let dest = dir.join(&rel);
+        if let Some(parent) = dest.parent() {
+            fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+        }
+        let bytes = match file.encoding.as_str() {
+            "utf8" => file.content.clone().into_bytes(),
+            "base64" => decode_base64(&file.content)
+                .ok_or_else(|| format!("base64 解码失败: {}", file.path))?,
+            other => return Err(format!("未知文件编码: {other}")),
+        };
+        fs::write(&dest, bytes).map_err(|e| format!("写入文件失败 {}: {e}", file.path))?;
+        if rel.to_string_lossy().eq_ignore_ascii_case("SKILL.md") {
+            wrote_skill_md = true;
+        }
+    }
+    if !wrote_skill_md {
+        fs::write(dir.join("SKILL.md"), skill_document(skill))
+            .map_err(|e| format!("写入 SKILL.md 失败: {e}"))?;
+    }
+    Ok(())
+}
+
+/// Normalize a skill-relative path, rejecting absolute paths and `..` escapes.
+fn sanitize_rel_path(input: &str) -> Option<PathBuf> {
+    let normalized = input.replace('\\', "/");
+    if normalized.is_empty() {
+        return None;
+    }
+    let mut out = PathBuf::new();
+    let mut depth = 0i32;
+    for segment in normalized.split('/') {
+        match segment {
+            "" | "." => continue,
+            ".." => {
+                depth -= 1;
+                if depth < 0 {
+                    return None;
+                }
+                out.pop();
+            }
+            _ => {
+                if segment.contains(':') || segment.starts_with('~') {
+                    return None;
+                }
+                depth += 1;
+                out.push(segment);
+            }
+        }
+    }
+    if out.as_os_str().is_empty() {
+        None
+    } else {
+        Some(out)
+    }
+}
+
+/// Minimal, dependency-free standard base64 decoder.
+fn decode_base64(input: &str) -> Option<Vec<u8>> {
+    fn val(c: u8) -> Option<u8> {
+        match c {
+            b'A'..=b'Z' => Some(c - b'A'),
+            b'a'..=b'z' => Some(c - b'a' + 26),
+            b'0'..=b'9' => Some(c - b'0' + 52),
+            b'+' => Some(62),
+            b'/' => Some(63),
+            _ => None,
+        }
+    }
+    let mut out = Vec::new();
+    let mut buf = 0u32;
+    let mut bits = 0u32;
+    for &c in input.as_bytes() {
+        if c == b'=' || c.is_ascii_whitespace() {
+            continue;
+        }
+        let v = val(c)? as u32;
+        buf = (buf << 6) | v;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buf >> bits) as u8);
+        }
+    }
+    Some(out)
 }
 
 fn replace_with_symlink(source: &Path, target: &Path) -> Result<(), String> {
@@ -261,12 +457,33 @@ fn skill_document(skill: &SyncSkillPayload) -> String {
     } else {
         skill.description.trim().to_string()
     };
-    let body = skill
+
+    let raw = skill
         .content
         .as_deref()
         .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .unwrap_or(description.as_str());
+        .filter(|s| !s.is_empty());
+
+    // Market/GitHub skills carry the raw SKILL.md (frontmatter included) in
+    // `content`. Strip the leading frontmatter so we don't emit a duplicate
+    // block, while preserving any other keys (e.g. `metadata.requires`) the
+    // app doesn't manage itself.
+    let (extra_frontmatter, body) = match raw {
+        Some(content) => match split_frontmatter(content) {
+            Some((frontmatter, inner_body)) => {
+                let inner_body = inner_body.trim();
+                let body = if inner_body.is_empty() {
+                    description.clone()
+                } else {
+                    inner_body.to_string()
+                };
+                (strip_managed_frontmatter_keys(frontmatter), body)
+            }
+            None => (String::new(), content.to_string()),
+        },
+        None => (String::new(), description.clone()),
+    };
+
     let tags = if skill.tags.is_empty() {
         String::new()
     } else {
@@ -279,13 +496,65 @@ fn skill_document(skill: &SyncSkillPayload) -> String {
         format!("tags: [{}]\n", tags)
     };
 
+    let mut extra = extra_frontmatter;
+    if !extra.is_empty() && !extra.ends_with('\n') {
+        extra.push('\n');
+    }
+
     format!(
-        "---\nname: \"{}\"\ndescription: \"{}\"\n{}---\n\n{}\n",
+        "---\nname: \"{}\"\ndescription: \"{}\"\n{}{}---\n\n{}\n",
         yaml_line(skill.name.trim()),
         yaml_line(&description),
         tags,
+        extra,
         body
     )
+}
+
+/// Splits a leading YAML frontmatter block from `content`.
+///
+/// Returns `(frontmatter_inner, body)` when `content` starts with a `---`
+/// delimited block, otherwise `None`.
+fn split_frontmatter(content: &str) -> Option<(&str, &str)> {
+    let rest = content.strip_prefix("---")?;
+    let rest = rest
+        .strip_prefix('\n')
+        .or_else(|| rest.strip_prefix("\r\n"))?;
+
+    let mut offset = 0;
+    for line in rest.split_inclusive('\n') {
+        if line.trim_end_matches(['\n', '\r']) == "---" {
+            let frontmatter = &rest[..offset];
+            let body = &rest[offset + line.len()..];
+            return Some((frontmatter, body));
+        }
+        offset += line.len();
+    }
+    None
+}
+
+/// Drops the top-level `name`, `description`, and `tags` keys (and any nested
+/// child lines) from a frontmatter block; the app regenerates these itself.
+fn strip_managed_frontmatter_keys(frontmatter: &str) -> String {
+    const MANAGED: [&str; 3] = ["name:", "description:", "tags:"];
+    let mut out = String::new();
+    let mut skipping_block = false;
+    for line in frontmatter.lines() {
+        let is_top_level = !line.is_empty() && !line.starts_with([' ', '\t']);
+        if is_top_level {
+            let trimmed = line.trim_start();
+            if MANAGED.iter().any(|key| trimmed.starts_with(key)) {
+                skipping_block = true;
+                continue;
+            }
+            skipping_block = false;
+        } else if skipping_block {
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
 }
 
 fn yaml_line(value: &str) -> String {
@@ -428,6 +697,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
             sync_skills_to_targets,
+            check_skill_bins,
             fs_tools::fs_read,
             fs_tools::fs_write,
             fs_tools::fs_edit,
@@ -447,4 +717,57 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod skill_document_tests {
+    use super::*;
+
+    fn payload(content: &str, tags: Vec<String>) -> SyncSkillPayload {
+        SyncSkillPayload {
+            id: "abc123".into(),
+            name: "Lark Doc".into(),
+            description: "Read Lark docs".into(),
+            tags,
+            content: Some(content.into()),
+            enabled: true,
+            files: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn single_frontmatter_no_duplication() {
+        let content = "---\nname: lark-doc\ndescription: old desc\nmetadata:\n  requires:\n    bins:\n      - lark-cli\n---\n\n# Body\nhello";
+        let doc = skill_document(&payload(content, vec![]));
+        assert_eq!(
+            doc.matches("---").count(),
+            2,
+            "exactly one frontmatter block"
+        );
+        assert!(doc.contains("name: \"Lark Doc\""));
+        assert!(doc.contains("description: \"Read Lark docs\""));
+        assert!(!doc.contains("old desc"));
+        assert!(doc.contains("requires:"));
+        assert!(doc.contains("- lark-cli"));
+        assert!(doc.contains("# Body\nhello"));
+    }
+
+    #[test]
+    fn managed_tags_block_is_replaced() {
+        let content = "---\nname: x\ntags:\n  - old1\n  - old2\nmetadata:\n  foo: bar\n---\nbody";
+        let doc = skill_document(&payload(content, vec!["new1".into()]));
+        assert!(doc.contains("tags: [\"new1\"]"));
+        assert!(!doc.contains("old1"));
+        assert!(!doc.contains("old2"));
+        assert!(doc.contains("foo: bar"));
+        assert_eq!(doc.matches("---").count(), 2);
+    }
+
+    #[test]
+    fn plain_content_without_frontmatter() {
+        let doc = skill_document(&payload("just some text", vec![]));
+        assert_eq!(doc.matches("---").count(), 2);
+        assert!(doc.ends_with("just some text\n"));
+        assert!(doc.contains("name: \"Lark Doc\""));
+    }
 }
