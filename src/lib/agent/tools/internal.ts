@@ -78,12 +78,12 @@ function bashTool(deps: InternalToolDeps): AgentTool {
       ),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
+      const root = deps.workspaceRoot.trim();
       const res = await invoke<SandboxRunResponse>("run_sandboxed_command", {
         req: {
           command: "bash",
           args: ["-lc", params.command],
-          cwd: root,
+          cwd: root || undefined,
           sandboxMode: deps.sandboxMode,
           timeoutMs: params.timeoutMs,
         },

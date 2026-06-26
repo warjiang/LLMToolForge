@@ -1,4 +1,4 @@
-import type { Skill, SkillSyncMode } from "@/types";
+import type { Skill, SkillFile, SkillSyncMode } from "@/types";
 import i18n from "@/i18n/config";
 import type { SkillTarget } from "@/lib/skillTargets";
 import { projectTargetDir } from "@/lib/skillTargets";
@@ -10,6 +10,7 @@ export interface SyncSkillPayload {
   tags: string[];
   content?: string;
   enabled: boolean;
+  files?: SkillFile[];
 }
 
 export interface SyncTargetPayload {
@@ -45,6 +46,7 @@ export function skillPayload(skill: Skill): SyncSkillPayload {
     tags: skill.tags,
     content: skill.content,
     enabled: skill.enabled,
+    files: skill.files,
   };
 }
 

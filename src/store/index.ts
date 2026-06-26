@@ -20,3 +20,4 @@ export const useGatewayStore = createCollectionStore(gatewayConnectionRepo);
 export const useAgentDefStore = createCollectionStore(agentDefinitionRepo);
 export { useChatStore } from "./chat";
 export { useLocaleStore } from "./locale";
+export { useMarketSettingsStore } from "./marketSettings";

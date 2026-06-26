@@ -59,11 +59,18 @@ export async function resolveAgent(
 
   const tools: AgentTool[] = [];
 
-  if (def.workspacePath.trim()) {
+  // `bash` runs in the sandbox and falls back to a managed working directory,
+  // so it works without a workspace. The file tools need a workspace root to
+  // resolve relative paths, so they stay gated on `workspacePath`.
+  const root = def.workspacePath.trim();
+  const enabledInternal = root
+    ? def.enabledInternalTools
+    : def.enabledInternalTools.filter((id) => id === "bash");
+  if (enabledInternal.length > 0) {
     tools.push(
-      ...buildInternalTools(def.enabledInternalTools, {
+      ...buildInternalTools(enabledInternal, {
         sandboxMode: def.sandboxMode,
-        workspaceRoot: def.workspacePath,
+        workspaceRoot: root,
       })
     );
   }
