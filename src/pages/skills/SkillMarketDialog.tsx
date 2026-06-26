@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
   AlertCircle,
@@ -14,6 +14,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -21,7 +22,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   installStatus,
   resolveMarketSkill,
@@ -66,7 +66,7 @@ export function SkillMarketDialog({ open, onOpenChange }: Props) {
   >({});
   const [showToken, setShowToken] = useState(false);
 
-  const token = githubToken.trim() || undefined;
+  const token = provider === "github" ? githubToken.trim() || undefined : undefined;
 
   const runSearch = async () => {
     const value = query.trim();
@@ -93,7 +93,10 @@ export function SkillMarketDialog({ open, onOpenChange }: Props) {
     setRowErrors((s) => ({ ...s, [summary.id]: "" }));
     setRowNotes((s) => ({ ...s, [summary.id]: "" }));
     try {
-      const detail = await resolveMarketSkill(summary, token);
+      const detail = await resolveMarketSkill(
+        summary,
+        summary.provider === "github" ? token : undefined
+      );
       const { existing } = installStatus(skills, detail);
       const payload = toSkillPayload(detail, existing);
       if (existing) {
@@ -138,6 +141,7 @@ export function SkillMarketDialog({ open, onOpenChange }: Props) {
     setRowStates({});
     setRowErrors({});
     setRowNotes({});
+    setShowToken(false);
   };
 
   const placeholder =
@@ -147,106 +151,175 @@ export function SkillMarketDialog({ open, onOpenChange }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-2xl">
+      <DialogContent className="max-w-3xl">
         <DialogHeader>
           <DialogTitle>{t("skill_market_title")}</DialogTitle>
           <DialogDescription>{t("skill_market_desc")}</DialogDescription>
         </DialogHeader>
 
-        <Tabs
-          value={provider}
-          onValueChange={(v) => switchProvider(v as Provider)}
-        >
-          <TabsList>
-            <TabsTrigger value="github">
-              <GitBranch className="h-4 w-4" />
-              GitHub
-            </TabsTrigger>
-            <TabsTrigger value="skills_sh">
-              <Store className="h-4 w-4" />
-              skills.sh
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="github">
-            <p className="mb-2 text-label-12 text-muted-foreground">
-              {t("skill_market_github_hint")}
-            </p>
-          </TabsContent>
-          <TabsContent value="skills_sh">
-            <p className="mb-2 text-label-12 text-muted-foreground">
-              {t("skill_market_skills_sh_hint")}
-            </p>
-          </TabsContent>
-        </Tabs>
-
-        <div className="flex items-center gap-2">
-          <Input
-            value={query}
-            placeholder={placeholder}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") runSearch();
-            }}
-          />
-          <Button onClick={runSearch} disabled={searching || !query.trim()}>
-            {searching ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Search className="h-4 w-4" />
-            )}
-            {provider === "github" ? t("skill_market_list") : t("skill_market_search")}
-          </Button>
-        </div>
-
-        <div>
-          <button
-            type="button"
-            className="text-label-12 text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => setShowToken((v) => !v)}
-          >
-            {t("skill_market_token_toggle")}
-          </button>
-          {showToken && (
-            <div className="mt-2 grid gap-1.5">
-              <Label htmlFor="gh-token">{t("skill_market_token_label")}</Label>
-              <Input
-                id="gh-token"
-                type="password"
-                value={githubToken}
-                placeholder="ghp_..."
-                onChange={(e) => setGithubToken(e.target.value)}
+        <div className="grid max-h-[68vh] gap-4 overflow-y-auto pr-1">
+          <section className="rounded-md border border-border bg-background-secondary p-3">
+            <div className="inline-flex items-center gap-1 rounded-md border border-border bg-background-secondary p-1">
+              <ProviderButton
+                active={provider === "github"}
+                icon={<GitBranch className="h-4 w-4" />}
+                label="GitHub"
+                onClick={() => switchProvider("github")}
               />
-              <p className="text-label-12 text-muted-foreground">
-                {t("skill_market_token_hint")}
-              </p>
+              <ProviderButton
+                active={provider === "skills_sh"}
+                icon={<Store className="h-4 w-4" />}
+                label="skills.sh"
+                onClick={() => switchProvider("skills_sh")}
+              />
+            </div>
+
+            <p className="mb-3 mt-3 text-label-12 text-muted-foreground">
+              {provider === "github"
+                ? t("skill_market_github_hint")
+                : t("skill_market_skills_sh_hint")}
+            </p>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+              <Input
+                value={query}
+                placeholder={placeholder}
+                onChange={(e) => setQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") runSearch();
+                }}
+              />
+              <Button
+                className="sm:w-auto"
+                onClick={runSearch}
+                disabled={searching || !query.trim()}
+              >
+                {searching ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Search className="h-4 w-4" />
+                )}
+                {provider === "github"
+                  ? t("skill_market_list")
+                  : t("skill_market_search")}
+              </Button>
+            </div>
+          </section>
+
+          {provider === "github" && (
+            <section className="rounded-md border border-border bg-background-secondary p-3">
+              <button
+                type="button"
+                className="text-label-12 font-medium text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)]"
+                onClick={() => setShowToken((v) => !v)}
+              >
+                {t("skill_market_token_toggle")}
+              </button>
+              {showToken && (
+                <div className="mt-3 grid gap-1.5">
+                  <Label htmlFor="gh-token">{t("skill_market_token_label")}</Label>
+                  <Input
+                    id="gh-token"
+                    type="password"
+                    value={githubToken}
+                    placeholder="ghp_..."
+                    onChange={(e) => setGithubToken(e.target.value)}
+                  />
+                  <p className="text-label-12 text-muted-foreground">
+                    {t("skill_market_token_hint")}
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
+
+          {error && (
+            <div className="flex items-start gap-2 rounded-md border border-border bg-card px-3 py-2 text-label-12 text-muted-foreground">
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
+
+          <section className="grid gap-2">
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-heading-14">{t("skill_market_results")}</h3>
+              <Badge variant="outline">
+                {t("skill_market_result_count", { count: results.length })}
+              </Badge>
+            </div>
+            {searching ? (
+              <div className="grid gap-2">
+                {[0, 1, 2].map((item) => (
+                  <div
+                    key={item}
+                    className="h-[82px] animate-pulse rounded-md border border-border bg-background-secondary"
+                  />
+                ))}
+              </div>
+            ) : results.length === 0 && !error ? (
+              <div className="rounded-md border border-dashed border-border bg-background-secondary px-4 py-8 text-center">
+                <Search className="mx-auto h-5 w-5 text-muted-foreground" />
+                <p className="mt-2 text-label-13 font-medium">
+                  {t("skill_market_empty_title")}
+                </p>
+                <p className="mt-1 text-label-12 text-muted-foreground">
+                  {t("skill_market_empty_desc")}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {results.map((item) => (
+                  <MarketRow
+                    key={item.id}
+                    item={item}
+                    skills={skills}
+                    state={rowStates[item.id] ?? "idle"}
+                    error={rowErrors[item.id]}
+                    note={rowNotes[item.id]}
+                    requires={rowRequires[item.id]}
+                    onInstall={() => install(item)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-secondary/45 px-3 py-2 text-label-12 text-muted-foreground">
-            <AlertCircle className="h-4 w-4 shrink-0" />
-            {error}
-          </div>
-        )}
-
-        <div className="grid max-h-[42vh] gap-2 overflow-y-auto pr-1">
-          {results.map((item) => (
-            <MarketRow
-              key={item.id}
-              item={item}
-              skills={skills}
-              state={rowStates[item.id] ?? "idle"}
-              error={rowErrors[item.id]}
-              note={rowNotes[item.id]}
-              requires={rowRequires[item.id]}
-              onInstall={() => install(item)}
-            />
-          ))}
-        </div>
+        <DialogFooter>
+          <Button variant="secondary" onClick={() => onOpenChange(false)}>
+            {t("close", { ns: "common" })}
+          </Button>
+        </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ProviderButton({
+  active,
+  icon,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={active}
+      className={
+        active
+          ? "inline-flex h-8 items-center gap-1.5 rounded-sm bg-background px-3 text-label-13 font-medium text-foreground shadow-geist-sm transition-colors duration-150 focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)]"
+          : "inline-flex h-8 items-center gap-1.5 rounded-sm px-3 text-label-13 font-medium text-muted-foreground transition-colors duration-150 hover:text-foreground focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)]"
+      }
+      onClick={onClick}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
@@ -288,14 +361,17 @@ function MarketRow({
   const effectiveRequires = requires ?? installedSkill?.requires;
 
   return (
-    <div className="flex items-start justify-between gap-3 rounded-md border border-border p-3">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-3 sm:flex-row sm:items-start sm:justify-between">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate text-label-13 font-medium">{item.name}</span>
           {typeof item.installs === "number" && (
             <Badge variant="outline">
               {t("skill_market_installs", { count: item.installs })}
             </Badge>
+          )}
+          {alreadyInstalled && (
+            <Badge variant="success">{t("skill_market_already_installed")}</Badge>
           )}
         </div>
         <p className="mt-0.5 truncate text-label-12 text-muted-foreground">
@@ -320,6 +396,7 @@ function MarketRow({
 
       <Button
         size="sm"
+        className="shrink-0 self-start"
         variant={installedNow || alreadyInstalled ? "secondary" : "primary"}
         disabled={busy || installedNow}
         onClick={onInstall}

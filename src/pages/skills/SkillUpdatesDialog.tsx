@@ -120,24 +120,38 @@ export function SkillUpdatesDialog({ open, onOpenChange }: Props) {
           <DialogDescription>{t("skill_updates_desc")}</DialogDescription>
         </DialogHeader>
 
-        {marketSkills.length === 0 ? (
-          <p className="py-6 text-center text-label-13 text-muted-foreground">
-            {t("skill_updates_none")}
-          </p>
-        ) : (
-          <div className="grid max-h-[48vh] gap-2 overflow-y-auto pr-1">
-            {rows.map((row) => (
-              <UpdateRow key={row.skill.id} row={row} onUpdate={() => updateOne(row)} />
-            ))}
-          </div>
-        )}
+        <div className="max-h-[58vh] overflow-y-auto pr-1">
+          {marketSkills.length === 0 ? (
+            <div className="rounded-md border border-dashed border-border bg-background-secondary px-4 py-10 text-center">
+              <RefreshCw className="mx-auto h-5 w-5 text-muted-foreground" />
+              <p className="mt-2 text-label-13 font-medium">
+                {t("skill_updates_empty_title")}
+              </p>
+              <p className="mt-1 text-label-12 text-muted-foreground">
+                {t("skill_updates_none")}
+              </p>
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {rows.map((row) => (
+                <UpdateRow
+                  key={row.skill.id}
+                  row={row}
+                  onUpdate={() => updateOne(row)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
 
-        <DialogFooter>
-          <div className="mr-auto flex items-center gap-2 text-label-12 text-muted-foreground">
+        <DialogFooter className="gap-2">
+          <div className="mr-auto flex min-w-0 items-center gap-2 text-label-12 text-muted-foreground">
             {checking && <Loader2 className="h-4 w-4 animate-spin" />}
-            {checking
-              ? t("skill_updates_checking")
-              : t("skill_updates_summary", { count: updatable.length })}
+            <span className="truncate">
+              {checking
+                ? t("skill_updates_checking")
+                : t("skill_updates_summary", { count: updatable.length })}
+            </span>
           </div>
           <Button variant="secondary" onClick={() => onOpenChange(false)}>
             {t("close", { ns: "common" })}
@@ -160,9 +174,9 @@ function UpdateRow({ row, onUpdate }: { row: Row; onUpdate: () => void }) {
   const { skill, status, error } = row;
 
   return (
-    <div className="flex items-center justify-between gap-3 rounded-md border border-border p-3">
+    <div className="flex flex-col gap-3 rounded-md border border-border bg-card p-3 sm:flex-row sm:items-center sm:justify-between">
       <div className="min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="truncate text-label-13 font-medium">{skill.name}</span>
           <StatusBadge status={status} />
         </div>
@@ -174,7 +188,7 @@ function UpdateRow({ row, onUpdate }: { row: Row; onUpdate: () => void }) {
         )}
       </div>
       {status === "update-available" && (
-        <Button size="sm" onClick={onUpdate}>
+        <Button size="sm" className="shrink-0 self-start sm:self-center" onClick={onUpdate}>
           <Download className="h-4 w-4" />
           {t("skill_update_action")}
         </Button>

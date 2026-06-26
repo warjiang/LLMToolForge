@@ -1,14 +1,18 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import {
+  AlertCircle,
   Boxes,
   CheckCircle2,
   FolderKanban,
+  GitBranch,
+  Loader2,
   MoreHorizontal,
   Pencil,
   Plus,
   RefreshCw,
   Store,
+  Tags,
   Trash2,
   UploadCloud,
   XCircle,
@@ -54,6 +58,15 @@ interface SyncState {
   results: SyncSkillResult[];
 }
 
+type ProjectReadiness = {
+  canSync: boolean;
+  reason: string;
+  selectedCount: number;
+  enabledSelectedCount: number;
+};
+
+type Translate = (key: string, options?: Record<string, unknown>) => string;
+
 export function SkillsPage() {
   const { t } = useTranslation("pages");
   const { items, loaded, load, edit, remove } = useSkillStore();
@@ -77,17 +90,24 @@ export function SkillsPage() {
     if (!projects.loaded) projects.load();
   }, [loaded, load, projects]);
 
-  const syncableSkills = useMemo(
-    () =>
-      items.filter(
-        (skill) => skill.enabled && (skill.agentKeys ?? []).length > 0
-      ),
+  const assignedSkills = useMemo(
+    () => items.filter((skill) => (skill.agentKeys ?? []).length > 0),
     [items]
+  );
+
+  const syncableSkills = useMemo(
+    () => assignedSkills.filter((skill) => skill.enabled),
+    [assignedSkills]
   );
 
   const marketSkillCount = useMemo(
     () => items.filter((s) => s.sourceType === "github" && s.source).length,
     [items]
+  );
+
+  const enabledProjectCount = useMemo(
+    () => projects.items.filter((project) => project.enabled).length,
+    [projects.items]
   );
 
   const openCreate = () => {
@@ -120,7 +140,9 @@ export function SkillsPage() {
         results.push(...(await syncGlobalSkill(item)));
       }
       setSyncState({
-        title: skill ? t("skill_global_sync_title", { name: skill.name }) : t("skill_global_sync_all"),
+        title: skill
+          ? t("skill_global_sync_title", { name: skill.name })
+          : t("skill_global_sync_all"),
         results,
       });
     } catch (e) {
@@ -145,7 +167,10 @@ export function SkillsPage() {
         skills: skills.map(skillPayload),
         targets,
       });
-      setSyncState({ title: t("skill_project_sync_title", { name: project.name }), results });
+      setSyncState({
+        title: t("skill_project_sync_title", { name: project.name }),
+        results,
+      });
     } catch (e) {
       setSyncError(e instanceof Error ? e.message : t("skill_sync_failed"));
     } finally {
@@ -154,9 +179,9 @@ export function SkillsPage() {
   };
 
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
-        title="Skills"
+        title={t("skills_title")}
         description={t("skills_desc")}
         actions={
           <>
@@ -176,39 +201,87 @@ export function SkillsPage() {
         }
       />
 
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <SummaryMetric
+          label={t("skill_metric_library")}
+          value={items.length}
+          detail={t("skill_metric_library_detail", {
+            count: items.filter((skill) => skill.enabled).length,
+          })}
+        />
+        <SummaryMetric
+          label={t("skill_metric_assigned")}
+          value={assignedSkills.length}
+          detail={t("skill_metric_assigned_detail", {
+            count: syncableSkills.length,
+          })}
+        />
+        <SummaryMetric
+          label={t("skill_metric_projects")}
+          value={projects.items.length}
+          detail={t("skill_metric_projects_detail", {
+            count: enabledProjectCount,
+          })}
+        />
+        <SummaryMetric
+          label={t("skill_metric_market")}
+          value={marketSkillCount}
+          detail={t("skill_metric_market_detail")}
+        />
+      </section>
+
       <SyncResultPanel state={syncState} error={syncError} />
 
       <Tabs defaultValue="library">
-        <TabsList>
-          <TabsTrigger value="library">{t("skill_library_tab")}</TabsTrigger>
-          <TabsTrigger value="projects">{t("skill_projects_tab")}</TabsTrigger>
-        </TabsList>
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <TabsList className="w-fit">
+            <TabsTrigger value="library">{t("skill_library_tab")}</TabsTrigger>
+            <TabsTrigger value="projects">{t("skill_projects_tab")}</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="library">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex flex-wrap gap-2">
-              <Badge variant="outline">{items.length} Skills</Badge>
-              <Badge variant="outline">{t("skill_assigned_count", { count: syncableSkills.length })}</Badge>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="secondary"
-                disabled={marketSkillCount === 0}
-                onClick={() => setUpdatesOpen(true)}
-              >
-                <RefreshCw className="h-4 w-4" />
-                {t("skill_updates_button")}
-              </Button>
-              <Button
-                variant="secondary"
-                disabled={syncing || syncableSkills.length === 0}
-                onClick={() => runGlobalSync()}
-              >
-                <UploadCloud className="h-4 w-4" />
-                {t("skill_sync_global")}
-              </Button>
-            </div>
-          </div>
+          <SectionToolbar
+            title={t("skill_library_heading")}
+            description={t("skill_library_subtitle", {
+              assigned: assignedSkills.length,
+              total: items.length,
+            })}
+            badges={
+              <>
+                <Badge variant="outline">
+                  {t("skill_total_count", { count: items.length })}
+                </Badge>
+                <Badge variant="outline">
+                  {t("skill_assigned_count", { count: assignedSkills.length })}
+                </Badge>
+              </>
+            }
+            actions={
+              <>
+                <Button
+                  variant="secondary"
+                  disabled={marketSkillCount === 0}
+                  onClick={() => setUpdatesOpen(true)}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  {t("skill_updates_button")}
+                </Button>
+                <Button
+                  variant="secondary"
+                  disabled={syncing || syncableSkills.length === 0}
+                  onClick={() => runGlobalSync()}
+                >
+                  {syncing ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UploadCloud className="h-4 w-4" />
+                  )}
+                  {t("skill_sync_global")}
+                </Button>
+              </>
+            }
+          />
 
           {items.length === 0 ? (
             <EmptyState
@@ -223,7 +296,7 @@ export function SkillsPage() {
               }
             />
           ) : (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
               {items.map((item, i) => (
                 <Reveal key={item.id} index={i} className="flex">
                   <SkillCard
@@ -244,13 +317,24 @@ export function SkillsPage() {
         </TabsContent>
 
         <TabsContent value="projects">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <Badge variant="outline">{t("skill_project_count", { count: projects.items.length })}</Badge>
-            <Button variant="secondary" onClick={openProjectCreate}>
-              <FolderKanban className="h-4 w-4" />
-              {t("skill_new_project")}
-            </Button>
-          </div>
+          <SectionToolbar
+            title={t("skill_projects_heading")}
+            description={t("skill_projects_subtitle", {
+              enabled: enabledProjectCount,
+              total: projects.items.length,
+            })}
+            badges={
+              <Badge variant="outline">
+                {t("skill_project_count", { count: projects.items.length })}
+              </Badge>
+            }
+            actions={
+              <Button variant="secondary" onClick={openProjectCreate}>
+                <FolderKanban className="h-4 w-4" />
+                {t("skill_new_project")}
+              </Button>
+            }
+          />
 
           {projects.items.length === 0 ? (
             <EmptyState
@@ -305,7 +389,10 @@ export function SkillsPage() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
+        description={t("confirm_delete_named", {
+          ns: "common",
+          name: deleting?.name ?? "",
+        })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -314,12 +401,70 @@ export function SkillsPage() {
       <ConfirmDialog
         open={!!deletingProject}
         onOpenChange={(o) => !o && setDeletingProject(null)}
-        description={t("confirm_delete_named", { ns: "common", name: deletingProject?.name ?? "" })}
+        description={t("confirm_delete_named", {
+          ns: "common",
+          name: deletingProject?.name ?? "",
+        })}
         onConfirm={() => {
           if (deletingProject) projects.remove(deletingProject.id);
           setDeletingProject(null);
         }}
       />
+    </div>
+  );
+}
+
+function SummaryMetric({
+  label,
+  value,
+  detail,
+}: {
+  label: string;
+  value: number;
+  detail: string;
+}) {
+  return (
+    <div className="rounded-md border border-border bg-background-secondary px-4 py-3 shadow-geist-sm">
+      <div className="text-label-12 font-medium text-muted-foreground">
+        {label}
+      </div>
+      <div className="mt-2 font-mono text-heading-24 tabular-nums">
+        {value}
+      </div>
+      <div className="mt-1 truncate text-label-12 text-muted-foreground">
+        {detail}
+      </div>
+    </div>
+  );
+}
+
+function SectionToolbar({
+  title,
+  description,
+  badges,
+  actions,
+}: {
+  title: string;
+  description: string;
+  badges?: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <div className="mb-4 flex flex-col gap-3 rounded-md border border-border bg-background-secondary px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+      <div className="min-w-0">
+        <div className="flex flex-wrap items-center gap-2">
+          <h3 className="text-heading-16">{title}</h3>
+          {badges}
+        </div>
+        <p className="mt-1 max-w-2xl text-copy-13 text-muted-foreground">
+          {description}
+        </p>
+      </div>
+      {actions && (
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {actions}
+        </div>
+      )}
     </div>
   );
 }
@@ -343,80 +488,139 @@ function SkillCard({
   const targets = (skill.agentKeys ?? [])
     .map(getSkillTarget)
     .filter((target) => target !== null);
+  const canSync = skill.enabled && targets.length > 0;
+  const syncReason = !skill.enabled
+    ? t("skill_sync_blocked_disabled")
+    : targets.length === 0
+      ? t("skill_sync_blocked_unassigned")
+      : t("skill_sync_ready", { count: targets.length });
+  const tags = skill.tags ?? [];
+  const visibleTags = tags.slice(0, 4);
+  const hiddenTagCount = Math.max(0, tags.length - visibleTags.length);
 
   return (
-    <Card className="flex flex-1 flex-col p-5 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:shadow-geist-md">
-      <div className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+    <Card className="group flex min-h-[260px] flex-1 flex-col overflow-hidden transition-[transform,box-shadow,border-color] duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:shadow-geist-md">
+      <div className="flex items-start justify-between gap-3 border-b border-border bg-background-secondary px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-card text-muted-foreground shadow-geist-sm">
             <Boxes className="h-4 w-4" />
           </div>
-          <span className="truncate text-label-14 font-medium">
-            {skill.name}
-          </span>
-          {skill.sourceType === "github" && (
-            <Badge variant="outline" className="shrink-0">
-              {skill.source ?? "GitHub"}
-            </Badge>
-          )}
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h4 className="truncate text-heading-16">{skill.name}</h4>
+              <Badge variant={skill.enabled ? "success" : "outline"}>
+                {skill.enabled ? t("skill_enabled") : t("skill_disabled")}
+              </Badge>
+            </div>
+            <p className="mt-1 line-clamp-2 text-copy-13 text-muted-foreground">
+              {skill.description || t("skill_no_description")}
+            </p>
+          </div>
         </div>
         <RowMenu onEdit={onEdit} onDelete={onDelete} />
       </div>
 
-      <p className="mt-3 line-clamp-2 min-h-[40px] text-copy-13 text-muted-foreground">
-        {skill.description || t("skill_no_description")}
-      </p>
-
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {targets.length === 0 ? (
-          <Badge variant="outline">{t("skill_unassigned")}</Badge>
-        ) : (
-          targets.map((target) => (
-            <Badge
-              key={target.key}
-              variant={target.category === "lobster" ? "accent" : "outline"}
-            >
-              {target.name}
-            </Badge>
-          ))
-        )}
-        {(skill.files?.length ?? 0) > 1 && (
-          <Badge variant="default">
-            {t("skill_files_count", { count: skill.files!.length })}
-          </Badge>
-        )}
-      </div>
-
-      {skill.requires?.bins?.length ? (
-        <SkillRequires requires={skill.requires} className="mt-3" />
-      ) : null}
-
-      {skill.tags.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {skill.tags.map((tag) => (
-            <Badge key={tag} variant="default">
-              {tag}
-            </Badge>
-          ))}
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <div className="grid grid-cols-2 gap-2">
+          <StatusCell
+            label={t("skill_card_targets")}
+            value={
+              targets.length > 0
+                ? t("skill_targets_count", { count: targets.length })
+                : t("skill_unassigned_short")
+            }
+          />
+          <StatusCell
+            label={t("skill_card_sync_mode")}
+            value={
+              skill.syncMode === "symlink"
+                ? t("skill_symlink_mode")
+                : t("skill_copy_mode")
+            }
+          />
         </div>
-      )}
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <div className="flex items-center gap-2">
-          <Switch checked={skill.enabled} onCheckedChange={onToggle} />
-          <span className="text-label-12 text-muted-foreground">
-            {skill.enabled ? t("skill_enabled") : t("skill_disabled")}
-          </span>
+        <div className="space-y-2">
+          <LabelRow icon={<UploadCloud className="h-3.5 w-3.5" />}>
+            {syncReason}
+          </LabelRow>
+          <div className="flex flex-wrap gap-1.5">
+            {targets.length === 0 ? (
+              <Badge variant="outline">{t("skill_unassigned")}</Badge>
+            ) : (
+              targets.map((target) => (
+                <Badge
+                  key={target.key}
+                  variant={
+                    target.category === "lobster" ? "accent" : "outline"
+                  }
+                >
+                  {target.name}
+                </Badge>
+              ))
+            )}
+          </div>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={syncing || !skill.enabled || targets.length === 0}
-          onClick={onSync}
-        >
-          <RefreshCw className="h-4 w-4" />
-          {t("skill_sync")}
-        </Button>
+
+        <div className="space-y-2">
+          <LabelRow icon={<Tags className="h-3.5 w-3.5" />}>
+            {t("skill_card_metadata")}
+          </LabelRow>
+          <div className="flex flex-wrap gap-1.5">
+            {skill.sourceType === "github" && (
+              <Badge variant="outline" className="max-w-full">
+                <GitBranch className="h-3 w-3" />
+                <span className="truncate">{skill.source ?? "GitHub"}</span>
+              </Badge>
+            )}
+            {(skill.files?.length ?? 0) > 1 && (
+              <Badge variant="default">
+                {t("skill_files_count", { count: skill.files!.length })}
+              </Badge>
+            )}
+            {visibleTags.map((tag) => (
+              <Badge key={tag} variant="default">
+                {tag}
+              </Badge>
+            ))}
+            {hiddenTagCount > 0 && (
+              <Badge variant="outline">
+                {t("skill_more_tags", { count: hiddenTagCount })}
+              </Badge>
+            )}
+            {skill.sourceType !== "github" &&
+              (skill.files?.length ?? 0) <= 1 &&
+              tags.length === 0 && (
+                <Badge variant="outline">{t("skill_no_metadata")}</Badge>
+              )}
+          </div>
+        </div>
+
+        {skill.requires?.bins?.length ? (
+          <SkillRequires requires={skill.requires} />
+        ) : null}
+
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Switch checked={skill.enabled} onCheckedChange={onToggle} />
+            <span className="truncate text-label-12 text-muted-foreground">
+              {skill.enabled ? t("skill_enabled") : t("skill_disabled")}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={syncing || !canSync}
+            onClick={onSync}
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RefreshCw className="h-4 w-4" />
+            )}
+            {t("skill_sync")}
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -443,76 +647,138 @@ function ProjectCard({
   const selectedSkills = skills.filter((skill) =>
     project.skillIds.includes(skill.id)
   );
-  const canSync =
-    project.enabled &&
-    project.projectPath.trim() &&
-    project.agentKeys.length > 0 &&
-    selectedSkills.some((skill) => skill.enabled);
+  const readiness = getProjectReadiness(project, selectedSkills, t);
 
   return (
-    <Card className="flex flex-1 flex-col p-5 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:shadow-geist-md">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <FolderKanban className="h-4 w-4 text-muted-foreground" />
-            <span className="truncate text-label-14 font-medium">
-              {project.name}
-            </span>
+    <Card className="flex min-h-[260px] flex-1 flex-col overflow-hidden transition-[transform,box-shadow,border-color] duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:shadow-geist-md">
+      <div className="flex items-start justify-between gap-3 border-b border-border bg-background-secondary px-4 py-3">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm bg-card text-muted-foreground shadow-geist-sm">
+            <FolderKanban className="h-4 w-4" />
           </div>
-          <p className="mt-1 truncate text-label-12 text-muted-foreground">
-            {project.projectPath}
-          </p>
+          <div className="min-w-0">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h4 className="truncate text-heading-16">{project.name}</h4>
+              <Badge variant={project.enabled ? "success" : "outline"}>
+                {project.enabled ? t("skill_enabled") : t("skill_disabled")}
+              </Badge>
+            </div>
+            <p
+              className="mt-1 truncate font-mono text-label-12 text-muted-foreground"
+              title={project.projectPath || t("skill_project_path_missing")}
+            >
+              {project.projectPath || t("skill_project_path_missing")}
+            </p>
+          </div>
         </div>
         <RowMenu onEdit={onEdit} onDelete={onDelete} />
       </div>
 
-      <div className="mt-4 grid gap-3">
-        <div className="flex flex-wrap gap-1.5">
-          {project.agentKeys.map((key) => (
-            <Badge
-              key={key}
-              variant={
-                getSkillTarget(key)?.category === "lobster"
-                  ? "accent"
-                  : "outline"
-              }
-            >
-              {skillTargetName(key)}
-            </Badge>
-          ))}
+      <div className="flex flex-1 flex-col gap-4 p-4">
+        <div className="grid grid-cols-2 gap-2">
+          <StatusCell
+            label={t("skill_project_agents")}
+            value={t("skill_targets_count", { count: project.agentKeys.length })}
+          />
+          <StatusCell
+            label={t("skill_project_selected")}
+            value={t("skill_project_selected_count", {
+              enabled: readiness.enabledSelectedCount,
+              total: readiness.selectedCount,
+            })}
+          />
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {selectedSkills.length === 0 ? (
-            <Badge variant="outline">{t("skill_unselected")}</Badge>
-          ) : (
-            selectedSkills.map((skill) => (
-              <Badge
-                key={skill.id}
-                variant={skill.enabled ? "default" : "warning"}
-              >
-                {skill.name}
-              </Badge>
-            ))
-          )}
-        </div>
-      </div>
 
-      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-3">
-        <div className="flex items-center gap-2">
-          <Switch checked={project.enabled} onCheckedChange={onToggle} />
-          <span className="text-label-12 text-muted-foreground">
-            {project.syncMode === "symlink" ? t("skill_symlink_mode") : t("skill_copy_mode")}
-          </span>
+        <div className="rounded-sm border border-border bg-background-secondary px-3 py-2">
+          <div className="flex items-center gap-2">
+            {readiness.canSync ? (
+              <CheckCircle2 className="h-4 w-4 text-success" />
+            ) : (
+              <AlertCircle className="h-4 w-4 text-muted-foreground" />
+            )}
+            <span className="text-label-13 font-medium">
+              {readiness.reason}
+            </span>
+          </div>
+          <p className="mt-1 text-label-12 text-muted-foreground">
+            {project.syncMode === "symlink"
+              ? t("skill_project_mode_symlink_hint")
+              : t("skill_project_mode_copy_hint")}
+          </p>
         </div>
-        <Button
-          size="sm"
-          variant="secondary"
-          disabled={syncing || !canSync}
-          onClick={onSync}
-        >
-          <UploadCloud className="h-4 w-4" />
-          {t("skill_sync")}
-        </Button>
+
+        <div className="space-y-2">
+          <LabelRow icon={<FolderKanban className="h-3.5 w-3.5" />}>
+            {t("skill_agent_targets")}
+          </LabelRow>
+          <div className="flex flex-wrap gap-1.5">
+            {project.agentKeys.length === 0 ? (
+              <Badge variant="outline">{t("skill_project_no_agents")}</Badge>
+            ) : (
+              project.agentKeys.map((key) => (
+                <Badge
+                  key={key}
+                  variant={
+                    getSkillTarget(key)?.category === "lobster"
+                      ? "accent"
+                      : "outline"
+                  }
+                >
+                  {skillTargetName(key)}
+                </Badge>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <LabelRow icon={<Boxes className="h-3.5 w-3.5" />}>
+            {t("skill_project_skills")}
+          </LabelRow>
+          <div className="flex flex-wrap gap-1.5">
+            {selectedSkills.length === 0 ? (
+              <Badge variant="outline">{t("skill_unselected")}</Badge>
+            ) : (
+              selectedSkills.slice(0, 6).map((skill) => (
+                <Badge
+                  key={skill.id}
+                  variant={skill.enabled ? "default" : "warning"}
+                >
+                  {skill.name}
+                </Badge>
+              ))
+            )}
+            {selectedSkills.length > 6 && (
+              <Badge variant="outline">
+                {t("skill_more_skills", { count: selectedSkills.length - 6 })}
+              </Badge>
+            )}
+          </div>
+        </div>
+
+        <div className="mt-auto flex items-center justify-between gap-3 border-t border-border pt-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <Switch checked={project.enabled} onCheckedChange={onToggle} />
+            <span className="truncate text-label-12 text-muted-foreground">
+              {project.syncMode === "symlink"
+                ? t("skill_symlink_mode")
+                : t("skill_copy_mode")}
+            </span>
+          </div>
+          <Button
+            size="sm"
+            variant="secondary"
+            disabled={syncing || !readiness.canSync}
+            onClick={onSync}
+          >
+            {syncing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <UploadCloud className="h-4 w-4" />
+            )}
+            {t("skill_sync")}
+          </Button>
+        </div>
       </div>
     </Card>
   );
@@ -528,46 +794,159 @@ function SyncResultPanel({
   const { t } = useTranslation("pages");
   if (!state && !error) return null;
   const ok = state?.results.filter((result) => result.status === "success") ?? [];
-  const failed = state?.results.filter((result) => result.status === "error") ?? [];
+  const failed =
+    state?.results.filter((result) => result.status === "error") ?? [];
 
   return (
-    <div className="mb-5 rounded-md border border-border bg-secondary/45 p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-2 text-label-13 font-medium">
-          {error || failed.length > 0 ? (
-            <XCircle className="h-4 w-4 text-destructive" />
-          ) : (
-            <CheckCircle2 className="h-4 w-4 text-success" />
-          )}
-          {error ? t("skill_sync_failed") : state?.title}
+    <section className="rounded-md border border-border bg-background-secondary p-4 shadow-geist-sm">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-sm bg-card shadow-geist-sm">
+            {error || failed.length > 0 ? (
+              <XCircle className="h-4 w-4 text-destructive" />
+            ) : (
+              <CheckCircle2 className="h-4 w-4 text-success" />
+            )}
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-heading-16">
+              {error ? t("skill_sync_failed") : state?.title}
+            </h3>
+            <p className="mt-1 text-copy-13 text-muted-foreground">
+              {error
+                ? error
+                : t("skill_sync_result_summary", {
+                    success: ok.length,
+                    failed: failed.length,
+                  })}
+            </p>
+          </div>
         </div>
         {state && (
-          <div className="flex gap-2">
-            <Badge variant="success">{t("skill_sync_success", { count: ok.length })}</Badge>
-            {failed.length > 0 && (
-              <Badge variant="destructive">{t("skill_sync_error_count", { count: failed.length })}</Badge>
-            )}
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="success">
+              {t("skill_sync_success", { count: ok.length })}
+            </Badge>
+            <Badge variant={failed.length > 0 ? "destructive" : "outline"}>
+              {t("skill_sync_error_count", { count: failed.length })}
+            </Badge>
           </div>
         )}
       </div>
-      {error && (
-        <p className="mt-2 text-label-12 text-destructive">{error}</p>
-      )}
+
       {failed.length > 0 && (
-        <div className="mt-2 grid gap-1">
-          {failed.slice(0, 4).map((result) => (
-            <p
+        <div className="mt-3 grid gap-2">
+          {failed.slice(0, 5).map((result) => (
+            <div
               key={`${result.skillId}:${result.agentKey}:${result.targetPath}`}
-              className="truncate text-label-12 text-destructive"
-              title={result.error}
+              className="rounded-sm border border-border bg-card px-3 py-2"
             >
-              {result.skillName} / {result.agentName}: {result.error}
-            </p>
+              <div className="flex flex-wrap items-center gap-2 text-label-12 font-medium">
+                <span>{result.skillName}</span>
+                <span className="text-muted-foreground">/</span>
+                <span>{result.agentName}</span>
+                <Badge variant="destructive">{result.scope}</Badge>
+              </div>
+              <p className="mt-1 truncate font-mono text-label-12 text-muted-foreground">
+                {result.targetPath}
+              </p>
+              <p className="mt-1 text-label-12 text-destructive">
+                {result.error}
+              </p>
+            </div>
           ))}
+          {failed.length > 5 && (
+            <p className="text-label-12 text-muted-foreground">
+              {t("skill_sync_more_errors", { count: failed.length - 5 })}
+            </p>
+          )}
         </div>
       )}
+    </section>
+  );
+}
+
+function StatusCell({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-sm border border-border bg-background-secondary px-3 py-2">
+      <div className="text-label-12 text-muted-foreground">{label}</div>
+      <div className="mt-1 truncate text-label-13 font-medium">{value}</div>
     </div>
   );
+}
+
+function LabelRow({
+  icon,
+  children,
+}: {
+  icon: ReactNode;
+  children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 text-label-12 text-muted-foreground">
+      {icon}
+      <span className="truncate">{children}</span>
+    </div>
+  );
+}
+
+function getProjectReadiness(
+  project: SkillProjectConfig,
+  selectedSkills: Skill[],
+  t: Translate
+): ProjectReadiness {
+  const selectedCount = selectedSkills.length;
+  const enabledSelectedCount = selectedSkills.filter((skill) => skill.enabled).length;
+
+  if (!project.enabled) {
+    return {
+      canSync: false,
+      reason: t("skill_project_blocked_disabled"),
+      selectedCount,
+      enabledSelectedCount,
+    };
+  }
+  if (!project.projectPath.trim()) {
+    return {
+      canSync: false,
+      reason: t("skill_project_blocked_path"),
+      selectedCount,
+      enabledSelectedCount,
+    };
+  }
+  if (project.agentKeys.length === 0) {
+    return {
+      canSync: false,
+      reason: t("skill_project_blocked_agents"),
+      selectedCount,
+      enabledSelectedCount,
+    };
+  }
+  if (selectedCount === 0) {
+    return {
+      canSync: false,
+      reason: t("skill_project_blocked_skills"),
+      selectedCount,
+      enabledSelectedCount,
+    };
+  }
+  if (enabledSelectedCount === 0) {
+    return {
+      canSync: false,
+      reason: t("skill_project_blocked_enabled_skills"),
+      selectedCount,
+      enabledSelectedCount,
+    };
+  }
+  return {
+    canSync: true,
+    reason: t("skill_project_sync_ready", {
+      skills: enabledSelectedCount,
+      agents: project.agentKeys.length,
+    }),
+    selectedCount,
+    enabledSelectedCount,
+  };
 }
 
 function RowMenu({
@@ -581,7 +960,11 @@ function RowMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon-sm" aria-label={t("actions", { ns: "common" })}>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={t("actions", { ns: "common" })}
+        >
           <MoreHorizontal className="h-4 w-4" />
         </Button>
       </DropdownMenuTrigger>

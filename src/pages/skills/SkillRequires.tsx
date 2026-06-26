@@ -44,7 +44,7 @@ export function SkillRequires({
 
   return (
     <div className={className}>
-      <div className="flex items-center gap-1.5 text-label-12 text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-1.5 text-label-12 text-muted-foreground">
         <Terminal className="h-3.5 w-3.5" />
         <span>{t("skill_requires_label")}</span>
         {missing > 0 && (
@@ -53,7 +53,7 @@ export function SkillRequires({
           </Badge>
         )}
       </div>
-      <div className="mt-1.5 flex flex-wrap gap-1.5">
+      <div className="mt-1.5 flex flex-wrap gap-1.5 rounded-sm border border-border bg-background-secondary p-2">
         {statuses.map((s) => (
           <Badge
             key={s.name}
