@@ -27,7 +27,13 @@
   - 内置接入指南：OpenAI Python / Node SDK、curl、Codex、Claude Code 一键复制示例
   - 调用监控：实时调用日志、成功率 / P95 耗时 / token 统计与 SVG 图表，支持过滤、清空、导出（JSON/CSV）
 - **Skills**：技能的增删改查、启用开关、标签
-- **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关
+- **Agent（基于 Pi 的智能体）**：基于 [`earendil-works/pi`](https://github.com/earendil-works/pi)（`@earendil-works/pi-agent-core` + `@earendil-works/pi-ai`）的真实 agent，支持多轮 tool loop、流式输出与工具的真正执行（仅桌面端可用）
+  - **模型接入**：经本地 Unified 网关路由（`http://127.0.0.1:<port>/v1`），使用 pi-ai 原生 `openai-completions` provider；运行前需先在 Unified 页面启动网关并启用模型
+  - **内部工具**：`bash` 与文件工具 `read / write / edit / ls / grep`（Rust 实现），按沙箱模式（read-only / workspace-write / danger-full-access）门控，限定在工作目录内
+  - **外部工具（MCP）**：把每个启用的 MCP Server 的 Tools 包装为 agent 工具，经现有 `mcp_inspect` / `mcp_call_tool` 真正执行
+  - **Skill 调用**：Pi 风格——启用的 Skill 以 `<available_skills>` 注入系统提示词，并提供 `load_skill` 工具按需加载内容
+  - **自定义 Agent**：可创建可复用的 `AgentDefinition`（系统提示词 / 模型 / 内部工具 / Skill / MCP / 沙箱 / 温度 / Max Tokens），在输入栏下拉选择，内置最小管理页（增删改查）
+- **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关；支持从标准 `mcpServers` JSON 一键导入（重名自动跳过并提示）；内置 **Inspector**：连接服务器完成 `initialize` 握手，浏览并调用其 Tools（按 JSON Schema 生成参数表单 / 原始 JSON 两种模式）、读取 Resources、获取 Prompts，结果实时展示（仅桌面端可用）
 - **实用工具**：URL 编解码、JSON 预览（尽力解开被转义/双重编码的嵌套字段）、转义/去转义、Unicode 编解码，纯本地计算
 - **设置**：主题切换、数据存储说明
 

@@ -172,3 +172,47 @@ export const MCP_TRANSPORTS: { value: McpTransport; label: string }[] = [
   { value: "sse", label: "mcp_transport_sse" },
   { value: "http", label: "mcp_transport_http" },
 ];
+
+/** Built-in internal tools an agent can be granted. */
+export type AgentInternalToolId =
+  | "bash"
+  | "read"
+  | "write"
+  | "edit"
+  | "ls"
+  | "grep";
+
+export type AgentSandboxMode =
+  | "read-only"
+  | "workspace-write"
+  | "danger-full-access";
+
+/**
+ * A user-defined (or built-in) agent: a reusable bundle of system prompt,
+ * model routing, enabled tools/skills/MCP, and sandbox configuration. Runs on
+ * the Pi runtime via `resolveAgent` / `createAgentRuntime`.
+ */
+export interface AgentDefinition extends BaseEntity {
+  name: string;
+  description: string;
+  systemPrompt: string;
+  /** Exposed Unified-gateway model id (`{connName}/{model}`). */
+  modelId: string;
+  enabledInternalTools: AgentInternalToolId[];
+  enabledSkillIds: string[];
+  enabledMcpServerIds: string[];
+  sandboxMode: AgentSandboxMode;
+  /** Absolute workspace root for file/command tools. Empty = disabled. */
+  workspacePath: string;
+  temperature: number;
+  maxTokens: number;
+}
+
+export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
+  "bash",
+  "read",
+  "write",
+  "edit",
+  "ls",
+  "grep",
+];

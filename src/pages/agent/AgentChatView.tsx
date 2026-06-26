@@ -7,6 +7,8 @@ import {
   Bot,
   Boxes,
   Check,
+  ChevronRight,
+  CircleAlert,
   Database,
   Eraser,
   FileAudio,
@@ -24,9 +26,11 @@ import {
   Sparkles,
   Trash2,
   User,
+  Wrench,
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
+import { MarkdownMessage } from "@/components/agent/MarkdownMessage";
 import { TypingDots } from "@/components/common/Reveal";
 import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
@@ -66,7 +70,18 @@ import {
   useChatStore,
   useSkillStore,
   useMcpStore,
+  useAgentDefStore,
 } from "@/store";
+import { useUnifiedStore } from "@/store/unified";
+import {
+  createAgentRuntime,
+  prewarmMcpServers,
+  GatewayUnavailableError,
+  ModelUnavailableError,
+  type AgentRuntime,
+  type AgentRuntimeCallbacks,
+} from "@/lib/agent";
+import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
@@ -94,12 +109,14 @@ import type {
   MessagePart,
   PersistedChatMessage,
   SandboxMode,
+  ToolCallRecord,
 } from "@/types/chat";
 import {
   PROVIDER_METAS,
   type VolcCredential,
   type GatewayConnection,
   type ApiKey,
+  type AgentDefinition,
 } from "@/types";
 
 interface ConnOption {
@@ -124,6 +141,52 @@ const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
 const STREAM_CONTENT_FLUSH_MS = 50;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
+const DIRECT_AGENT_VALUE = "__direct__";
+const ADHOC_AGENT_ID = "__adhoc__";
+
+/**
+ * Build an in-memory `AgentDefinition` from the current chat session settings.
+ * Used to give the "direct chat" mode real tool execution (skills + MCP) via
+ * the Pi runtime without forcing the user to create a named agent.
+ */
+function buildAdHocAgentDef(
+  settings: ChatSessionSettings,
+  unifiedModelId: string
+): AgentDefinition {
+  const now = new Date().toISOString();
+  return {
+    id: ADHOC_AGENT_ID,
+    createdAt: now,
+    updatedAt: now,
+    name: "",
+    description: "",
+    systemPrompt: settings.system ?? "",
+    modelId: unifiedModelId,
+    enabledInternalTools: [],
+    enabledSkillIds: settings.enabledSkillIds,
+    enabledMcpServerIds: settings.enabledMcpServerIds,
+    sandboxMode: settings.sandboxMode,
+    workspacePath: "",
+    temperature: Number(settings.temperature) || 0,
+    maxTokens: Number(settings.maxTokens) || 4096,
+  };
+}
+
+/** Stable signature so a cached runtime is reused until its config changes. */
+function agentRuntimeSignature(def: AgentDefinition): string {
+  return [
+    def.id,
+    def.modelId,
+    def.systemPrompt,
+    def.enabledInternalTools.join(","),
+    def.enabledSkillIds.join(","),
+    def.enabledMcpServerIds.join(","),
+    def.sandboxMode,
+    def.workspacePath,
+    def.temperature,
+    def.maxTokens,
+  ].join("|");
+}
 
 function providerLabel(provider: string): string {
   const label = PROVIDER_METAS.find((p) => p.id === provider)?.label ?? provider;
@@ -282,6 +345,7 @@ export function AgentChatView() {
   const skills = useSkillStore();
   const mcp = useMcpStore();
   const chat = useChatStore();
+  const agentDefs = useAgentDefStore();
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -292,9 +356,24 @@ export function AgentChatView() {
   const [configOpen, setConfigOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [agentsManagerOpen, setAgentsManagerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const agentRuntimeRef = useRef<AgentRuntime | null>(null);
+  const agentRuntimeMetaRef = useRef<{
+    signature: string;
+    sessionId: string;
+  } | null>(null);
+  const agentTurnRef = useRef<{
+    assistantId: string | null;
+    toolAnchorId: string | null;
+    acc: string;
+    lastFlush: number;
+    toolRecords: Map<string, string>;
+    sessionId: string;
+  } | null>(null);
   const videoPollingRef = useRef<Set<string>>(new Set());
 
   const settings = chat.settings;
@@ -313,7 +392,17 @@ export function AgentChatView() {
     useSkillStore.getState().load();
     useMcpStore.getState().load();
     useChatStore.getState().init();
+    useAgentDefStore.getState().load();
+    void useUnifiedStore.getState().init();
   }, []);
+
+  const selectedAgent = useMemo(
+    () =>
+      selectedAgentId
+        ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
+        : null,
+    [selectedAgentId, agentDefs.items],
+  );
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -378,6 +467,19 @@ export function AgentChatView() {
     () => (volcCred?.apiKeys ?? []).filter((k) => k.key),
     [volcCred]
   );
+  const toolCallsByMessage = useMemo(() => {
+    const map = new Map<string, ToolCallRecord[]>();
+    for (const call of chat.toolCalls) {
+      if (!call.messageId) continue;
+      const list = map.get(call.messageId);
+      if (list) list.push(call);
+      else map.set(call.messageId, [call]);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
+    }
+    return map;
+  }, [chat.toolCalls]);
   const manualModels = useMemo<ModelInfo[]>(
     () =>
       (keyConn?.models ?? []).map((id) => ({
@@ -422,6 +524,18 @@ export function AgentChatView() {
     (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
   );
   const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
+
+  // Warm enabled MCP servers in the background so a healthy server (e.g. a
+  // remote HTTP one) is ready instantly when the user sends, and a slow/broken
+  // one does its connect attempt off the critical path instead of freezing the
+  // first agent turn.
+  const activeMcpKey = activeMcp
+    .map((s) => `${s.id}:${s.transport}:${s.command ?? ""}:${(s.args ?? []).join(",")}:${s.url ?? ""}`)
+    .join("|");
+  useEffect(() => {
+    if (activeMcp.length > 0) prewarmMcpServers(activeMcp);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeMcpKey]);
 
   useEffect(() => {
     setModels(storedModels);
@@ -806,6 +920,12 @@ export function AgentChatView() {
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
   const handleGenerationError = async (e: unknown) => {
+    if (e instanceof GatewayUnavailableError) {
+      return setError(e.message || t("agent_gateway_unavailable"));
+    }
+    if (e instanceof ModelUnavailableError) {
+      return setError(e.message || t("agent_model_unavailable", { message: "" }));
+    }
     const msg = e instanceof Error ? e.message : t("agent_request_failed");
     const currentMessages = useChatStore.getState().messages;
     const last = currentMessages[currentMessages.length - 1];
@@ -1003,6 +1123,168 @@ export function AgentChatView() {
     }
   };
 
+  const runAgentTurn = async (
+    content: string,
+    sessionId: string,
+    def: AgentDefinition,
+  ) => {
+    agentTurnRef.current = {
+      assistantId: null,
+      toolAnchorId: null,
+      acc: "",
+      lastFlush: 0,
+      toolRecords: new Map(),
+      sessionId,
+    };
+
+    const callbacks: AgentRuntimeCallbacks = {
+      onAssistantStart: async () => {
+        const st = agentTurnRef.current;
+        if (!st) return;
+        const msg = await chat.addMessage({
+          role: "assistant",
+          content: "",
+          status: "pending",
+          provider: "unified",
+          modelId: def.modelId,
+        });
+        st.assistantId = msg.id;
+        st.toolAnchorId = msg.id;
+        st.acc = "";
+        st.lastFlush = 0;
+      },
+      onAssistantDelta: async (textContent) => {
+        const st = agentTurnRef.current;
+        if (!st || !st.assistantId) return;
+        st.acc = textContent;
+        const now = Date.now();
+        if (now - st.lastFlush >= STREAM_CONTENT_FLUSH_MS) {
+          st.lastFlush = now;
+          await chat.updateMessage(st.assistantId, { content: textContent });
+        }
+      },
+      onAssistantEnd: async (textContent) => {
+        const st = agentTurnRef.current;
+        if (!st || !st.assistantId) return;
+        await chat.updateMessage(st.assistantId, {
+          content: textContent,
+          status: "complete",
+        });
+        st.assistantId = null;
+      },
+      onToolStart: async ({ toolCallId, toolName, args }) => {
+        const st = agentTurnRef.current;
+        if (!st) return;
+        const rec = await chat.recordToolCall({
+          sessionId: st.sessionId,
+          messageId: st.toolAnchorId ?? st.assistantId ?? undefined,
+          source: toolName.startsWith("mcp__") ? "mcp" : "skill",
+          toolName,
+          title: toolName,
+          argumentsJson: JSON.stringify(args ?? {}),
+          status: "running",
+          startedAt: new Date().toISOString(),
+        });
+        st.toolRecords.set(toolCallId, rec.id);
+      },
+      onToolEnd: async ({ toolCallId, resultText, resultJson, isError }) => {
+        const st = agentTurnRef.current;
+        if (!st) return;
+        const recId = st.toolRecords.get(toolCallId);
+        if (!recId) return;
+        const startedRec = chat.toolCalls.find((c) => c.id === recId);
+        const completedAt = new Date().toISOString();
+        const durationMs = startedRec
+          ? Date.parse(completedAt) - Date.parse(startedRec.startedAt)
+          : undefined;
+        await chat.updateToolCall(recId, {
+          status: isError ? "error" : "success",
+          resultText,
+          resultJson,
+          completedAt,
+          durationMs,
+          error: isError ? resultText : undefined,
+        });
+        st.toolRecords.delete(toolCallId);
+      },
+      onError: async (message) => {
+        const st = agentTurnRef.current;
+        if (st?.assistantId) {
+          await chat.updateMessage(st.assistantId, {
+            status: "error",
+            error: message,
+          });
+          st.assistantId = null;
+        }
+        setError(message);
+      },
+    };
+
+    let runtime = agentRuntimeRef.current;
+    const meta = agentRuntimeMetaRef.current;
+    const signature = agentRuntimeSignature(def);
+    const needNew =
+      !runtime ||
+      meta?.signature !== signature ||
+      meta?.sessionId !== sessionId;
+    if (needNew) {
+      runtime?.abort();
+      runtime = await createAgentRuntime(def, callbacks);
+      agentRuntimeRef.current = runtime;
+      agentRuntimeMetaRef.current = { signature, sessionId };
+      const notices: string[] = [];
+      if (runtime.mcpErrors.length > 0) {
+        notices.push(
+          t("agent_mcp_errors", {
+            servers: runtime.mcpErrors.map((e) => e.server).join(", "),
+          }),
+        );
+      }
+      if (runtime.mcpPending.length > 0) {
+        notices.push(
+          t("agent_mcp_pending", {
+            servers: runtime.mcpPending.join(", "),
+          }),
+        );
+      }
+      if (notices.length > 0) setError(notices.join("\n"));
+    }
+    await runtime!.prompt(content);
+    await runtime!.waitForIdle();
+  };
+
+  /**
+   * Resolve which agent definition (if any) should handle this turn. Returns a
+   * named agent, an ad-hoc agent synthesized from the composer's enabled
+   * skills/MCP, or null to fall back to the direct (non-tool) chat path.
+   */
+  const resolveTurnAgent = (): AgentDefinition | null => {
+    if (selectedAgent) return selectedAgent;
+    if (!settings?.connKey) return null;
+    const wantsTools = activeSkills.length > 0 || activeMcp.length > 0;
+    if (!wantsTools) return null;
+    if (
+      selectedModel &&
+      (isImageGenerationModel(selectedModel) ||
+        isVideoGenerationModel(selectedModel))
+    ) {
+      return null;
+    }
+    const unified = useUnifiedStore.getState();
+    const disabled = new Set(unified.config.disabledModelIds);
+    const exposed = unified.models.find(
+      (m) =>
+        m.connId === settings.connKey &&
+        m.realModel === settings.modelId &&
+        !disabled.has(m.id),
+    );
+    if (!exposed) {
+      setError(t("agent_tools_need_gateway"));
+      return null;
+    }
+    return buildAdHocAgentDef(settings, exposed.id);
+  };
+
   const send = async () => {
     if (sending || !settings) return;
     const content = input.trim();
@@ -1012,6 +1294,7 @@ export function AgentChatView() {
     setError(null);
     const pendingAttachments = attachments;
     const parts = partsFromInput(content, pendingAttachments);
+    const turnAgent = resolveTurnAgent();
     setInput("");
     setAttachments([]);
     setSending(true);
@@ -1023,12 +1306,16 @@ export function AgentChatView() {
         parts,
         attachments: pendingAttachments,
       });
-      await generateAssistantForUser({
-        userMsg,
-        history: [...chat.messages, userMsg],
-        prompt: content,
-        inputAttachments: pendingAttachments,
-      });
+      if (turnAgent) {
+        await runAgentTurn(content, userMsg.sessionId, turnAgent);
+      } else {
+        await generateAssistantForUser({
+          userMsg,
+          history: [...chat.messages, userMsg],
+          prompt: content,
+          inputAttachments: pendingAttachments,
+        });
+      }
     } catch (e) {
       await handleGenerationError(e);
     } finally {
@@ -1037,7 +1324,22 @@ export function AgentChatView() {
     }
   };
 
-  const stop = () => abortRef.current?.abort();
+  const stop = () => {
+    abortRef.current?.abort();
+    agentRuntimeRef.current?.abort();
+  };
+
+  /**
+   * Drop the cached Pi runtime so the next agent turn rebuilds from the current
+   * chat history. Call after any action that rewrites the message list (edit,
+   * delete, retry) to avoid the runtime's internal history diverging from the
+   * persisted conversation.
+   */
+  const resetAgentRuntime = () => {
+    agentRuntimeRef.current?.abort();
+    agentRuntimeRef.current = null;
+    agentRuntimeMetaRef.current = null;
+  };
 
   const retryFromUserMessage = async (message: PersistedChatMessage) => {
     if (sending || !settings) return;
@@ -1045,6 +1347,7 @@ export function AgentChatView() {
     const validationError = validateGenerationInput(prompt, message.attachments);
     if (validationError) return setError(validationError);
     abortRef.current?.abort();
+    resetAgentRuntime();
     setError(null);
     setEditingMessageId(null);
     setSending(true);
@@ -1052,12 +1355,17 @@ export function AgentChatView() {
       await chat.deleteMessagesFrom(message.sessionId, message.id, false);
       const currentMessages = useChatStore.getState().messages;
       const userMsg = currentMessages.find((m) => m.id === message.id) ?? message;
-      await generateAssistantForUser({
-        userMsg,
-        history: currentMessages,
-        prompt,
-        inputAttachments: userMsg.attachments,
-      });
+      const turnAgent = resolveTurnAgent();
+      if (turnAgent) {
+        await runAgentTurn(prompt, userMsg.sessionId, turnAgent);
+      } else {
+        await generateAssistantForUser({
+          userMsg,
+          history: currentMessages,
+          prompt,
+          inputAttachments: userMsg.attachments,
+        });
+      }
     } catch (e) {
       await handleGenerationError(e);
     } finally {
@@ -1078,6 +1386,7 @@ export function AgentChatView() {
     const validationError = validateGenerationInput(prompt, userMsg.attachments);
     if (validationError) return setError(validationError);
     abortRef.current?.abort();
+    resetAgentRuntime();
     setError(null);
     setEditingMessageId(null);
     setSending(true);
@@ -1085,12 +1394,17 @@ export function AgentChatView() {
       await chat.deleteMessagesFrom(message.sessionId, message.id, true);
       const currentMessages = useChatStore.getState().messages;
       const latestUser = currentMessages.find((m) => m.id === userMsg.id) ?? userMsg;
-      await generateAssistantForUser({
-        userMsg: latestUser,
-        history: currentMessages,
-        prompt,
-        inputAttachments: latestUser.attachments,
-      });
+      const turnAgent = resolveTurnAgent();
+      if (turnAgent) {
+        await runAgentTurn(prompt, latestUser.sessionId, turnAgent);
+      } else {
+        await generateAssistantForUser({
+          userMsg: latestUser,
+          history: currentMessages,
+          prompt,
+          inputAttachments: latestUser.attachments,
+        });
+      }
     } catch (e) {
       await handleGenerationError(e);
     } finally {
@@ -1102,6 +1416,7 @@ export function AgentChatView() {
   const deleteFromMessage = async (message: PersistedChatMessage) => {
     if (sending) return;
     abortRef.current?.abort();
+    resetAgentRuntime();
     setError(null);
     setEditingMessageId(null);
     try {
@@ -1126,6 +1441,7 @@ export function AgentChatView() {
     const validationError = validateGenerationInput(prompt, message.attachments);
     if (validationError) return setError(validationError);
     abortRef.current?.abort();
+    resetAgentRuntime();
     setError(null);
     setSending(true);
     try {
@@ -1139,12 +1455,17 @@ export function AgentChatView() {
       setEditingDraft("");
       const currentMessages = useChatStore.getState().messages;
       const userMsg = currentMessages.find((m) => m.id === edited.id) ?? edited;
-      await generateAssistantForUser({
-        userMsg,
-        history: currentMessages,
-        prompt,
-        inputAttachments: userMsg.attachments,
-      });
+      const turnAgent = resolveTurnAgent();
+      if (turnAgent) {
+        await runAgentTurn(prompt, userMsg.sessionId, turnAgent);
+      } else {
+        await generateAssistantForUser({
+          userMsg,
+          history: currentMessages,
+          prompt,
+          inputAttachments: userMsg.attachments,
+        });
+      }
     } catch (e) {
       await handleGenerationError(e);
     } finally {
@@ -1228,6 +1549,7 @@ export function AgentChatView() {
                       <ChatBubble
                         key={m.id}
                         message={m}
+                        toolCalls={toolCallsByMessage.get(m.id)}
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
                         editing={editingThisMessage}
@@ -1358,6 +1680,38 @@ export function AgentChatView() {
                       updateSettings({ enabledMcpServerIds })
                     }
                   />
+                  <div className="flex items-center gap-1">
+                    <Select
+                      value={selectedAgentId ?? DIRECT_AGENT_VALUE}
+                      onValueChange={(v) =>
+                        setSelectedAgentId(v === DIRECT_AGENT_VALUE ? null : v)
+                      }
+                    >
+                      <SelectTrigger className="h-7 w-[150px] gap-1.5 text-label-12">
+                        <Bot className="h-3.5 w-3.5 shrink-0" />
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value={DIRECT_AGENT_VALUE}>
+                          {t("agent_mode_direct")}
+                        </SelectItem>
+                        {agentDefs.items.map((def) => (
+                          <SelectItem key={def.id} value={def.id}>
+                            {def.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-7 w-7"
+                      title={t("agents_manage_title")}
+                      onClick={() => setAgentsManagerOpen(true)}
+                    >
+                      <Settings2 className="h-4 w-4" />
+                    </Button>
+                  </div>
                 </div>
                 {sending ? (
                   <Button
@@ -1375,7 +1729,10 @@ export function AgentChatView() {
                     variant="accent"
                     className="h-8 w-8 rounded-full shadow-geist-md"
                     onClick={send}
-                    disabled={!selectedModel || (!input.trim() && attachments.length === 0)}
+                    disabled={
+                      (!selectedModel && !selectedAgent) ||
+                      (!input.trim() && attachments.length === 0)
+                    }
                     title={t("agent_send")}
                   >
                     <Send className="h-4 w-4" />
@@ -1398,6 +1755,11 @@ export function AgentChatView() {
             />
           </div>
         )}
+
+        <AgentsManagerDialog
+          open={agentsManagerOpen}
+          onOpenChange={setAgentsManagerOpen}
+        />
     </div>
   );
 }
@@ -1882,6 +2244,7 @@ function AttachmentPill({
 
 function ChatBubble({
   message,
+  toolCalls,
   typing,
   streaming,
   editing,
@@ -1895,6 +2258,7 @@ function ChatBubble({
   onRetry,
 }: {
   message: PersistedChatMessage;
+  toolCalls?: ToolCallRecord[];
   typing?: boolean;
   streaming?: boolean;
   editing?: boolean;
@@ -2052,14 +2416,17 @@ function ChatBubble({
             </div>
           ) : (
             <div className="grid gap-2">
-              {visibleContent && (
-                <div className="whitespace-pre-wrap break-words">
-                  {visibleContent}
-                  {streaming && message.status === "pending" && (
-                    <span className="ml-0.5 inline-block h-4 w-[2px] -translate-y-[1px] animate-pulse bg-current align-middle" />
-                  )}
-                </div>
-              )}
+              {visibleContent &&
+                (isUser ? (
+                  <div className="whitespace-pre-wrap break-words">
+                    {visibleContent}
+                  </div>
+                ) : (
+                  <MarkdownMessage
+                    content={visibleContent}
+                    streaming={streaming && message.status === "pending"}
+                  />
+                ))}
               {message.error && (
                 <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
                   {message.error}
@@ -2068,6 +2435,9 @@ function ChatBubble({
             </div>
           )}
         </div>
+        {!isUser && toolCalls && toolCalls.length > 0 && (
+          <ToolCallTrace toolCalls={toolCalls} />
+        )}
         {!editing && (
           <div
             className={cn(
@@ -2110,6 +2480,129 @@ function ChatBubble({
         )}
       </div>
     </motion.div>
+  );
+}
+
+function prettyJson(input: string): string {
+  if (!input) return "";
+  try {
+    return JSON.stringify(JSON.parse(input), null, 2);
+  } catch {
+    return input;
+  }
+}
+
+function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
+  const { t } = useTranslation("pages");
+  return (
+    <div className="mt-0.5 grid gap-1.5">
+      <div className="flex items-center gap-1.5 text-label-12 text-muted-foreground">
+        <Wrench className="h-3 w-3" />
+        <span>{t("agent_tool_trace_title", { count: toolCalls.length })}</span>
+      </div>
+      <div className="grid gap-1.5">
+        {toolCalls.map((call) => (
+          <ToolCallCard key={call.id} call={call} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ToolCallCard({ call }: { call: ToolCallRecord }) {
+  const { t } = useTranslation("pages");
+  const [open, setOpen] = useState(false);
+  const isRunning = call.status === "running";
+  const isError = call.status === "error";
+  const argsText = prettyJson(call.argumentsJson);
+  const hasArgs = argsText && argsText !== "{}";
+  const resultText =
+    call.resultText ??
+    (call.resultJson !== undefined
+      ? JSON.stringify(call.resultJson, null, 2)
+      : "");
+
+  return (
+    <div className="overflow-hidden rounded-sm border border-border bg-secondary/40">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors hover:bg-secondary/70"
+      >
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90"
+          )}
+        />
+        {isRunning ? (
+          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+        ) : isError ? (
+          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
+        ) : (
+          <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+        )}
+        <span className="flex-1 truncate font-mono text-label-12 font-medium">
+          {call.title}
+        </span>
+        <Badge
+          variant={
+            isRunning ? "outline" : isError ? "destructive" : "success"
+          }
+          className="rounded-sm"
+        >
+          {isRunning
+            ? t("agent_tool_status_running")
+            : isError
+              ? t("agent_tool_status_error")
+              : t("agent_tool_status_success")}
+        </Badge>
+        {typeof call.durationMs === "number" && !isRunning && (
+          <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
+            {call.durationMs >= 1000
+              ? `${(call.durationMs / 1000).toFixed(1)}s`
+              : `${call.durationMs}ms`}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="grid gap-2 border-t border-border/70 px-2.5 py-2">
+          {hasArgs && (
+            <div className="grid gap-1">
+              <div className="text-label-12 font-medium text-muted-foreground">
+                {t("agent_tool_arguments")}
+              </div>
+              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-background/70 p-2 font-mono text-label-12 text-foreground">
+                {argsText}
+              </pre>
+            </div>
+          )}
+          {resultText ? (
+            <div className="grid gap-1">
+              <div className="text-label-12 font-medium text-muted-foreground">
+                {t("agent_tool_result")}
+              </div>
+              <pre
+                className={cn(
+                  "max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm p-2 font-mono text-label-12",
+                  isError
+                    ? "bg-destructive/10 text-destructive"
+                    : "bg-background/70 text-foreground"
+                )}
+              >
+                {resultText}
+              </pre>
+            </div>
+          ) : (
+            !isRunning && (
+              <div className="text-label-12 text-muted-foreground">
+                {t("agent_tool_no_result")}
+              </div>
+            )
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 

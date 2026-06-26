@@ -62,6 +62,10 @@ interface ChatState {
   recordToolCall: (
     input: Omit<ToolCallRecord, "id"> & { id?: string }
   ) => Promise<ToolCallRecord>;
+  updateToolCall: (
+    id: string,
+    patch: Partial<Omit<ToolCallRecord, "id" | "sessionId">>
+  ) => Promise<ToolCallRecord | null>;
   recordSandboxRun: (
     input: Omit<SandboxRunRecord, "id"> & { id?: string }
   ) => Promise<SandboxRunRecord>;
@@ -240,6 +244,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const record = await chatRepo.recordToolCall(input);
     set({ toolCalls: [record, ...get().toolCalls] });
     return record;
+  },
+
+  updateToolCall: async (id, patch) => {
+    const updated = await chatRepo.updateToolCall(id, patch);
+    if (updated) {
+      set({
+        toolCalls: get().toolCalls.map((tc) => (tc.id === id ? updated : tc)),
+      });
+    }
+    return updated;
   },
 
   recordSandboxRun: async (input) => {
