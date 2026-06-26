@@ -1,4 +1,4 @@
-import { Braces, Code2, Link2, Type } from "lucide-react";
+import { Braces, Code2, FileText, Hash, KeyRound, Link2, Type } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Card } from "@/components/ui/card";
@@ -7,6 +7,9 @@ import { UrlTool } from "./UrlTool";
 import { JsonTool } from "./JsonTool";
 import { EscapeTool } from "./EscapeTool";
 import { UnicodeTool } from "./UnicodeTool";
+import { Base64Tool } from "./Base64Tool";
+import { HashTool } from "./HashTool";
+import { MarkdownTool } from "./MarkdownTool";
 
 export function ToolsPage() {
   const { t } = useTranslation("pages");
@@ -14,8 +17,11 @@ export function ToolsPage() {
   const tabs = [
     { value: "url", label: t("url_codec"), icon: Link2, Comp: UrlTool },
     { value: "json", label: t("json_viewer"), icon: Braces, Comp: JsonTool },
+    { value: "base64", label: t("base64_tool"), icon: KeyRound, Comp: Base64Tool },
+    { value: "hash", label: t("hash_tool"), icon: Hash, Comp: HashTool },
     { value: "escape", label: t("escape_tool"), icon: Code2, Comp: EscapeTool },
     { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
+    { value: "markdown", label: t("markdown_tool"), icon: FileText, Comp: MarkdownTool },
   ];
 
   return (

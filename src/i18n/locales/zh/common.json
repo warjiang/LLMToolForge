@@ -70,6 +70,8 @@
   "tool_decode_failed": "解码失败",
   "tool_json_parse_failed": "无法解析为 JSON：请检查语法是否正确",
   "tool_json_serialize_failed": "序列化失败（可能存在循环引用）",
+  "tool_base64_decode_invalid": "解码失败：不是有效的 Base64",
+  "tool_hash_failed": "哈希计算失败",
   "skill_sync_requires_tauri": "Skill 文件同步需要在 Tauri 桌面端运行。",
   "read_attachment_failed": "读取附件失败",
   "message_not_found": "消息不存在",

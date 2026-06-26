@@ -70,6 +70,8 @@
   "tool_decode_failed": "Decoding failed",
   "tool_json_parse_failed": "Cannot parse as JSON: please check syntax",
   "tool_json_serialize_failed": "Serialization failed (possible circular reference)",
+  "tool_base64_decode_invalid": "Decoding failed: not valid Base64",
+  "tool_hash_failed": "Hashing failed",
   "skill_sync_requires_tauri": "Skill file sync requires the Tauri desktop runtime.",
   "read_attachment_failed": "Failed to read attachment",
   "message_not_found": "Message not found",
