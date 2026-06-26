@@ -120,6 +120,10 @@ export async function chat(
   const choice = message?.content ?? "";
   return {
     content: typeof choice === "string" ? choice : "",
+    reasoning:
+      typeof message?.reasoning_content === "string" && message.reasoning_content
+        ? message.reasoning_content
+        : undefined,
     toolCalls: Array.isArray(message?.tool_calls)
       ? message.tool_calls
       : undefined,
@@ -229,7 +233,9 @@ export async function* chatStream(
 
 function parseChatChunk(parsed: unknown): ChatStreamChunk | null {
   const p = parsed as {
-    choices?: { delta?: { content?: string } }[];
+    choices?: {
+      delta?: { content?: string; reasoning_content?: string };
+    }[];
     usage?: {
       prompt_tokens?: number;
       completion_tokens?: number;
@@ -237,6 +243,7 @@ function parseChatChunk(parsed: unknown): ChatStreamChunk | null {
     };
   };
   const delta = p.choices?.[0]?.delta?.content ?? "";
+  const reasoningDelta = p.choices?.[0]?.delta?.reasoning_content ?? "";
   const usage = p.usage
     ? {
         promptTokens: p.usage.prompt_tokens,
@@ -244,8 +251,8 @@ function parseChatChunk(parsed: unknown): ChatStreamChunk | null {
         totalTokens: p.usage.total_tokens,
       }
     : undefined;
-  if (!delta && !usage) return null;
-  return { delta, done: false, usage };
+  if (!delta && !reasoningDelta && !usage) return null;
+  return { delta, reasoningDelta: reasoningDelta || undefined, done: false, usage };
 }
 
 function parseResponsesChunk(parsed: unknown): ChatStreamChunk | null {

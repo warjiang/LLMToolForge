@@ -19,5 +19,7 @@ export const useVolcCredentialStore = createCollectionStore(volcCredentialRepo);
 export const useGatewayStore = createCollectionStore(gatewayConnectionRepo);
 export const useAgentDefStore = createCollectionStore(agentDefinitionRepo);
 export { useChatStore } from "./chat";
+export { useDebugStore } from "./debug";
+export { useSessionGroupStore } from "./sessionGroups";
 export { useLocaleStore } from "./locale";
 export { useMarketSettingsStore } from "./marketSettings";
