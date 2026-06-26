@@ -213,6 +213,10 @@ pub struct UnifiedStats {
 struct ManagerInner {
     /// Handle to the running sidecar process, if any.
     child: Option<CommandChild>,
+    /// True when a gateway we did not spawn (e.g. an orphan sidecar from a
+    /// previous app run) is already listening on the port and we adopted it
+    /// instead of spawning a duplicate.
+    external: bool,
     /// Port the running sidecar is bound to.
     running_port: Option<u16>,
     /// Port to bind on the next start.
@@ -231,6 +235,7 @@ impl Default for UnifiedManager {
         Self {
             inner: Arc::new(Mutex::new(ManagerInner {
                 child: None,
+                external: false,
                 running_port: None,
                 pending_port: DEFAULT_PORT,
             })),
@@ -324,6 +329,18 @@ pub async fn unified_api_start(
         write_config_file(&path, &shared)?;
     }
 
+    // A gateway may already be listening on the port — typically an orphan
+    // sidecar left over from a previous app run that still holds the port. Trying
+    // to spawn another one would fail with EADDRINUSE, so adopt the existing one
+    // instead. It watches the same config file, so our routes still apply.
+    if probe_healthy(&manager.client, port).await {
+        let mut inner = manager.inner.lock().await;
+        inner.external = true;
+        inner.running_port = Some(port);
+        drop(inner);
+        return status(&manager).await;
+    }
+
     let sidecar = app
         .shell()
         .sidecar(SIDECAR_NAME)
@@ -362,6 +379,7 @@ pub async fn unified_api_start(
                     eprintln!("[gateway] sidecar exited: {:?}", payload.code);
                     let mut inner = inner_handle.lock().await;
                     inner.child = None;
+                    inner.external = false;
                     inner.running_port = None;
                     break;
                 }
@@ -373,6 +391,7 @@ pub async fn unified_api_start(
     {
         let mut inner = manager.inner.lock().await;
         inner.child = Some(child);
+        inner.external = false;
         inner.running_port = Some(port);
     }
 
@@ -394,6 +413,9 @@ pub async fn unified_api_stop(
         if let Some(child) = inner.child.take() {
             let _ = child.kill();
         }
+        // An adopted (external) gateway is not ours to kill; just stop tracking
+        // it so the UI reflects a stopped state.
+        inner.external = false;
         inner.running_port = None;
     }
     status(&manager).await
@@ -455,6 +477,20 @@ async fn handle_stdout_line(shared: &Arc<RwLock<SharedState>>, app: &tauri::AppH
     }
 }
 
+/// One-shot health probe: returns true if a gateway is already answering on the
+/// port. Used to detect an externally-running gateway before spawning.
+async fn probe_healthy(client: &reqwest::Client, port: u16) -> bool {
+    let url = format!("http://127.0.0.1:{port}/health");
+    matches!(
+        client
+            .get(&url)
+            .timeout(std::time::Duration::from_millis(500))
+            .send()
+            .await,
+        Ok(resp) if resp.status().is_success()
+    )
+}
+
 /// Poll the sidecar `/health` endpoint until it responds or the timeout elapses.
 async fn wait_healthy(client: &reqwest::Client, port: u16) -> Result<(), String> {
     let url = format!("http://127.0.0.1:{port}/health");
@@ -483,7 +519,7 @@ async fn status(manager: &tauri::State<'_, UnifiedManager>) -> Result<UnifiedSta
     let mut models: Vec<String> = shared.routes.keys().cloned().collect();
     models.sort();
     Ok(UnifiedStatus {
-        running: inner.child.is_some(),
+        running: inner.child.is_some() || inner.external,
         port: inner.running_port.unwrap_or(inner.pending_port),
         route_count: shared.routes.len(),
         has_local_key: shared.local_key.is_some(),

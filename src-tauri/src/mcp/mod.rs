@@ -9,15 +9,20 @@
 //! - `http`: the Streamable HTTP transport (POST + optional `text/event-stream`).
 //! - `sse`: the legacy HTTP+SSE transport (GET stream + POST endpoint).
 //!
-//! Each Tauri command opens a fresh session, performs the requested action and
-//! tears the connection down, which keeps the surface stateless and robust.
+//! Sessions are pooled by [`McpSessions`] (a Tauri-managed state) and keyed by
+//! the server config, so the (potentially slow) connect + `initialize` handshake
+//! happens once per server and is reused across `inspect` / `call` / `read` /
+//! `get` requests. Idle sessions are evicted after [`SESSION_TTL`]; a stale or
+//! dropped connection is transparently reopened and the failing request retried
+//! once.
 
 use std::collections::HashMap;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use tauri::State;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout};
 use tokio::sync::{oneshot, Mutex};
@@ -27,6 +32,8 @@ const PROTOCOL_VERSION: &str = "2025-06-18";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_NAME: &str = "LLMToolForge Inspector";
+/// Idle lifetime after which a pooled session is closed and reopened on demand.
+const SESSION_TTL: Duration = Duration::from_secs(300);
 
 /// Subset of the persisted MCP server record the inspector needs to connect.
 #[derive(Debug, Clone, Deserialize)]
@@ -582,90 +589,237 @@ async fn collect_list(session: &mut Session, method: &str, key: &str) -> Vec<Val
 }
 
 // ---------------------------------------------------------------------------
+// Session pool
+// ---------------------------------------------------------------------------
+
+/// A live, initialized session kept alive for reuse.
+struct PooledSession {
+    session: Session,
+    /// The `initialize` result captured when the session was opened.
+    init: Value,
+    last_used: Instant,
+}
+
+/// Tauri-managed pool of live MCP sessions, keyed by server config.
+///
+/// Reusing a session avoids the connect + `initialize` round-trip (and, for
+/// stdio servers, a full process spawn) on every command, which is the dominant
+/// cost when an agent inspects a server and then calls its tools repeatedly.
+#[derive(Default)]
+pub struct McpSessions {
+    map: Mutex<HashMap<String, Arc<Mutex<PooledSession>>>>,
+}
+
+/// Stable identity for a server config, so equivalent configs share a session.
+fn session_key(cfg: &McpServerConfig) -> String {
+    let mut env: Vec<(&String, &String)> = cfg.env.iter().collect();
+    env.sort();
+    format!(
+        "{}\u{1}{}\u{1}{}\u{1}{}\u{1}{:?}",
+        cfg.transport,
+        cfg.command.as_deref().unwrap_or(""),
+        cfg.url.as_deref().unwrap_or(""),
+        cfg.args.join("\u{2}"),
+        env,
+    )
+}
+
+impl McpSessions {
+    /// Return a live session for `cfg`, opening one if none is cached. The bool
+    /// is `true` when the session was freshly opened (so callers can skip a
+    /// reconnect-retry that would needlessly re-spawn a slow/broken server).
+    /// Also sweeps idle sessions so long-lived processes (stdio children) are
+    /// reaped.
+    async fn acquire(
+        &self,
+        cfg: &McpServerConfig,
+    ) -> Result<(Arc<Mutex<PooledSession>>, bool), String> {
+        let key = session_key(cfg);
+        {
+            let mut map = self.map.lock().await;
+            let now = Instant::now();
+            // Drop sessions that have been idle past the TTL. Entries currently
+            // in use (locked) are kept; their `last_used` is refreshed on use.
+            map.retain(|_, entry| match entry.try_lock() {
+                Ok(pooled) => now.duration_since(pooled.last_used) < SESSION_TTL,
+                Err(_) => true,
+            });
+            if let Some(existing) = map.get(&key) {
+                return Ok((existing.clone(), false));
+            }
+        }
+
+        // Open outside the map lock so a slow handshake doesn't block other
+        // servers, then double-check in case of a concurrent open.
+        let (session, init) = Session::open(cfg).await?;
+        let pooled = Arc::new(Mutex::new(PooledSession {
+            session,
+            init,
+            last_used: Instant::now(),
+        }));
+        let mut map = self.map.lock().await;
+        if let Some(existing) = map.get(&key) {
+            return Ok((existing.clone(), false));
+        }
+        map.insert(key, pooled.clone());
+        Ok((pooled, true))
+    }
+
+    /// Drop the cached session for `cfg` (e.g. after a transport error), forcing
+    /// the next request to reconnect.
+    async fn evict(&self, cfg: &McpServerConfig) {
+        self.map.lock().await.remove(&session_key(cfg));
+    }
+}
+
+/// Run `op` against a pooled session. If the session was *reused* (and may have
+/// gone stale) and the request fails, evict it and retry once with a fresh
+/// session. A freshly-opened session is not retried, so a slow/broken server is
+/// not connected twice per call.
+async fn with_session<T, F, Fut>(
+    sessions: &McpSessions,
+    cfg: &McpServerConfig,
+    op: F,
+) -> Result<T, String>
+where
+    F: Fn(Arc<Mutex<PooledSession>>) -> Fut,
+    Fut: std::future::Future<Output = Result<T, String>>,
+{
+    let (pooled, fresh) = sessions.acquire(cfg).await?;
+    match op(pooled).await {
+        Ok(value) => Ok(value),
+        Err(first) if !fresh => {
+            sessions.evict(cfg).await;
+            let (pooled, _) = sessions
+                .acquire(cfg)
+                .await
+                .map_err(|reopen| format!("{first} (重连失败: {reopen})"))?;
+            op(pooled).await
+        }
+        Err(first) => {
+            // The connection was just opened; a failure is unlikely to be a
+            // stale-session problem, so surface it without re-spawning.
+            sessions.evict(cfg).await;
+            Err(first)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tauri commands
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub async fn mcp_inspect(config: McpServerConfig) -> Result<InspectSnapshot, String> {
-    let (mut session, init) = Session::open(&config).await?;
+pub async fn mcp_inspect(
+    sessions: State<'_, McpSessions>,
+    config: McpServerConfig,
+) -> Result<InspectSnapshot, String> {
+    with_session(&sessions, &config, |pooled| async move {
+        let mut guard = pooled.lock().await;
+        guard.last_used = Instant::now();
+        let init = guard.init.clone();
+        let session = &mut guard.session;
 
-    let capabilities = init.get("capabilities").cloned().unwrap_or(json!({}));
-    let has = |key: &str| capabilities.get(key).is_some();
+        let capabilities = init.get("capabilities").cloned().unwrap_or(json!({}));
+        let has = |key: &str| capabilities.get(key).is_some();
 
-    // Tools are the primary inspector feature; attempt the listing even when a
-    // server under-advertises its capabilities (errors yield an empty list).
-    let tools = collect_list(&mut session, "tools/list", "tools").await;
-    let (resources, resource_templates) = if has("resources") {
-        (
-            collect_list(&mut session, "resources/list", "resources").await,
-            collect_list(
-                &mut session,
-                "resources/templates/list",
-                "resourceTemplates",
+        // Tools are the primary inspector feature; attempt the listing even when
+        // a server under-advertises its capabilities (errors yield an empty list).
+        let tools = collect_list(session, "tools/list", "tools").await;
+        let (resources, resource_templates) = if has("resources") {
+            (
+                collect_list(session, "resources/list", "resources").await,
+                collect_list(session, "resources/templates/list", "resourceTemplates").await,
             )
-            .await,
-        )
-    } else {
-        (Vec::new(), Vec::new())
-    };
-    let prompts = if has("prompts") {
-        collect_list(&mut session, "prompts/list", "prompts").await
-    } else {
-        Vec::new()
-    };
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        let prompts = if has("prompts") {
+            collect_list(session, "prompts/list", "prompts").await
+        } else {
+            Vec::new()
+        };
 
-    Ok(InspectSnapshot {
-        protocol_version: init
-            .get("protocolVersion")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        server_info: init.get("serverInfo").cloned().unwrap_or(json!({})),
-        capabilities,
-        instructions: init
-            .get("instructions")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        tools,
-        resources,
-        resource_templates,
-        prompts,
+        Ok(InspectSnapshot {
+            protocol_version: init
+                .get("protocolVersion")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            server_info: init.get("serverInfo").cloned().unwrap_or(json!({})),
+            capabilities,
+            instructions: init
+                .get("instructions")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            tools,
+            resources,
+            resource_templates,
+            prompts,
+        })
     })
+    .await
 }
 
 #[tauri::command]
 pub async fn mcp_call_tool(
+    sessions: State<'_, McpSessions>,
     config: McpServerConfig,
     name: String,
     arguments: Value,
 ) -> Result<Value, String> {
-    let (mut session, _) = Session::open(&config).await?;
-    session
-        .request(
-            "tools/call",
-            json!({ "name": name, "arguments": arguments }),
-        )
-        .await
+    with_session(&sessions, &config, |pooled| {
+        let name = name.clone();
+        let arguments = arguments.clone();
+        async move {
+            let mut guard = pooled.lock().await;
+            guard.last_used = Instant::now();
+            guard
+                .session
+                .request("tools/call", json!({ "name": name, "arguments": arguments }))
+                .await
+        }
+    })
+    .await
 }
 
 #[tauri::command]
-pub async fn mcp_read_resource(config: McpServerConfig, uri: String) -> Result<Value, String> {
-    let (mut session, _) = Session::open(&config).await?;
-    session
-        .request("resources/read", json!({ "uri": uri }))
-        .await
+pub async fn mcp_read_resource(
+    sessions: State<'_, McpSessions>,
+    config: McpServerConfig,
+    uri: String,
+) -> Result<Value, String> {
+    with_session(&sessions, &config, |pooled| {
+        let uri = uri.clone();
+        async move {
+            let mut guard = pooled.lock().await;
+            guard.last_used = Instant::now();
+            guard
+                .session
+                .request("resources/read", json!({ "uri": uri }))
+                .await
+        }
+    })
+    .await
 }
 
 #[tauri::command]
 pub async fn mcp_get_prompt(
+    sessions: State<'_, McpSessions>,
     config: McpServerConfig,
     name: String,
     arguments: Value,
 ) -> Result<Value, String> {
-    let (mut session, _) = Session::open(&config).await?;
-    session
-        .request(
-            "prompts/get",
-            json!({ "name": name, "arguments": arguments }),
-        )
-        .await
+    with_session(&sessions, &config, |pooled| {
+        let name = name.clone();
+        let arguments = arguments.clone();
+        async move {
+            let mut guard = pooled.lock().await;
+            guard.last_used = Instant::now();
+            guard
+                .session
+                .request("prompts/get", json!({ "name": name, "arguments": arguments }))
+                .await
+        }
+    })
+    .await
 }

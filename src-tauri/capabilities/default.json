@@ -19,7 +19,9 @@
         { "url": "https://*.volces.com/*" },
         { "url": "https://*.volcengineapi.com/*" },
         { "url": "http://*/*" },
-        { "url": "https://*/*" }
+        { "url": "https://*/*" },
+        { "url": "http://*:*/*" },
+        { "url": "https://*:*/*" }
       ]
     }
   ]

@@ -855,6 +855,61 @@ class ChatRepository {
     return toolCall;
   }
 
+  async updateToolCall(
+    id: string,
+    patch: Partial<Omit<ToolCallRecord, "id" | "sessionId">>
+  ): Promise<ToolCallRecord | null> {
+    await this.ensureInit();
+    if (!isTauri()) {
+      const state = readFallback();
+      let updated: ToolCallRecord | null = null;
+      state.toolCalls = state.toolCalls.map((tc) => {
+        if (tc.id !== id) return tc;
+        updated = { ...tc, ...patch };
+        return updated;
+      });
+      if (updated) writeFallback(state);
+      return updated;
+    }
+    const sets: string[] = [];
+    const values: unknown[] = [];
+    const map: Record<string, string> = {
+      messageId: "message_id",
+      source: "source",
+      toolName: "tool_name",
+      title: "title",
+      argumentsJson: "arguments_json",
+      resultText: "result_text",
+      resultJson: "result_json",
+      status: "status",
+      startedAt: "started_at",
+      completedAt: "completed_at",
+      durationMs: "duration_ms",
+      error: "error",
+    };
+    for (const [key, column] of Object.entries(map)) {
+      if (!(key in patch)) continue;
+      const raw = (patch as Record<string, unknown>)[key];
+      sets.push(`${column} = $${sets.length + 1}`);
+      values.push(key === "resultJson" ? stringify(raw) : (raw ?? null));
+    }
+    if (sets.length === 0) return null;
+    values.push(id);
+    await (
+      await this.db()
+    ).execute(
+      `UPDATE tool_calls SET ${sets.join(", ")} WHERE id = $${values.length}`,
+      values
+    );
+    const rows = await (
+      await this.db()
+    ).select<Record<string, unknown>[]>(
+      `SELECT * FROM tool_calls WHERE id = $1`,
+      [id]
+    );
+    return rows[0] ? rowToToolCall(rows[0]) : null;
+  }
+
   async recordSandboxRun(record: Omit<SandboxRunRecord, "id"> & { id?: string }) {
     await this.ensureInit();
     const run: SandboxRunRecord = { ...record, id: record.id ?? uid("run") };

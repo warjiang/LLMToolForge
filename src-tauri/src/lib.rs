@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 use wait_timeout::ChildExt;
 
+mod fs_tools;
 mod mcp;
 mod unified;
 
@@ -423,9 +424,15 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(unified::UnifiedManager::default())
+        .manage(mcp::McpSessions::default())
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
             sync_skills_to_targets,
+            fs_tools::fs_read,
+            fs_tools::fs_write,
+            fs_tools::fs_edit,
+            fs_tools::fs_list,
+            fs_tools::fs_grep,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,
