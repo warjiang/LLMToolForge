@@ -104,3 +104,36 @@ Centered Playground chat content and composer, moved model/tool/attach/send cont
 ### Next Steps
 
 - None - task complete
+
+
+## Session 4: Skill management page redesign
+
+**Date**: 2026-06-26
+**Task**: Skill management page redesign
+**Branch**: `feat/chat-ui`
+
+### Summary
+
+Redesigned the Skills management page and related dialogs with workstation-style summaries, denser cards, improved sync/result states, GitHub-only token UI, and localized copy.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `baef515` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
