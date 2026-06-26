@@ -72,8 +72,10 @@ interface ChatState {
 }
 
 function titleFromFirstMessage(content: string): string {
-  const title = content.trim().replace(/\s+/g, " ").slice(0, 28);
-  return title || i18n.t("pages:chat_new_session");
+  const normalized = content.trim().replace(/\s+/g, " ");
+  if (!normalized) return i18n.t("pages:chat_new_session");
+  const title = normalized.slice(0, 28);
+  return normalized.length > 28 ? `${title}…` : title;
 }
 
 async function loadIntoState(set: (patch: Partial<ChatState>) => void, id: string) {
@@ -172,6 +174,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       sessionId = get().activeSessionId;
     }
     if (!sessionId) throw new Error(i18n.t("pages:chat_no_session"));
+    const isFirstUserMessage =
+      input.role === "user" &&
+      !get().messages.some((m) => m.role === "user");
     const normalizedParts =
       input.parts ??
       (input.content
@@ -191,8 +196,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     });
     const messages = [...get().messages, message];
     set({ messages });
-    const active = get().sessions.find((s) => s.id === sessionId);
-    if (active?.title === i18n.t("pages:chat_new_session") && input.role === "user") {
+    if (isFirstUserMessage && input.content.trim()) {
       const title = titleFromFirstMessage(input.content);
       await get().renameSession(sessionId, title);
     }

@@ -137,6 +137,8 @@ const migrations = [
     role TEXT NOT NULL,
     status TEXT NOT NULL,
     content TEXT NOT NULL DEFAULT '',
+    reasoning TEXT,
+    reasoning_ms INTEGER,
     conn_key TEXT,
     provider TEXT,
     model_id TEXT,
@@ -226,7 +228,23 @@ class ChatRepository {
     for (const sql of migrations) {
       await db.execute(sql);
     }
+    await this.ensureColumns(db);
     this.initialized = true;
+  }
+
+  private async ensureColumns(db: SqlDatabase): Promise<void> {
+    const wanted: { table: string; column: string; ddl: string }[] = [
+      { table: "messages", column: "reasoning", ddl: "ALTER TABLE messages ADD COLUMN reasoning TEXT" },
+      { table: "messages", column: "reasoning_ms", ddl: "ALTER TABLE messages ADD COLUMN reasoning_ms INTEGER" },
+    ];
+    for (const { table, column, ddl } of wanted) {
+      const cols = await db.select<{ name: string }[]>(
+        `PRAGMA table_info(${table})`
+      );
+      if (!cols.some((c) => c.name === column)) {
+        await db.execute(ddl);
+      }
+    }
   }
 
   private async db(): Promise<SqlDatabase> {
@@ -566,7 +584,7 @@ class ChatRepository {
     patch: Partial<
       Pick<
         PersistedChatMessage,
-        "content" | "status" | "usage" | "raw" | "error" | "connKey" | "provider" | "modelId" | "paramsJson"
+        "content" | "reasoning" | "reasoningMs" | "status" | "usage" | "raw" | "error" | "connKey" | "provider" | "modelId" | "paramsJson"
       >
     >
   ): Promise<void> {
@@ -593,8 +611,10 @@ class ChatRepository {
         provider = COALESCE($7, provider),
         model_id = COALESCE($8, model_id),
         params_json = COALESCE($9, params_json),
-        updated_at = $10
-      WHERE id = $11`,
+        reasoning = COALESCE($10, reasoning),
+        reasoning_ms = COALESCE($11, reasoning_ms),
+        updated_at = $12
+      WHERE id = $13`,
       [
         patch.content ?? null,
         patch.status ?? null,
@@ -605,6 +625,8 @@ class ChatRepository {
         patch.provider ?? null,
         patch.modelId ?? null,
         patch.paramsJson ?? null,
+        patch.reasoning ?? null,
+        patch.reasoningMs ?? null,
         updatedAt,
         id,
       ]
@@ -1064,6 +1086,9 @@ function rowToMessage(
     role: row.role as PersistedChatMessage["role"],
     status: row.status as PersistedChatMessage["status"],
     content: String(row.content ?? ""),
+    reasoning: row.reasoning ? String(row.reasoning) : undefined,
+    reasoningMs:
+      row.reasoning_ms == null ? undefined : Number(row.reasoning_ms),
     parts,
     attachments,
     connKey: row.conn_key ? String(row.conn_key) : undefined,

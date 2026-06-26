@@ -102,6 +102,7 @@ export interface ChatUsage {
 
 export interface ChatResult {
   content: string;
+  reasoning?: string;
   toolCalls?: ToolCall[];
   usage?: ChatUsage;
   raw?: unknown;
@@ -168,6 +169,7 @@ export interface VideoGenerationTaskRequest {
 /** Incremental chunk emitted during streaming. */
 export interface ChatStreamChunk {
   delta: string;
+  reasoningDelta?: string;
   done: boolean;
   usage?: ChatUsage;
 }

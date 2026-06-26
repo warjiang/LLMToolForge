@@ -69,6 +69,8 @@ export interface PersistedChatMessage {
   role: PersistedMessageRole;
   status: MessageStatus;
   content: string;
+  reasoning?: string;
+  reasoningMs?: number;
   parts: MessagePart[];
   attachments: ChatAttachment[];
   connKey?: string;

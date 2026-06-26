@@ -49,6 +49,27 @@ export function formatDate(value: string | number | Date): string {
   });
 }
 
+function pad2(n: number): string {
+  return n < 10 ? `0${n}` : String(n);
+}
+
+// Compact single-line stamp: 2026-06-26 21:14:05. Locale-stable, sortable, never wraps.
+export function formatDateTime(value: string | number | Date): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "-";
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ` +
+    `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`
+  );
+}
+
+// Time-of-day only, for per-message stamps: 21:14.
+export function formatTime(value: string | number | Date): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
 export function maskSecret(secret: string, visible = 4): string {
   if (!secret) return "";
   if (secret.length <= visible) return "•".repeat(secret.length);

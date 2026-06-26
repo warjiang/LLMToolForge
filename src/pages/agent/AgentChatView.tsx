@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { ComponentType, ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
@@ -6,32 +7,35 @@ import i18n from "@/i18n/config";
 import {
   Bot,
   Boxes,
+  Bug,
   Check,
   ChevronRight,
   CircleAlert,
+  Compass,
   Database,
   Eraser,
   FileAudio,
   FileText,
   FileVideo,
+  Code2,
+  Lightbulb,
+  ListChecks,
   Loader2,
+  Paperclip,
   Pencil,
-  Plus,
-  Play,
   RefreshCcw,
   RotateCcw,
   Send,
   Server,
   Settings2,
-  Sparkles,
+  SquareTerminal,
   Trash2,
-  User,
   Wrench,
   X,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { MarkdownMessage } from "@/components/agent/MarkdownMessage";
-import { TypingDots } from "@/components/common/Reveal";
+import { TypingDots, Reveal } from "@/components/common/Reveal";
 import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
   ModelIcon,
@@ -72,6 +76,7 @@ import {
   useMcpStore,
   useAgentDefStore,
 } from "@/store";
+import { useDebugStore } from "@/store/debug";
 import { useUnifiedStore } from "@/store/unified";
 import {
   createAgentRuntime,
@@ -82,7 +87,7 @@ import {
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
-import { cn, uid } from "@/lib/utils";
+import { cn, formatTime, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
@@ -143,6 +148,8 @@ const STREAM_CONTENT_FLUSH_MS = 50;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 const DIRECT_AGENT_VALUE = "__direct__";
 const ADHOC_AGENT_ID = "__adhoc__";
+// Direct-chat / custom-agent picker is hidden from the composer for now.
+const SHOW_AGENT_PICKER = false;
 
 /**
  * Build an in-memory `AgentDefinition` from the current chat session settings.
@@ -346,6 +353,7 @@ export function AgentChatView() {
   const mcp = useMcpStore();
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
+  const debug = useDebugStore((s) => s.debug);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -356,6 +364,9 @@ export function AgentChatView() {
   const [configOpen, setConfigOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
+  const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
+  const [titleEditing, setTitleEditing] = useState(false);
+  const [titleDraft, setTitleDraft] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentsManagerOpen, setAgentsManagerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -480,6 +491,58 @@ export function AgentChatView() {
     }
     return map;
   }, [chat.toolCalls]);
+  const turns = useMemo(() => {
+    const list: { id: string; index: number; question: string }[] = [];
+    let n = 0;
+    for (const m of chat.messages) {
+      if (m.role === "user") {
+        n += 1;
+        list.push({
+          id: m.id,
+          index: n,
+          question: m.content.trim() || t("agent_turn_empty"),
+        });
+      }
+    }
+    return list;
+  }, [chat.messages, t]);
+  useEffect(() => {
+    if (turns.length === 0) {
+      setActiveTurnId(null);
+      return;
+    }
+    setActiveTurnId((prev) =>
+      prev && turns.some((turn) => turn.id === prev)
+        ? prev
+        : turns[turns.length - 1].id
+    );
+  }, [turns]);
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root || turns.length === 0) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const id = entry.target.getAttribute("data-turn-id");
+            if (id) setActiveTurnId(id);
+          }
+        }
+      },
+      { root, rootMargin: "0px 0px -78% 0px", threshold: 0 }
+    );
+    for (const turn of turns) {
+      const el = document.getElementById(`turn-anchor-${turn.id}`);
+      if (el) observer.observe(el);
+    }
+    return () => observer.disconnect();
+  }, [turns]);
+  const scrollToTurn = (id: string) => {
+    const el = document.getElementById(`turn-anchor-${id}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setActiveTurnId(id);
+  };
   const manualModels = useMemo<ModelInfo[]>(
     () =>
       (keyConn?.models ?? []).map((id) => ({
@@ -1085,16 +1148,36 @@ export function AgentChatView() {
 
     if (settings.streaming && adapter.chatStream && tools.length === 0) {
       let acc = "";
+      let reasoningAcc = "";
+      let reasoningStart = 0;
+      let reasoningEnd = 0;
       let lastFlush = 0;
       for await (const chunk of adapter.chatStream(req, cred)) {
+        if (chunk.reasoningDelta) {
+          if (!reasoningStart) reasoningStart = Date.now();
+          reasoningAcc += chunk.reasoningDelta;
+          reasoningEnd = Date.now();
+        }
         acc += chunk.delta;
         const now = Date.now();
         if (now - lastFlush >= STREAM_CONTENT_FLUSH_MS) {
           lastFlush = now;
-          await chat.updateMessage(assistant.id, { content: acc });
+          await chat.updateMessage(assistant.id, {
+            content: acc,
+            reasoning: reasoningAcc || undefined,
+          });
         }
       }
-      await chat.updateMessage(assistant.id, { content: acc, status: "complete" });
+      const reasoningMs =
+        reasoningStart && reasoningEnd > reasoningStart
+          ? reasoningEnd - reasoningStart
+          : undefined;
+      await chat.updateMessage(assistant.id, {
+        content: acc,
+        status: "complete",
+        reasoning: reasoningAcc || undefined,
+        reasoningMs,
+      });
     } else {
       const res = await adapter.chat(req, cred);
       await chat.updateMessage(assistant.id, {
@@ -1102,6 +1185,7 @@ export function AgentChatView() {
         status: "complete",
         usage: res.usage,
         raw: res.raw,
+        reasoning: res.reasoning,
       });
       if (res.toolCalls?.length) {
         for (const call of res.toolCalls) {
@@ -1432,7 +1516,37 @@ export function AgentChatView() {
   };
 
   const saveEditedMessage = async (message: PersistedChatMessage) => {
-    if (sending || message.role !== "user") return;
+    if (sending) return;
+
+    // Debug-only: edit an agent reply in place. No re-run, no truncation of
+    // the conversation after it. Gated by the global debug switch.
+    if (message.role === "assistant") {
+      if (!debug) {
+        setEditingMessageId(null);
+        setEditingDraft("");
+        return;
+      }
+      const content = editingDraft.trim();
+      if (!content) {
+        setError(t("agent_edit_empty"));
+        return;
+      }
+      setError(null);
+      try {
+        await chat.replaceMessageContent(
+          message.id,
+          content,
+          editedPartsForMessage(message, content)
+        );
+        setEditingMessageId(null);
+        setEditingDraft("");
+      } catch (e) {
+        setError(e instanceof Error ? e.message : t("agent_request_failed"));
+      }
+      return;
+    }
+
+    if (message.role !== "user") return;
     const prompt = editingDraft.trim();
     if (!prompt && message.attachments.length === 0) {
       setError(t("agent_edit_empty"));
@@ -1490,36 +1604,54 @@ export function AgentChatView() {
     <div className="flex h-full min-h-0 w-full [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
       <section className="flex min-h-0 flex-1 flex-col bg-background">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent-subtle text-accent">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="truncate text-label-13 font-medium">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <div className="min-w-0">
+              {titleEditing ? (
+                <Input
+                  autoFocus
+                  value={titleDraft}
+                  onChange={(e) => setTitleDraft(e.target.value)}
+                  onBlur={() => {
+                    if (activeSession) chat.renameSession(activeSession.id, titleDraft);
+                    setTitleEditing(false);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      if (activeSession) chat.renameSession(activeSession.id, titleDraft);
+                      setTitleEditing(false);
+                    }
+                    if (e.key === "Escape") setTitleEditing(false);
+                  }}
+                  className="h-7 w-[min(22rem,50vw)] text-heading-14"
+                />
+              ) : (
+                <button
+                  type="button"
+                  disabled={!activeSession}
+                  onClick={() => {
+                    if (!activeSession) return;
+                    setTitleDraft(activeSession.title);
+                    setTitleEditing(true);
+                  }}
+                  title={activeSession ? t("rename_session", { ns: "common" }) : undefined}
+                  className="block max-w-full truncate rounded-sm text-left text-heading-14 text-foreground transition-colors hover:text-foreground/70 disabled:cursor-default disabled:hover:text-foreground"
+                >
                   {activeSession?.title ?? t("agent_new_session")}
-                </div>
-                <div className="truncate text-label-12 text-muted-foreground">
-                  <span className="inline-flex min-w-0 items-center gap-1.5">
-                    {selectedModel && <ModelIcon model={selectedModel} className="h-3.5 w-3.5" />}
-                    <span className="truncate">
-                      {t("agent_message_count", { count: chat.messages.length })}
-                      {selectedModel ? ` · ${selectedModel.name}` : ` · ${t("agent_no_model_selected")}`}
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                size="icon-sm"
-                variant={configOpen ? "secondary" : "ghost"}
-                onClick={() => setConfigOpen((open) => !open)}
-                title={configOpen ? t("agent_hide_config") : t("agent_show_config")}
-              >
-                <Settings2 className="h-4 w-4" />
-              </Button>
+                </button>
+              )}
             </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              size="icon-sm"
+              variant={configOpen ? "secondary" : "ghost"}
+              onClick={() => setConfigOpen((open) => !open)}
+              title={configOpen ? t("agent_hide_config") : t("agent_show_config")}
+            >
+              <Settings2 className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
           {!isLiveRequestSupported() && (
             <div className="flex items-center gap-2 border-b border-warning/30 bg-warning/10 px-5 py-2 text-label-12 text-warning-foreground/90">
@@ -1528,19 +1660,17 @@ export function AgentChatView() {
             </div>
           )}
 
+          <div className="relative flex min-h-0 flex-1 flex-col">
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-6">
             <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
               {chat.loading ? (
                 <MessageSkeletons />
               ) : chat.messages.length === 0 ? (
-                <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full bg-secondary text-muted-foreground">
-                    <Bot className="h-5 w-5" />
-                  </div>
-                  <div className="text-label-13 text-muted-foreground">
-                    {t("agent_chat_start_hint")}
-                  </div>
-                </div>
+                <WelcomeScreen
+                  selectedModel={selectedModel}
+                  selectedAgent={selectedAgent}
+                  onPickStarter={(text) => setInput(text)}
+                />
               ) : (
                 <div className="space-y-5">
                   {chat.messages.map((m, i) => {
@@ -1548,11 +1678,13 @@ export function AgentChatView() {
                     return (
                       <ChatBubble
                         key={m.id}
+                        turnId={m.role === "user" ? m.id : undefined}
                         message={m}
                         toolCalls={toolCallsByMessage.get(m.id)}
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
                         editing={editingThisMessage}
+                        debug={debug}
                         editingDraft={editingThisMessage ? editingDraft : ""}
                         onEditDraftChange={setEditingDraft}
                         onStartEdit={() => startEditingMessage(m)}
@@ -1574,6 +1706,14 @@ export function AgentChatView() {
                 </div>
               )}
             </div>
+          </div>
+          {turns.length > 1 && (
+            <TurnRail
+              turns={turns}
+              activeId={activeTurnId}
+              onSelect={scrollToTurn}
+            />
+          )}
           </div>
 
           <div className="shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
@@ -1599,9 +1739,9 @@ export function AgentChatView() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="mx-auto w-full max-w-[760px] overflow-hidden rounded-[16px] border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-shadow duration-150 ease-geist">
+            <div className="mx-auto w-full max-w-[800px] overflow-hidden rounded-lg border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-shadow duration-150 ease-geist focus-within:border-muted-foreground/40">
               <Textarea
-                className="h-[48px] min-h-0 max-h-28 resize-none border-0 bg-transparent px-4 py-3 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
+                className="h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
                 placeholder={t("agent_textarea_placeholder")}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1613,7 +1753,7 @@ export function AgentChatView() {
                 }}
               />
               {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-1">
+                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-2">
                   {attachments.map((a) => (
                     <AttachmentPill
                       key={a.id}
@@ -1625,69 +1765,72 @@ export function AgentChatView() {
                   ))}
                 </div>
               )}
-              <div className="flex items-end gap-1.5 px-2.5 py-1.5">
-                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7"
-                    disabled={!settings}
-                    title={t("agent_add_attachment")}
-                    onClick={() => fileRef.current?.click()}
-                  >
-                    <Plus className="h-4 w-4" />
-                  </Button>
-                  {settings && (
-                    <Badge
-                      variant="outline"
-                      className="h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12"
-                      title={t("agent_current_sandbox")}
-                    >
-                      <ShieldIcon className="h-3.5 w-3.5" />
-                      {SANDBOX_MODES.find((m) => m.value === settings.sandboxMode)
-                        ?.label ?? "Sandbox"}
-                    </Badge>
-                  )}
-                  <div className="w-[184px] shrink-0">
-                    <ComposerModelCascade
-                      options={options}
-                      currentConn={currentConn}
-                      selectedModel={selectedModel}
-                      modelsLoading={modelsLoading}
-                      disabled={!settings || options.length === 0}
-                      modelsForOption={modelsForOption}
-                      onRefresh={(connKey) => fetchModels(connKey)}
-                      onSelect={(connKey, modelId) =>
-                        updateSettings({ connKey, modelId })
-                      }
-                    />
-                  </div>
-                  <ComposerToolMenu
-                    icon={Boxes}
-                    label="Skills"
-                    empty={t("agent_no_skills")}
-                    items={skills.items}
-                    activeIds={settings?.enabledSkillIds ?? []}
-                    onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
-                  />
-                  <ComposerToolMenu
-                    icon={Server}
-                    label="MCP"
-                    empty={t("agent_no_mcp")}
-                    items={mcp.items}
-                    activeIds={settings?.enabledMcpServerIds ?? []}
-                    onChange={(enabledMcpServerIds) =>
-                      updateSettings({ enabledMcpServerIds })
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t border-border/60 px-2 py-2">
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  disabled={!settings}
+                  title={t("agent_add_attachment")}
+                  onClick={() => fileRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4" />
+                </Button>
+
+                <div className="w-[176px] shrink-0">
+                  <ComposerModelCascade
+                    options={options}
+                    currentConn={currentConn}
+                    selectedModel={selectedModel}
+                    modelsLoading={modelsLoading}
+                    disabled={!settings || options.length === 0}
+                    modelsForOption={modelsForOption}
+                    onRefresh={(connKey) => fetchModels(connKey)}
+                    onSelect={(connKey, modelId) =>
+                      updateSettings({ connKey, modelId })
                     }
                   />
-                  <div className="flex items-center gap-1">
+                </div>
+
+                {settings && (
+                  <Badge
+                    variant="outline"
+                    className="h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                    title={t("agent_current_sandbox")}
+                  >
+                    <ShieldIcon className="h-3.5 w-3.5" />
+                    {SANDBOX_MODES.find((m) => m.value === settings.sandboxMode)
+                      ?.label ?? "Sandbox"}
+                  </Badge>
+                )}
+
+                <ComposerToolMenu
+                  icon={Boxes}
+                  label="Skills"
+                  empty={t("agent_no_skills")}
+                  items={skills.items}
+                  activeIds={settings?.enabledSkillIds ?? []}
+                  onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
+                />
+                <ComposerToolMenu
+                  icon={Server}
+                  label="MCP"
+                  empty={t("agent_no_mcp")}
+                  items={mcp.items}
+                  activeIds={settings?.enabledMcpServerIds ?? []}
+                  onChange={(enabledMcpServerIds) =>
+                    updateSettings({ enabledMcpServerIds })
+                  }
+                />
+
+                {SHOW_AGENT_PICKER && (
+                  <>
                     <Select
                       value={selectedAgentId ?? DIRECT_AGENT_VALUE}
                       onValueChange={(v) =>
                         setSelectedAgentId(v === DIRECT_AGENT_VALUE ? null : v)
                       }
                     >
-                      <SelectTrigger className="h-7 w-[150px] gap-1.5 text-label-12">
+                      <SelectTrigger className="h-7 w-[138px] gap-1.5 text-label-12">
                         <Bot className="h-3.5 w-3.5 shrink-0" />
                         <SelectValue />
                       </SelectTrigger>
@@ -1703,41 +1846,43 @@ export function AgentChatView() {
                       </SelectContent>
                     </Select>
                     <Button
-                      size="icon"
+                      size="icon-sm"
                       variant="ghost"
-                      className="h-7 w-7"
                       title={t("agents_manage_title")}
                       onClick={() => setAgentsManagerOpen(true)}
                     >
                       <Settings2 className="h-4 w-4" />
                     </Button>
-                  </div>
-                </div>
-                {sending ? (
-                  <Button
-                    size="icon"
-                    variant="secondary"
-                    className="h-8 w-8 rounded-full"
-                    onClick={stop}
-                    title={t("agent_stop")}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                ) : (
-                  <Button
-                    size="icon"
-                    variant="accent"
-                    className="h-8 w-8 rounded-full shadow-geist-md"
-                    onClick={send}
-                    disabled={
-                      (!selectedModel && !selectedAgent) ||
-                      (!input.trim() && attachments.length === 0)
-                    }
-                    title={t("agent_send")}
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
+                  </>
                 )}
+
+                <div className="ml-auto pl-1">
+                  {sending ? (
+                    <Button
+                      size="icon"
+                      variant="secondary"
+                      className="h-8 w-8 rounded-full"
+                      onClick={stop}
+                      title={t("agent_stop")}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="accent"
+                      className="h-8 w-8 rounded-full shadow-geist-md"
+                      onClick={send}
+                      disabled={
+                        (!selectedModel && !selectedAgent) ||
+                        (!input.trim() && attachments.length === 0)
+                      }
+                      title={t("agent_send")}
+                    >
+                      <Send className="h-4 w-4" />
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -1768,6 +1913,122 @@ function summarizeToolCalls(count: number): string {
   return count > 0 ? i18n.t("pages:agent_tool_calls_summary", { count }) : "";
 }
 
+const STARTER_PROMPTS: {
+  id: string;
+  icon: ComponentType<{ className?: string }>;
+  titleKey: string;
+  textKey: string;
+}[] = [
+  {
+    id: "tools",
+    icon: Compass,
+    titleKey: "agent_starter_tools_title",
+    textKey: "agent_starter_tools_text",
+  },
+  {
+    id: "code",
+    icon: Code2,
+    titleKey: "agent_starter_code_title",
+    textKey: "agent_starter_code_text",
+  },
+  {
+    id: "explain",
+    icon: Lightbulb,
+    titleKey: "agent_starter_explain_title",
+    textKey: "agent_starter_explain_text",
+  },
+  {
+    id: "plan",
+    icon: ListChecks,
+    titleKey: "agent_starter_plan_title",
+    textKey: "agent_starter_plan_text",
+  },
+];
+
+function WelcomeScreen({
+  selectedModel,
+  selectedAgent,
+  onPickStarter,
+}: {
+  selectedModel: ModelInfo | null;
+  selectedAgent: AgentDefinition | null;
+  onPickStarter: (text: string) => void;
+}) {
+  const { t } = useTranslation("pages");
+  const reduce = useReducedMotion();
+  const contextLabel = selectedAgent
+    ? selectedAgent.name
+    : selectedModel
+      ? selectedModel.name
+      : null;
+
+  return (
+    <div className="flex min-h-full flex-col items-center justify-center py-10">
+      <div className="w-full max-w-[680px]">
+        <motion.div
+          initial={reduce ? false : { opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+          className="flex flex-col items-center text-center"
+        >
+          <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-accent-subtle text-accent ring-1 ring-inset ring-border">
+            <SquareTerminal className="h-5 w-5" />
+          </div>
+          <h2 className="mt-4 text-heading-24 text-foreground">
+            {t("agent_welcome_greeting")}
+          </h2>
+          <p className="mt-1.5 inline-flex items-center gap-1.5 text-copy-14 text-muted-foreground">
+            {contextLabel ? (
+              <>
+                {selectedAgent ? (
+                  <Bot className="h-3.5 w-3.5 shrink-0" />
+                ) : selectedModel ? (
+                  <ModelIcon model={selectedModel} className="h-3.5 w-3.5 shrink-0" />
+                ) : null}
+                <span className="truncate">
+                  {t("agent_welcome_ready", { model: contextLabel })}
+                </span>
+              </>
+            ) : (
+              <span>{t("agent_welcome_pick_model")}</span>
+            )}
+          </p>
+        </motion.div>
+
+        <div className="mt-7 grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+          {STARTER_PROMPTS.map((starter, i) => {
+            const Icon = starter.icon;
+            const text = t(starter.textKey);
+            return (
+              <Reveal key={starter.id} index={i + 1}>
+                <button
+                  type="button"
+                  onClick={() => onPickStarter(text)}
+                  className="group flex h-full w-full items-start gap-3 rounded-md border border-border bg-card p-3.5 text-left transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:shadow-geist-md"
+                >
+                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground transition-colors group-hover:bg-accent-subtle group-hover:text-accent">
+                    <Icon className="h-4 w-4" />
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-label-13 font-medium text-foreground">
+                      {t(starter.titleKey)}
+                    </span>
+                    <span className="mt-0.5 line-clamp-2 block text-label-12 text-muted-foreground">
+                      {text}
+                    </span>
+                  </span>
+                  <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+                </button>
+              </Reveal>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
 function MessageSkeletons() {
   return (
     <div className="grid gap-5">
@@ -1779,8 +2040,11 @@ function MessageSkeletons() {
           <div className="h-7 w-7 shrink-0 animate-pulse rounded-md bg-secondary" />
           <div
             className={cn(
-              "grid max-w-[78%] gap-2 rounded-md bg-secondary/70 p-3",
-              item === 1 ? "w-[42%]" : "w-[62%]"
+              "grid max-w-[78%] gap-2 rounded-md px-3.5 py-3",
+              item === 1
+                ? "w-[42%] bg-accent/10"
+                : "w-[62%] border border-border bg-card",
+              item === 1 ? "rounded-tr-sm" : "rounded-tl-sm"
             )}
           >
             <div className="h-3 w-2/3 animate-pulse rounded-sm bg-muted" />
@@ -1811,6 +2075,8 @@ function ConfigRail({
   onClose: () => void;
 }) {
   const { t } = useTranslation("pages");
+  const debug = useDebugStore((s) => s.debug);
+  const setDebug = useDebugStore((s) => s.setDebug);
   if (!settings) {
     return (
       <aside className="flex h-full w-full items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
@@ -1819,8 +2085,8 @@ function ConfigRail({
     );
   }
   return (
-    <aside className="flex h-full w-full min-h-0 flex-col overflow-y-auto bg-card-elevated p-4">
-      <div className="mb-4 flex items-center justify-between">
+    <aside className="flex h-full w-full min-h-0 flex-col bg-card-elevated">
+      <div className="sticky top-0 z-10 flex h-12 shrink-0 items-center justify-between border-b border-border bg-card-elevated px-4">
         <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
           {t("agent_config_title")}
         </div>
@@ -1828,8 +2094,9 @@ function ConfigRail({
           <X className="h-4 w-4" />
         </Button>
       </div>
+      <div className="min-h-0 flex-1 overflow-y-auto p-4">
       <RailSection icon={Settings2} title={t("agent_request_section")}>
-        <div className="rounded-sm border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
+        <div className="rounded-md border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
           {t("agent_conn_model_hint")}
         </div>
         {isVolc && (
@@ -1907,7 +2174,7 @@ function ConfigRail({
             />
           </div>
         </div>
-        <div className="flex items-center justify-between rounded-sm bg-secondary/60 px-3 py-2">
+        <div className="flex items-center justify-between rounded-md bg-secondary/60 px-3 py-2">
           <Label className="cursor-pointer">{t("agent_streaming")}</Label>
           <Switch
             checked={settings.streaming}
@@ -1934,8 +2201,26 @@ function ConfigRail({
             ))}
           </SelectContent>
         </Select>
-        <div className="rounded-sm border border-border p-3 text-label-12 text-muted-foreground">
+        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
           {t("agent_sandbox_hint")}
+        </div>
+      </RailSection>
+
+      <Separator className="my-4" />
+
+      <RailSection icon={Bug} title={t("agent_debug_section")}>
+        <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+          <Label className="cursor-pointer" htmlFor="agent-debug-edit">
+            {t("agent_debug_edit_agent")}
+          </Label>
+          <Switch
+            id="agent-debug-edit"
+            checked={debug}
+            onCheckedChange={(value) => setDebug(value)}
+          />
+        </div>
+        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
+          {t("agent_debug_edit_agent_hint")}
         </div>
       </RailSection>
 
@@ -1943,15 +2228,15 @@ function ConfigRail({
 
       <RailSection icon={Database} title={t("agent_tool_records")}>
         {toolCalls.length === 0 ? (
-          <div className="rounded-sm border border-dashed border-border p-3 text-label-12 text-muted-foreground">
+          <div className="rounded-md border border-dashed border-border p-3 text-label-12 text-muted-foreground">
             {t("agent_no_tool_calls")}
           </div>
         ) : (
           <div className="grid gap-2">
             {toolCalls.slice(0, 5).map((call) => (
-              <div key={call.id} className="rounded-sm bg-secondary/60 p-2">
+              <div key={call.id} className="rounded-md border border-border bg-card p-2.5">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-label-12 font-medium">
+                  <span className="truncate font-mono text-label-12 font-medium">
                     {call.title}
                   </span>
                   <Badge
@@ -1962,7 +2247,7 @@ function ConfigRail({
                   </Badge>
                 </div>
                 {call.resultText && (
-                  <div className="mt-1 line-clamp-2 text-label-12 text-muted-foreground">
+                  <div className="mt-1.5 line-clamp-2 text-label-12 text-muted-foreground">
                     {call.resultText}
                   </div>
                 )}
@@ -1971,6 +2256,7 @@ function ConfigRail({
           </div>
         )}
       </RailSection>
+      </div>
     </aside>
   );
 }
@@ -2021,7 +2307,7 @@ function ComposerModelCascade({
             {selectedModel ? (
               <ModelIcon model={selectedModel} className="h-3.5 w-3.5 shrink-0" />
             ) : (
-              <Sparkles className="h-3.5 w-3.5 shrink-0" />
+              <SquareTerminal className="h-3.5 w-3.5 shrink-0" />
             )}
             <span className="min-w-0 flex-1 truncate text-left text-label-13">
               {title}
@@ -2244,10 +2530,12 @@ function AttachmentPill({
 
 function ChatBubble({
   message,
+  turnId,
   toolCalls,
   typing,
   streaming,
   editing,
+  debug,
   editingDraft,
   actionsDisabled,
   onEditDraftChange,
@@ -2258,10 +2546,12 @@ function ChatBubble({
   onRetry,
 }: {
   message: PersistedChatMessage;
+  turnId?: string;
   toolCalls?: ToolCallRecord[];
   typing?: boolean;
   streaming?: boolean;
   editing?: boolean;
+  debug?: boolean;
   editingDraft: string;
   actionsDisabled?: boolean;
   onEditDraftChange: (value: string) => void;
@@ -2277,6 +2567,7 @@ function ChatBubble({
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
   const canRetry = message.role === "user" || message.role === "assistant";
+  const canEdit = message.role === "user" || message.role === "assistant";
   const generatedImages = !isUser
     ? message.attachments.filter(
         (attachment) => attachment.kind === "image" && attachmentSrc(attachment)
@@ -2317,40 +2608,26 @@ function ChatBubble({
 
   return (
     <motion.div
+      id={turnId ? `turn-anchor-${turnId}` : undefined}
+      data-turn-id={turnId}
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-      className={cn("group flex gap-3", isUser && "flex-row-reverse")}
+      className={cn("group flex w-full scroll-mt-6", isUser && "justify-end")}
     >
-      <div
-        className={cn(
-          "flex h-7 w-7 shrink-0 items-center justify-center rounded-md",
-          isUser
-            ? "bg-accent text-accent-foreground"
-            : isTool
-              ? "bg-success text-success-foreground"
-              : "bg-secondary text-muted-foreground"
-        )}
-      >
-        {isUser ? (
-          <User className="h-4 w-4" />
-        ) : isTool ? (
-          <Play className="h-4 w-4" />
-        ) : (
-          <Bot className="h-4 w-4" />
-        )}
-      </div>
       <div className={cn("flex max-w-[90%] flex-col gap-1.5", isUser && "items-end")}>
         <div
           className={cn(
             "text-copy-14",
             editing
-              ? "rounded-[14px] border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-              : "rounded-md px-3.5 py-2.5 shadow-geist-sm",
+              ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
+              : "rounded-md px-3.5 py-2.5",
             !editing &&
               (isUser
-                ? "rounded-tr-sm bg-accent text-accent-foreground"
-                : "rounded-tl-sm bg-secondary text-foreground")
+                ? "rounded-tr-sm bg-muted text-foreground"
+                : isTool
+                  ? "rounded-tl-sm border border-border bg-secondary text-foreground"
+                  : "rounded-tl-sm border border-border bg-card text-foreground shadow-geist-sm")
           )}
         >
           {generatedImages.length > 0 && (
@@ -2400,7 +2677,7 @@ function ChatBubble({
                 </Button>
                 <Button size="sm" variant="primary" className="h-7 px-2.5" onClick={onSaveEdit}>
                   <Check className="h-3.5 w-3.5" />
-                  {t("agent_save_retry")}
+                  {isUser ? t("agent_save_retry") : t("agent_save")}
                 </Button>
               </div>
             </div>
@@ -2416,6 +2693,13 @@ function ChatBubble({
             </div>
           ) : (
             <div className="grid gap-2">
+              {!isUser && message.reasoning && (
+                <ReasoningTrace
+                  reasoning={message.reasoning}
+                  reasoningMs={message.reasoningMs}
+                  streaming={streaming && message.status === "pending"}
+                />
+              )}
               {visibleContent &&
                 (isUser ? (
                   <div className="whitespace-pre-wrap break-words">
@@ -2441,41 +2725,55 @@ function ChatBubble({
         {!editing && (
           <div
             className={cn(
-              "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+              "flex items-center gap-1",
               isUser && "flex-row-reverse"
             )}
           >
-            {message.role === "user" && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title={t("agent_edit_message")}
-                disabled={actionsDisabled}
-                onClick={onStartEdit}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-              </Button>
+            {!typing && (
+              <span className="shrink-0 select-none px-0.5 text-label-12 tabular-nums text-muted-foreground/70">
+                {formatTime(message.createdAt)}
+              </span>
             )}
-            {canRetry && (
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title={t("agent_retry")}
-                disabled={actionsDisabled}
-                onClick={onRetry}
+            {debug && (
+              <div
+                className={cn(
+                  "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+                  isUser && "flex-row-reverse"
+                )}
               >
-                <RotateCcw className="h-3.5 w-3.5" />
-              </Button>
+                {canEdit && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title={t("agent_edit_message")}
+                    disabled={actionsDisabled}
+                    onClick={onStartEdit}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canRetry && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title={t("agent_retry")}
+                    disabled={actionsDisabled}
+                    onClick={onRetry}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  title={t("agent_delete_from_here")}
+                  disabled={actionsDisabled}
+                  onClick={onDelete}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
             )}
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              title={t("agent_delete_from_here")}
-              disabled={actionsDisabled}
-              onClick={onDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
           </div>
         )}
       </div>
@@ -2492,19 +2790,149 @@ function prettyJson(input: string): string {
   }
 }
 
+function parseToolName(raw: string): { name: string; server?: string } {
+  if (!raw) return { name: raw };
+  const mcp = raw.match(/^mcp__(.+?)__(.+)$/);
+  if (mcp) {
+    const server = mcp[1].replace(/^mcp-server-/, "");
+    return { name: mcp[2], server };
+  }
+  return { name: raw };
+}
+
+function ReasoningTrace({
+  reasoning,
+  reasoningMs,
+  streaming,
+}: {
+  reasoning: string;
+  reasoningMs?: number;
+  streaming?: boolean;
+}) {
+  const { t } = useTranslation("pages");
+  const [userOpen, setUserOpen] = useState<boolean | null>(null);
+  const open = userOpen ?? !!streaming;
+  const seconds =
+    typeof reasoningMs === "number" && reasoningMs > 0
+      ? Math.max(1, Math.round(reasoningMs / 1000))
+      : null;
+  const label =
+    seconds != null
+      ? t("agent_thought_for", { seconds })
+      : streaming
+        ? t("agent_thinking")
+        : t("agent_thought");
+  return (
+    <div className="w-full">
+      <button
+        type="button"
+        onClick={() => setUserOpen(!open)}
+        className="flex items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
+      >
+        <Lightbulb className="h-3.5 w-3.5" />
+        <span>{label}</span>
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 transition-transform duration-200",
+            open && "rotate-90"
+          )}
+        />
+      </button>
+      {open && (
+        <div className="mt-1.5 whitespace-pre-wrap break-words border-l border-border pl-3 text-copy-13 italic leading-relaxed text-muted-foreground">
+          {reasoning}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
   const { t } = useTranslation("pages");
   return (
-    <div className="mt-0.5 grid gap-1.5">
-      <div className="flex items-center gap-1.5 text-label-12 text-muted-foreground">
+    <div className="w-full border-l border-border pl-3">
+      <div className="mb-1.5 flex items-center gap-1.5 text-label-12 font-medium text-muted-foreground">
         <Wrench className="h-3 w-3" />
-        <span>{t("agent_tool_trace_title", { count: toolCalls.length })}</span>
+        <span>{t("agent_actions_label")}</span>
+        {toolCalls.length > 1 && (
+          <span className="tabular-nums text-muted-foreground/70">
+            · {toolCalls.length}
+          </span>
+        )}
       </div>
-      <div className="grid gap-1.5">
+      <div className="grid gap-1">
         {toolCalls.map((call) => (
           <ToolCallCard key={call.id} call={call} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function TurnRail({
+  turns,
+  activeId,
+  onSelect,
+}: {
+  turns: { id: string; index: number; question: string }[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation("pages");
+  const [hover, setHover] = useState<{ id: string; top: number; right: number } | null>(
+    null
+  );
+  const hovered = hover ? turns.find((turn) => turn.id === hover.id) : undefined;
+  return (
+    <div className="pointer-events-none absolute right-2 top-1/2 z-20 hidden -translate-y-1/2 md:block">
+      <div className="pointer-events-auto flex max-h-[72vh] flex-col items-end gap-2 overflow-y-auto py-1 pr-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {turns.map((turn) => {
+          const active = turn.id === activeId;
+          return (
+            <button
+              key={turn.id}
+              type="button"
+              onClick={() => onSelect(turn.id)}
+              onMouseEnter={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setHover({
+                  id: turn.id,
+                  top: rect.top + rect.height / 2,
+                  right: window.innerWidth - rect.left + 8,
+                });
+              }}
+              onMouseLeave={() =>
+                setHover((prev) => (prev?.id === turn.id ? null : prev))
+              }
+              className="group/turn relative flex h-2.5 items-center justify-end"
+              aria-label={t("agent_turn_label", { count: turn.index })}
+            >
+              <span
+                className={cn(
+                  "block rounded-full transition-all duration-200 ease-out",
+                  active
+                    ? "h-[3px] w-4 bg-foreground"
+                    : "h-[2px] w-2.5 bg-muted-foreground group-hover/turn:w-3.5 group-hover/turn:bg-foreground"
+                )}
+              />
+            </button>
+          );
+        })}
+      </div>
+      {hover &&
+        hovered &&
+        createPortal(
+          <div
+            className="pointer-events-none fixed z-[100] flex w-max max-w-[18rem] -translate-y-1/2 items-start gap-2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-left text-label-12 text-popover-foreground shadow-geist-md"
+            style={{ top: hover.top, right: hover.right }}
+          >
+            <span className="shrink-0 rounded-sm bg-secondary px-1 py-px tabular-nums text-muted-foreground">
+              {hovered.index}
+            </span>
+            <span className="line-clamp-2 text-foreground">{hovered.question}</span>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }
@@ -2516,6 +2944,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const isError = call.status === "error";
   const argsText = prettyJson(call.argumentsJson);
   const hasArgs = argsText && argsText !== "{}";
+  const parsed = parseToolName(call.toolName || call.title);
   const resultText =
     call.resultText ??
     (call.resultJson !== undefined
@@ -2523,11 +2952,11 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
       : "");
 
   return (
-    <div className="overflow-hidden rounded-sm border border-border bg-secondary/40">
+    <div className="overflow-hidden rounded-md border border-border bg-card">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2 py-1.5 text-left transition-colors hover:bg-secondary/70"
+        className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-secondary/60"
       >
         <ChevronRight
           className={cn(
@@ -2542,9 +2971,24 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         ) : (
           <Check className="h-3.5 w-3.5 shrink-0 text-success" />
         )}
-        <span className="flex-1 truncate font-mono text-label-12 font-medium">
-          {call.title}
+        <span className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="truncate font-mono text-label-12 font-medium text-foreground">
+            {parsed.name}
+          </span>
+          {parsed.server && (
+            <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
+              <Server className="h-3 w-3" />
+              {parsed.server}
+            </span>
+          )}
         </span>
+        {typeof call.durationMs === "number" && !isRunning && (
+          <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
+            {call.durationMs >= 1000
+              ? `${(call.durationMs / 1000).toFixed(1)}s`
+              : `${call.durationMs}ms`}
+          </span>
+        )}
         <Badge
           variant={
             isRunning ? "outline" : isError ? "destructive" : "success"
@@ -2557,13 +3001,6 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               ? t("agent_tool_status_error")
               : t("agent_tool_status_success")}
         </Badge>
-        {typeof call.durationMs === "number" && !isRunning && (
-          <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
-            {call.durationMs >= 1000
-              ? `${(call.durationMs / 1000).toFixed(1)}s`
-              : `${call.durationMs}ms`}
-          </span>
-        )}
       </button>
       {open && (
         <div className="grid gap-2 border-t border-border/70 px-2.5 py-2">
@@ -2572,7 +3009,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               <div className="text-label-12 font-medium text-muted-foreground">
                 {t("agent_tool_arguments")}
               </div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-background/70 p-2 font-mono text-label-12 text-foreground">
+              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-secondary/60 p-2 font-mono text-label-12 text-foreground">
                 {argsText}
               </pre>
             </div>
@@ -2587,7 +3024,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                   "max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm p-2 font-mono text-label-12",
                   isError
                     ? "bg-destructive/10 text-destructive"
-                    : "bg-background/70 text-foreground"
+                    : "bg-secondary/60 text-foreground"
                 )}
               >
                 {resultText}
