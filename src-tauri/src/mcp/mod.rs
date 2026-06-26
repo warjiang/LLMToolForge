@@ -775,7 +775,10 @@ pub async fn mcp_call_tool(
             guard.last_used = Instant::now();
             guard
                 .session
-                .request("tools/call", json!({ "name": name, "arguments": arguments }))
+                .request(
+                    "tools/call",
+                    json!({ "name": name, "arguments": arguments }),
+                )
                 .await
         }
     })
@@ -817,7 +820,10 @@ pub async fn mcp_get_prompt(
             guard.last_used = Instant::now();
             guard
                 .session
-                .request("prompts/get", json!({ "name": name, "arguments": arguments }))
+                .request(
+                    "prompts/get",
+                    json!({ "name": name, "arguments": arguments }),
+                )
                 .await
         }
     })
