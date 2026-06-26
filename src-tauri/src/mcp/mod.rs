@@ -84,7 +84,7 @@ fn parse_rpc_result(message: Value) -> Result<Value, String> {
 
 /// A connected session over one of the three transports.
 enum Session {
-    Stdio(StdioSession),
+    Stdio(Box<StdioSession>),
     Http(HttpSession),
     Sse(SseSession),
 }
@@ -92,7 +92,7 @@ enum Session {
 impl Session {
     async fn open(cfg: &McpServerConfig) -> Result<(Session, Value), String> {
         let mut session = match cfg.transport.as_str() {
-            "stdio" => Session::Stdio(StdioSession::connect(cfg).await?),
+            "stdio" => Session::Stdio(Box::new(StdioSession::connect(cfg).await?)),
             "http" => Session::Http(HttpSession::connect(cfg)?),
             "sse" => Session::Sse(SseSession::connect(cfg).await?),
             other => return Err(format!("不支持的传输方式: {other}")),
