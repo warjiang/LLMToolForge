@@ -197,45 +197,39 @@ export function BrowserPreview({
 
   return (
     <div className={cn("flex h-full min-h-0 flex-col", className)}>
-      <div className="mb-3 flex items-center gap-1.5">
-        {!minimalChrome && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => void browserBack()}
-              disabled={!canGoBack}
-              title={t("browser_back")}
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => void browserForward()}
-              disabled={!canGoForward}
-              title={t("browser_forward")}
-            >
-              <ArrowRight className="h-4 w-4" />
-            </Button>
-          </>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => void browserReload()}
-          disabled={!currentUrl}
-          title={t("browser_reload")}
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <RotateCw className="h-4 w-4" />
-          )}
-        </Button>
-        {minimalChrome ? (
-          <span className="flex-1" />
-        ) : (
+      {!minimalChrome && (
+        <div className="mb-3 flex items-center gap-1.5">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void browserBack()}
+            disabled={!canGoBack}
+            title={t("browser_back")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void browserForward()}
+            disabled={!canGoForward}
+            title={t("browser_forward")}
+          >
+            <ArrowRight className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => void browserReload()}
+            disabled={!currentUrl}
+            title={t("browser_reload")}
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <RotateCw className="h-4 w-4" />
+            )}
+          </Button>
           <form
             className="flex flex-1 items-center gap-2"
             onSubmit={(e) => {
@@ -254,18 +248,18 @@ export function BrowserPreview({
               {t("browser_go")}
             </Button>
           </form>
-        )}
-        {onClose && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            onClick={onClose}
-            title={t("browser_close_preview")}
-          >
-            <X className="h-4 w-4" />
-          </Button>
-        )}
-      </div>
+          {onClose && (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={onClose}
+              title={t("browser_close_preview")}
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
 
       <div
         ref={hostRef}

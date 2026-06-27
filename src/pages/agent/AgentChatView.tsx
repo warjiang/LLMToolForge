@@ -35,6 +35,7 @@ import {
   Plus,
   RefreshCcw,
   RotateCcw,
+  RotateCw,
   Send,
   Server,
   Settings2,
@@ -105,7 +106,12 @@ import {
 } from "@/store/preview";
 import { BrowserPreview } from "@/components/agent/BrowserPreview";
 import { ResizeHandle } from "@/components/common/ResizeHandle";
-import { hideBrowser, showBrowser } from "@/lib/browser";
+import {
+  hideBrowser,
+  showBrowser,
+  browserReload,
+  onBrowserLoading,
+} from "@/lib/browser";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -515,6 +521,23 @@ export function AgentChatView() {
 
   const [previewResizing, setPreviewResizing] = useState(false);
   const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!preview.open || !isTauri()) return;
+    let active = true;
+    let unsub: (() => void) | undefined;
+    void onBrowserLoading((l) => {
+      if (active) setPreviewLoading(l);
+    }).then((u) => {
+      if (active) unsub = u;
+      else u();
+    });
+    return () => {
+      active = false;
+      unsub?.();
+    };
+  }, [preview.open]);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -2382,17 +2405,36 @@ export function AgentChatView() {
             style={{ width: preview.width }}
             className="hidden h-full shrink-0 flex-col border-l border-border bg-background md:flex"
           >
-            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+            <div className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border px-4">
               <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate text-heading-14 text-foreground">
                 {preview.title || t("agent_preview_title")}
               </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => void browserReload()}
+                title={t("browser_reload")}
+              >
+                {previewLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCw className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={preview.closePreview}
+                title={t("browser_close_preview")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
             <div className="min-h-0 flex-1 p-3">
               <BrowserPreview
                 navUrl={preview.url}
                 navNonce={preview.nonce}
-                onClose={preview.closePreview}
                 minimalChrome
                 className={cn("h-full", previewResizing && "pointer-events-none")}
               />
