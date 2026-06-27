@@ -719,9 +719,10 @@ fn write_report_app(
 ) -> Result<PathBuf, String> {
     let mut out_sections = Vec::with_capacity(sections.len());
     for section in sections {
-        let table = section.table.as_ref().map(|t| {
-            json!({ "columns": t.columns, "rows": t.rows })
-        });
+        let table = section
+            .table
+            .as_ref()
+            .map(|t| json!({ "columns": t.columns, "rows": t.rows }));
         let chart = match section.chart_path.as_ref() {
             Some(path) => Some(embed_chart(workspace_root, sandbox_mode, path)?),
             None => None,
@@ -781,8 +782,7 @@ fn write_app(dir: &Path, title: &str, data: &Value) -> Result<PathBuf, String> {
     write_file(&dir.join("index.html"), index_html.as_bytes())?;
     write_file(&dir.join("style.css"), APP_CSS.as_bytes())?;
     write_file(&dir.join("main.js"), APP_JS.as_bytes())?;
-    let payload = serde_json::to_string(data)
-        .map_err(|e| format!("序列化数据失败: {e}"))?;
+    let payload = serde_json::to_string(data).map_err(|e| format!("序列化数据失败: {e}"))?;
     write_file(&dir.join("data.json"), payload.as_bytes())?;
     Ok(dir.join("index.html"))
 }
@@ -1188,7 +1188,8 @@ mod tests {
             duration_ms: 0,
             sources: vec![],
         };
-        let index = write_chart_app(&dir, "Sales", "bar", "region", "amount", None, &query).unwrap();
+        let index =
+            write_chart_app(&dir, "Sales", "bar", "region", "amount", None, &query).unwrap();
 
         assert!(index.ends_with("index.html"));
         for f in ["index.html", "style.css", "main.js", "data.json"] {
@@ -1197,7 +1198,8 @@ mod tests {
         let html = fs::read_to_string(dir.join("index.html")).unwrap();
         assert!(html.contains("/_vendor/echarts.min.js"));
         assert!(html.contains("<title>Sales</title>"));
-        let data: Value = serde_json::from_str(&fs::read_to_string(dir.join("data.json")).unwrap()).unwrap();
+        let data: Value =
+            serde_json::from_str(&fs::read_to_string(dir.join("data.json")).unwrap()).unwrap();
         assert_eq!(data["kind"], "chart");
         assert_eq!(data["chartType"], "bar");
         assert_eq!(data["x"], "region");
@@ -1242,7 +1244,8 @@ mod tests {
         .unwrap();
         assert!(index.is_file());
         let data: Value =
-            serde_json::from_str(&fs::read_to_string(report_dir.join("data.json")).unwrap()).unwrap();
+            serde_json::from_str(&fs::read_to_string(report_dir.join("data.json")).unwrap())
+                .unwrap();
         assert_eq!(data["kind"], "report");
         assert_eq!(data["sections"][0]["chart"]["chartType"], "line");
         assert_eq!(data["sections"][0]["chart"]["x"], "k");

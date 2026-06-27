@@ -55,10 +55,9 @@ pub struct PreviewRegisterResponse {
 /// managed state so `preview_register` can build URLs synchronously.
 pub fn start(state: &PreviewState) -> Result<(), String> {
     let shared = state.0.clone();
-    let listener = tauri::async_runtime::block_on(async {
-        TcpListener::bind(("127.0.0.1", 0)).await
-    })
-    .map_err(|e| format!("预览服务绑定失败: {e}"))?;
+    let listener =
+        tauri::async_runtime::block_on(async { TcpListener::bind(("127.0.0.1", 0)).await })
+            .map_err(|e| format!("预览服务绑定失败: {e}"))?;
     let port = listener
         .local_addr()
         .map_err(|e| format!("预览服务地址获取失败: {e}"))?
@@ -66,16 +65,11 @@ pub fn start(state: &PreviewState) -> Result<(), String> {
     state.0.lock().unwrap().port = Some(port);
 
     tauri::async_runtime::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, _)) => {
-                    let inner = shared.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = handle_conn(stream, inner).await;
-                    });
-                }
-                Err(_) => break,
-            }
+        while let Ok((stream, _)) = listener.accept().await {
+            let inner = shared.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = handle_conn(stream, inner).await;
+            });
         }
     });
     Ok(())
@@ -158,12 +152,19 @@ async fn handle_conn(
     Ok(())
 }
 
-fn route(raw_path: &str, state: &Arc<Mutex<PreviewInner>>) -> (&'static str, &'static str, Vec<u8>) {
+fn route(
+    raw_path: &str,
+    state: &Arc<Mutex<PreviewInner>>,
+) -> (&'static str, &'static str, Vec<u8>) {
     let path = raw_path.split(['?', '#']).next().unwrap_or("/");
     let path = path.trim_start_matches('/');
 
     if path == "_vendor/echarts.min.js" {
-        return ("200 OK", "application/javascript; charset=utf-8", ECHARTS_JS.to_vec());
+        return (
+            "200 OK",
+            "application/javascript; charset=utf-8",
+            ECHARTS_JS.to_vec(),
+        );
     }
 
     let (token, rest) = match path.split_once('/') {
@@ -201,7 +202,11 @@ fn route(raw_path: &str, state: &Arc<Mutex<PreviewInner>>) -> (&'static str, &'s
 }
 
 fn not_found() -> (&'static str, &'static str, Vec<u8>) {
-    ("404 Not Found", "text/plain; charset=utf-8", b"Not Found".to_vec())
+    (
+        "404 Not Found",
+        "text/plain; charset=utf-8",
+        b"Not Found".to_vec(),
+    )
 }
 
 fn content_type(path: &Path) -> &'static str {

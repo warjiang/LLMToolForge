@@ -415,10 +415,7 @@ fn ensure_session_workspace(
 /// successful no-op so deleting legacy sessions (created before managed
 /// workspaces existed, or that never wrote artifacts) stays stable.
 #[tauri::command]
-fn delete_session_workspace(
-    app: tauri::AppHandle,
-    session_id: String,
-) -> Result<(), String> {
+fn delete_session_workspace(app: tauri::AppHandle, session_id: String) -> Result<(), String> {
     let dir = session_workspace_dir(&app, &session_id)?;
     if dir.exists() {
         fs::remove_dir_all(&dir).map_err(|e| format!("删除会话工作目录失败: {e}"))?;
