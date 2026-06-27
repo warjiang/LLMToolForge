@@ -458,23 +458,42 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
   return lines.join("\n");
 }
 
-async function maybeOpenPreview(
+async function openArtifactPreview(
+  dir: string,
+  title?: string
+): Promise<void> {
+  try {
+    const reg = await registerPreview(dir);
+    if (reg) usePreviewStore.getState().openPreview(reg.url, title);
+  } catch (e) {
+    console.error("Failed to open DataAgent preview", e);
+  }
+}
+
+/** Output dir + title for a completed data-tool result, if any. */
+function dataArtifact(
   toolName: string | undefined,
   resultJson: unknown
-): Promise<void> {
-  if (toolName !== "data_chart_html" && toolName !== "data_report_html") return;
+): { dir: string; title?: string } | null {
+  if (toolName !== "data_chart_html" && toolName !== "data_report_html") {
+    return null;
+  }
   const details = resultJson as
     | { outputDir?: string; title?: string }
     | null
     | undefined;
   const dir = details?.outputDir;
-  if (!dir) return;
-  try {
-    const reg = await registerPreview(dir);
-    if (reg) usePreviewStore.getState().openPreview(reg.url, details?.title);
-  } catch (e) {
-    console.error("Failed to open DataAgent preview", e);
-  }
+  if (!dir) return null;
+  return { dir, title: details?.title };
+}
+
+async function maybeOpenPreview(
+  toolName: string | undefined,
+  resultJson: unknown
+): Promise<void> {
+  const artifact = dataArtifact(toolName, resultJson);
+  if (!artifact) return;
+  await openArtifactPreview(artifact.dir, artifact.title);
 }
 
 export function AgentChatView() {
@@ -1626,7 +1645,9 @@ export function AgentChatView() {
         if (!st) return;
         const recId = st.toolRecords.get(toolCallId);
         if (!recId) return;
-        const startedRec = chat.toolCalls.find((c) => c.id === recId);
+        const startedRec = useChatStore
+          .getState()
+          .toolCalls.find((c) => c.id === recId);
         const completedAt = new Date().toISOString();
         const durationMs = startedRec
           ? Date.parse(completedAt) - Date.parse(startedRec.startedAt)
@@ -3582,6 +3603,8 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const hasResult = result.length > 0;
   const hasError = !!call.error && call.error.trim().length > 0;
   const expandable = hasArgs || hasResult || hasError;
+  const artifact =
+    !isRunning && !isError ? dataArtifact(call.toolName, call.resultJson) : null;
 
   return (
     <div
@@ -3590,62 +3613,77 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         isRunning && "border-accent/25 bg-background"
       )}
     >
-      <button
-        type="button"
-        onClick={() => expandable && setOpen((v) => !v)}
-        disabled={!expandable}
-        className={cn(
-          "relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
-          expandable && "cursor-pointer hover:bg-muted/40"
-        )}
-      >
-        {isRunning && !reduce && (
-          <motion.span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/10 to-transparent"
-            animate={{ x: ["-120%", "420%"] }}
-            transition={{
-              duration: 1.25,
-              repeat: Infinity,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          />
-        )}
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        {isRunning ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-        ) : isError ? (
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
-        ) : (
-          <Check className="h-3.5 w-3.5 shrink-0 text-success" />
-        )}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate font-mono text-label-12 font-medium text-foreground">
-            {parsed.name}
+      <div className="relative flex w-full min-w-0 items-center overflow-hidden">
+        <button
+          type="button"
+          onClick={() => expandable && setOpen((v) => !v)}
+          disabled={!expandable}
+          className={cn(
+            "relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
+            expandable && "cursor-pointer hover:bg-muted/40"
+          )}
+        >
+          {isRunning && !reduce && (
+            <motion.span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/10 to-transparent"
+              animate={{ x: ["-120%", "420%"] }}
+              transition={{
+                duration: 1.25,
+                repeat: Infinity,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
+          )}
+          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {isRunning ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          ) : isError ? (
+            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
+          ) : (
+            <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+          )}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate font-mono text-label-12 font-medium text-foreground">
+              {parsed.name}
+            </span>
+            {parsed.server && (
+              <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
+                <Server className="h-3 w-3" />
+                {parsed.server}
+              </span>
+            )}
           </span>
-          {parsed.server && (
-            <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
-              <Server className="h-3 w-3" />
-              {parsed.server}
+          {typeof call.durationMs === "number" && call.durationMs > 0 && (
+            <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
+              {call.durationMs >= 1000
+                ? `${(call.durationMs / 1000).toFixed(1)}s`
+                : `${call.durationMs}ms`}
             </span>
           )}
-        </span>
-        {typeof call.durationMs === "number" && call.durationMs > 0 && (
-          <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
-            {call.durationMs >= 1000
-              ? `${(call.durationMs / 1000).toFixed(1)}s`
-              : `${call.durationMs}ms`}
-          </span>
+          {expandable && (
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+                open && "rotate-90"
+              )}
+            />
+          )}
+        </button>
+        {artifact && (
+          <button
+            type="button"
+            title={t("agent_open_in_browser")}
+            onClick={() => void openArtifactPreview(artifact.dir, artifact.title)}
+            className="mr-1.5 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-accent/10 px-1.5 font-medium text-accent transition-colors hover:bg-accent/20"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span className="hidden text-label-12 sm:inline">
+              {t("agent_open_in_browser")}
+            </span>
+          </button>
         )}
-        {expandable && (
-          <ChevronRight
-            className={cn(
-              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-              open && "rotate-90"
-            )}
-          />
-        )}
-      </button>
+      </div>
       {expandable && open && (
         <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
           {hasArgs && (
