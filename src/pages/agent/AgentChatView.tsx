@@ -96,7 +96,7 @@ import {
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
-import { cn, formatTime, isTauri, uid } from "@/lib/utils";
+import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
@@ -3392,7 +3392,7 @@ function ReasoningTrace({
 
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
   return (
-    <div className="w-full min-w-0 max-w-full border-l border-dashed border-border pl-3">
+    <div className="w-[min(32rem,calc(100vw-3rem))] min-w-0 max-w-full border-l border-dashed border-border pl-3">
       <div className="grid min-w-0 gap-1">
         {toolCalls.map((call) => (
           <ToolCallCard key={call.id} call={call} />
@@ -3488,7 +3488,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-sm border border-border/70 bg-card",
+        "w-full overflow-hidden rounded-sm border border-border/70 bg-card",
         isRunning && "border-accent/25 bg-background"
       )}
     >
@@ -3527,9 +3527,6 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               {parsed.server}
             </span>
           )}
-        </span>
-        <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
-          {formatTime(call.startedAt)}
         </span>
         <ChevronRight
           className={cn(
