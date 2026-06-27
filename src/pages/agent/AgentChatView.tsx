@@ -3332,18 +3332,18 @@ function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
       : t("agent_actions_label");
   return (
     <div className="w-full border-l border-dashed border-border pl-3">
-      <div className="flex flex-wrap items-center gap-1.5 rounded-md bg-secondary/30 p-1">
-        <span className="flex shrink-0 items-center gap-1.5 px-1 text-label-12 font-medium text-muted-foreground">
-          <Wrench className="h-3 w-3" />
-          <span>{label}</span>
-          {toolCalls.length > 1 && (
-            <span className="tabular-nums text-muted-foreground/70">
-              · {toolCalls.length}
-            </span>
-          )}
-        </span>
-        {toolCalls.map((call) => (
-          <ToolCallCard key={call.id} call={call} />
+      <div className="grid gap-1">
+        {toolCalls.map((call, index) => (
+          <ToolCallCard
+            key={call.id}
+            call={call}
+            label={index === 0 ? label : undefined}
+            count={
+              index === 0 && toolCalls.length > 1
+                ? toolCalls.length
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>
@@ -3417,7 +3417,16 @@ function TurnRail({
     </div>
   );
 }
-function ToolCallCard({ call }: { call: ToolCallRecord }) {
+
+function ToolCallCard({
+  call,
+  label,
+  count,
+}: {
+  call: ToolCallRecord;
+  label?: string;
+  count?: number;
+}) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
@@ -3456,12 +3465,17 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
             }}
           />
         )}
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90"
-          )}
-        />
+        {label && (
+          <span className="flex shrink-0 items-center gap-1.5 text-label-12 font-medium text-muted-foreground">
+            <Wrench className="h-3 w-3" />
+            <span>{label}</span>
+            {typeof count === "number" && (
+              <span className="tabular-nums text-muted-foreground/70">
+                · {count}
+              </span>
+            )}
+          </span>
+        )}
         {isRunning ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
         ) : isError ? (
@@ -3495,6 +3509,12 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               ? t("agent_tool_status_error")
               : t("agent_tool_status_success")}
         </Badge>
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90"
+          )}
+        />
       </button>
       {open && (
         <div className="grid gap-2 border-t border-border/70 px-2.5 py-2">
