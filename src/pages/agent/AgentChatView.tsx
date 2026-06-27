@@ -3391,25 +3391,11 @@ function ReasoningTrace({
 }
 
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
-  const { t } = useTranslation("pages");
-  const label =
-    toolCalls.length > 1
-      ? t("agent_parallel_actions_label")
-      : t("agent_actions_label");
   return (
     <div className="w-full min-w-0 max-w-full border-l border-dashed border-border pl-3">
       <div className="grid min-w-0 gap-1">
-        {toolCalls.map((call, index) => (
-          <ToolCallCard
-            key={call.id}
-            call={call}
-            label={index === 0 ? label : undefined}
-            count={
-              index === 0 && toolCalls.length > 1
-                ? toolCalls.length
-                : undefined
-            }
-          />
+        {toolCalls.map((call) => (
+          <ToolCallCard key={call.id} call={call} />
         ))}
       </div>
     </div>
@@ -3484,15 +3470,7 @@ function TurnRail({
   );
 }
 
-function ToolCallCard({
-  call,
-  label,
-  count,
-}: {
-  call: ToolCallRecord;
-  label?: string;
-  count?: number;
-}) {
+function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
@@ -3531,17 +3509,7 @@ function ToolCallCard({
             }}
           />
         )}
-        {label && (
-          <span className="flex shrink-0 items-center gap-1.5 text-label-12 font-medium text-muted-foreground">
-            <Wrench className="h-3 w-3" />
-            <span>{label}</span>
-            {typeof count === "number" && (
-              <span className="tabular-nums text-muted-foreground/70">
-                · {count}
-              </span>
-            )}
-          </span>
-        )}
+        <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
         {isRunning ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
         ) : isError ? (
@@ -3563,18 +3531,6 @@ function ToolCallCard({
         <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
           {formatTime(call.startedAt)}
         </span>
-        <Badge
-          variant={
-            isRunning ? "outline" : isError ? "destructive" : "success"
-          }
-          className="rounded-sm"
-        >
-          {isRunning
-            ? t("agent_tool_status_running")
-            : isError
-              ? t("agent_tool_status_error")
-              : t("agent_tool_status_success")}
-        </Badge>
         <ChevronRight
           className={cn(
             "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
