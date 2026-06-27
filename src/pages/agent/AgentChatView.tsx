@@ -24,6 +24,7 @@ import {
   FileText,
   FileVideo,
   FolderOpen,
+  Globe,
   Code2,
   Lightbulb,
   ListChecks,
@@ -96,6 +97,9 @@ import {
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
+import { registerPreview } from "@/lib/preview";
+import { usePreviewStore } from "@/store/preview";
+import { BrowserPreview } from "@/components/agent/BrowserPreview";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -451,6 +455,25 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
   return lines.join("\n");
 }
 
+async function maybeOpenPreview(
+  toolName: string | undefined,
+  resultJson: unknown
+): Promise<void> {
+  if (toolName !== "data_chart_html" && toolName !== "data_report_html") return;
+  const details = resultJson as
+    | { outputDir?: string; title?: string }
+    | null
+    | undefined;
+  const dir = details?.outputDir;
+  if (!dir) return;
+  try {
+    const reg = await registerPreview(dir);
+    if (reg) usePreviewStore.getState().openPreview(reg.url, details?.title);
+  } catch (e) {
+    console.error("Failed to open DataAgent preview", e);
+  }
+}
+
 export function AgentChatView() {
   const { t } = useTranslation("pages");
   const volc = useVolcCredentialStore();
@@ -461,6 +484,7 @@ export function AgentChatView() {
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
   const debug = useDebugStore((s) => s.debug);
+  const preview = usePreviewStore();
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -1583,6 +1607,9 @@ export function AgentChatView() {
           error: isError ? resultText : undefined,
         });
         st.toolRecords.delete(toolCallId);
+        if (!isError) {
+          void maybeOpenPreview(startedRec?.toolName, resultJson);
+        }
       },
       onError: async (message) => {
         const st = agentTurnRef.current;
@@ -2262,6 +2289,25 @@ export function AgentChatView() {
               onSettings={updateSettings}
               onClose={() => setConfigOpen(false)}
             />
+          </div>
+        )}
+
+        {preview.open && isTauri() && (
+          <div className="hidden h-full w-[46%] min-w-[400px] max-w-[760px] shrink-0 flex-col border-l border-border bg-background md:flex">
+            <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
+              <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-heading-14 text-foreground">
+                {preview.title || t("agent_preview_title")}
+              </span>
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              <BrowserPreview
+                navUrl={preview.url}
+                navNonce={preview.nonce}
+                onClose={preview.closePreview}
+                className="h-full"
+              />
+            </div>
           </div>
         )}
 

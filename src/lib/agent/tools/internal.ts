@@ -285,12 +285,14 @@ interface DuckDbQueryResponse {
 
 interface DataChartHtmlResponse extends DuckDbQueryResponse {
   outputPath: string;
+  outputDir: string;
   chartType: string;
   title: string;
 }
 
 interface DataReportHtmlResponse {
   outputPath: string;
+  outputDir: string;
   title: string;
   sectionCount: number;
   durationMs: number;
@@ -382,17 +384,17 @@ function dataChartHtmlTool(deps: InternalToolDeps): AgentTool {
     name: "data_chart_html",
     label: "Data chart HTML",
     description:
-      "Create a self-contained HTML chart artifact from a DuckDB query over local data files.",
+      "Render an interactive ECharts chart as a small multi-file web app from a DuckDB query over local data files. The app is served locally and opens automatically in the built-in browser preview.",
     parameters: Type.Object({
       sources: Type.Array(dataSourceSchema, {
         description: "Local data sources to register as DuckDB views.",
       }),
       sql: Type.String({ description: "Read-only SQL returning chart data." }),
       chartType: Type.String({
-        description: "Chart type: bar, line, or scatter.",
+        description: "Chart type: bar, line, area, scatter, or pie.",
       }),
-      x: Type.String({ description: "Column name to use for the x axis." }),
-      y: Type.String({ description: "Numeric column name to use for the y axis." }),
+      x: Type.String({ description: "Column name to use for the x axis (category / name for pie)." }),
+      y: Type.String({ description: "Numeric column name to use for the y axis (value for pie)." }),
       series: Type.Optional(
         Type.String({ description: "Optional column name for grouping series." })
       ),
@@ -400,7 +402,7 @@ function dataChartHtmlTool(deps: InternalToolDeps): AgentTool {
       outputPath: Type.Optional(
         Type.String({
           description:
-            "Optional output HTML path. Defaults to dataagent-artifacts/chart-*.html in the workspace.",
+            "Optional output directory. Defaults to dataagent-artifacts/chart-*/ in the workspace.",
         })
       ),
     }),
@@ -432,7 +434,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
     name: "data_report_html",
     label: "Data report HTML",
     description:
-      "Create a self-contained static HTML report with text, optional tables, and embedded chart artifacts.",
+      "Create an interactive multi-section report web app with text, optional tables, and embedded interactive ECharts charts. Served locally and opened automatically in the built-in browser preview.",
     parameters: Type.Object({
       title: Type.String({ description: "Report title." }),
       sections: Type.Array(
@@ -440,7 +442,10 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
           heading: Type.String({ description: "Section heading." }),
           text: Type.Optional(Type.String({ description: "Section narrative text." })),
           chartPath: Type.Optional(
-            Type.String({ description: "Optional local HTML chart path to embed." })
+            Type.String({
+              description:
+                "Optional path to a chart produced by data_chart_html (its output directory or index.html) to embed inline.",
+            })
           ),
           table: Type.Optional(
             Type.Object({
@@ -454,7 +459,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
       outputPath: Type.Optional(
         Type.String({
           description:
-            "Optional output HTML path. Defaults to dataagent-artifacts/report-*.html in the workspace.",
+            "Optional output directory. Defaults to dataagent-artifacts/report-*/ in the workspace.",
         })
       ),
     }),

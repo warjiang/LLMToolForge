@@ -13,6 +13,7 @@ mod browser;
 mod data_tools;
 mod fs_tools;
 mod mcp;
+mod preview;
 mod unified;
 
 #[derive(Debug, Deserialize)]
@@ -861,6 +862,14 @@ pub fn run() {
         .manage(unified::UnifiedManager::default())
         .manage(mcp::McpSessions::default())
         .manage(browser::BrowserState::default())
+        .manage(preview::PreviewState::default())
+        .setup(|app| {
+            let state = app.state::<preview::PreviewState>();
+            if let Err(e) = preview::start(&state) {
+                eprintln!("preview server failed to start: {e}");
+            }
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
             save_chat_attachment,
@@ -875,6 +884,7 @@ pub fn run() {
             data_tools::duckdb_query,
             data_tools::data_chart_html,
             data_tools::data_report_html,
+            preview::preview_register,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,
