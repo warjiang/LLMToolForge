@@ -161,7 +161,7 @@ const components: Components = {
       <img
         src={src}
         alt={alt ?? ""}
-        className="md-block my-2 max-h-80 rounded-md border border-border object-contain"
+        className="md-block my-2 max-h-80 max-w-full rounded-md border border-border object-contain"
       />
     ) : null,
 };

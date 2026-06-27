@@ -41,6 +41,9 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "edit",
   "ls",
   "grep",
+  "duckdb_query",
+  "data_chart_html",
+  "data_report_html",
 ];
 
 export interface InternalToolDeps {
@@ -248,6 +251,51 @@ interface FsGrepResponse {
   truncated: boolean;
 }
 
+const dataSourceSchema = Type.Object({
+  path: Type.String({
+    description: "Local data file path, absolute or workspace-relative.",
+  }),
+  alias: Type.Optional(
+    Type.String({
+      description:
+        "Optional SQL table alias. Defaults to a safe name derived from the file name.",
+    })
+  ),
+  format: Type.Optional(
+    Type.String({
+      description: "Optional source format: csv, tsv, json, jsonl, or parquet.",
+    })
+  ),
+});
+
+interface DataSourceParam {
+  path: string;
+  alias?: string;
+  format?: string;
+}
+
+interface DuckDbQueryResponse {
+  columns: string[];
+  rows: Record<string, unknown>[];
+  rowCount: number;
+  truncated: boolean;
+  durationMs: number;
+  sources: { alias: string; path: string; format: string }[];
+}
+
+interface DataChartHtmlResponse extends DuckDbQueryResponse {
+  outputPath: string;
+  chartType: string;
+  title: string;
+}
+
+interface DataReportHtmlResponse {
+  outputPath: string;
+  title: string;
+  sectionCount: number;
+  durationMs: number;
+}
+
 function grepTool(deps: InternalToolDeps): AgentTool {
   return defineTool({
     name: "grep",
@@ -285,6 +333,149 @@ function grepTool(deps: InternalToolDeps): AgentTool {
   });
 }
 
+function duckDbQueryTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "duckdb_query",
+    label: "DuckDB query",
+    description:
+      "Run a read-only DuckDB SELECT/WITH query over local CSV, TSV, JSON, JSONL, or Parquet files. " +
+      "Provide sources with aliases, then query those aliases.",
+    parameters: Type.Object({
+      sources: Type.Array(dataSourceSchema, {
+        description: "Local data sources to register as DuckDB views.",
+      }),
+      sql: Type.String({
+        description: "Read-only SQL starting with SELECT or WITH. Query source aliases, not file paths.",
+      }),
+      limit: Type.Optional(
+        Type.Number({ description: "Preview row limit. Defaults to 200." })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<DuckDbQueryResponse>("duckdb_query", {
+        req: {
+          workspaceRoot: deps.workspaceRoot.trim(),
+          sandboxMode: deps.sandboxMode,
+          sources: params.sources as DataSourceParam[],
+          sql: params.sql,
+          limit: params.limit,
+        },
+      });
+      const preview = JSON.stringify(res.rows, null, 2);
+      return textResult(
+        [
+          `DuckDB query returned ${res.rowCount} rows across ${res.columns.length} columns.`,
+          res.truncated ? `Preview truncated to ${res.rows.length} rows.` : "",
+          `Columns: ${res.columns.join(", ") || "(none)"}`,
+          preview,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        res
+      );
+    },
+  });
+}
+
+function dataChartHtmlTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "data_chart_html",
+    label: "Data chart HTML",
+    description:
+      "Create a self-contained HTML chart artifact from a DuckDB query over local data files.",
+    parameters: Type.Object({
+      sources: Type.Array(dataSourceSchema, {
+        description: "Local data sources to register as DuckDB views.",
+      }),
+      sql: Type.String({ description: "Read-only SQL returning chart data." }),
+      chartType: Type.String({
+        description: "Chart type: bar, line, or scatter.",
+      }),
+      x: Type.String({ description: "Column name to use for the x axis." }),
+      y: Type.String({ description: "Numeric column name to use for the y axis." }),
+      series: Type.Optional(
+        Type.String({ description: "Optional column name for grouping series." })
+      ),
+      title: Type.Optional(Type.String({ description: "Chart title." })),
+      outputPath: Type.Optional(
+        Type.String({
+          description:
+            "Optional output HTML path. Defaults to dataagent-artifacts/chart-*.html in the workspace.",
+        })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<DataChartHtmlResponse>("data_chart_html", {
+        req: {
+          workspaceRoot: deps.workspaceRoot.trim(),
+          sandboxMode: deps.sandboxMode,
+          sources: params.sources as DataSourceParam[],
+          sql: params.sql,
+          chartType: params.chartType,
+          x: params.x,
+          y: params.y,
+          series: params.series,
+          title: params.title,
+          outputPath: params.outputPath,
+        },
+      });
+      return textResult(
+        `Created ${res.chartType} chart "${res.title}" at ${res.outputPath} from ${res.rowCount} rows.`,
+        res
+      );
+    },
+  });
+}
+
+function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "data_report_html",
+    label: "Data report HTML",
+    description:
+      "Create a self-contained static HTML report with text, optional tables, and embedded chart artifacts.",
+    parameters: Type.Object({
+      title: Type.String({ description: "Report title." }),
+      sections: Type.Array(
+        Type.Object({
+          heading: Type.String({ description: "Section heading." }),
+          text: Type.Optional(Type.String({ description: "Section narrative text." })),
+          chartPath: Type.Optional(
+            Type.String({ description: "Optional local HTML chart path to embed." })
+          ),
+          table: Type.Optional(
+            Type.Object({
+              columns: Type.Array(Type.String()),
+              rows: Type.Array(Type.Array(Type.String())),
+            })
+          ),
+        }),
+        { description: "Report sections." }
+      ),
+      outputPath: Type.Optional(
+        Type.String({
+          description:
+            "Optional output HTML path. Defaults to dataagent-artifacts/report-*.html in the workspace.",
+        })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<DataReportHtmlResponse>("data_report_html", {
+        req: {
+          workspaceRoot: deps.workspaceRoot.trim(),
+          sandboxMode: deps.sandboxMode,
+          title: params.title,
+          sections: params.sections,
+          outputPath: params.outputPath,
+        },
+      });
+      return textResult(
+        `Created HTML report "${res.title}" with ${res.sectionCount} sections at ${res.outputPath}.`,
+        res
+      );
+    },
+  });
+}
+
 const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = {
   bash: bashTool,
   read: readTool,
@@ -292,6 +483,9 @@ const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = 
   edit: editTool,
   ls: lsTool,
   grep: grepTool,
+  duckdb_query: duckDbQueryTool,
+  data_chart_html: dataChartHtmlTool,
+  data_report_html: dataReportHtmlTool,
 };
 
 /** Build the selected internal tools. */

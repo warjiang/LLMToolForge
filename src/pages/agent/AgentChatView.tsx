@@ -160,8 +160,16 @@ const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 const DIRECT_AGENT_VALUE = "__direct__";
 const ADHOC_AGENT_ID = "__adhoc__";
-// Direct-chat / custom-agent picker is hidden from the composer for now.
-const SHOW_AGENT_PICKER = false;
+const DATA_AGENT_ID = "__builtin_dataagent__";
+const SHOW_AGENT_PICKER = true;
+const DATA_AGENT_PROMPT = [
+  "You are DataAgent, a careful local-data analysis assistant.",
+  "Use DuckDB for tabular analysis over local CSV, TSV, JSON, JSONL, and Parquet files.",
+  "Never query file paths directly in user SQL; register sources with aliases and query the aliases.",
+  "Prefer a tight workflow: inspect available files, profile schema/sample rows, write read-only SQL, explain assumptions, then generate charts or reports when useful.",
+  "For visual output, use data_chart_html. For deliverable summaries, use data_report_html.",
+  "If the workspace path is missing or a file is outside the sandbox scope, explain exactly what must be configured.",
+].join("\n");
 
 /**
  * Build an in-memory `AgentDefinition` from the current chat session settings.
@@ -184,6 +192,40 @@ function buildAdHocAgentDef(
     systemPrompt: settings.system ?? "",
     modelId: unifiedModelId,
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
+    enabledSkillIds: settings.enabledSkillIds,
+    enabledMcpServerIds: settings.enabledMcpServerIds,
+    sandboxMode: settings.sandboxMode,
+    workspacePath: settings.workspacePath,
+    temperature: Number(settings.temperature) || 0,
+    maxTokens: Number(settings.maxTokens) || 4096,
+  };
+}
+
+function buildDataAgentDef(
+  settings: ChatSessionSettings,
+  unifiedModelId: string
+): AgentDefinition {
+  const now = new Date().toISOString();
+  const systemPrompt = [settings.system?.trim(), DATA_AGENT_PROMPT]
+    .filter(Boolean)
+    .join("\n\n");
+  return {
+    id: DATA_AGENT_ID,
+    createdAt: now,
+    updatedAt: now,
+    name: "DataAgent",
+    description: "Local DuckDB data analysis, charts, and HTML reports.",
+    systemPrompt,
+    modelId: unifiedModelId,
+    enabledInternalTools: [
+      "bash",
+      "read",
+      "ls",
+      "grep",
+      "duckdb_query",
+      "data_chart_html",
+      "data_report_html",
+    ],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,
@@ -275,6 +317,13 @@ function generatedVideoAttachment(
 
 function attachmentSrc(attachment: ChatAttachment): string | undefined {
   return attachment.dataUrl ?? attachment.path;
+}
+
+function formatMessageTime(value: string | number | Date): string {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 interface SaveChatAttachmentResponse {
@@ -470,13 +519,14 @@ export function AgentChatView() {
     void useUnifiedStore.getState().init();
   }, []);
 
-  const selectedAgent = useMemo(
-    () =>
-      selectedAgentId
-        ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
-        : null,
-    [selectedAgentId, agentDefs.items],
-  );
+  const selectedAgent = useMemo(() => {
+    if (selectedAgentId === DATA_AGENT_ID && settings) {
+      return buildDataAgentDef(settings, settings.modelId);
+    }
+    return selectedAgentId
+      ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
+      : null;
+  }, [selectedAgentId, settings, agentDefs.items]);
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -1583,10 +1633,11 @@ export function AgentChatView() {
    * skills/MCP, or null to fall back to the direct (non-tool) chat path.
    */
   const resolveTurnAgent = (): AgentDefinition | null => {
-    if (selectedAgent) return selectedAgent;
+    if (selectedAgent && selectedAgentId !== DATA_AGENT_ID) return selectedAgent;
     if (!settings?.connKey) return null;
     const wantsTools =
       AGENT_INTERNAL_TOOL_IDS.length > 0 ||
+      selectedAgentId === DATA_AGENT_ID ||
       activeSkills.length > 0 ||
       activeMcp.length > 0;
     if (!wantsTools) return null;
@@ -1609,6 +1660,10 @@ export function AgentChatView() {
       setError(t("agent_tools_need_gateway"));
       return null;
     }
+    if (selectedAgentId === DATA_AGENT_ID) {
+      return buildDataAgentDef(settings, exposed.id);
+    }
+    if (selectedAgent) return selectedAgent;
     return buildAdHocAgentDef(settings, exposed.id);
   };
 
@@ -2136,6 +2191,9 @@ export function AgentChatView() {
                       <SelectContent>
                         <SelectItem value={DIRECT_AGENT_VALUE}>
                           {t("agent_mode_direct")}
+                        </SelectItem>
+                        <SelectItem value={DATA_AGENT_ID}>
+                          DataAgent
                         </SelectItem>
                         {agentDefs.items.map((def) => (
                           <SelectItem key={def.id} value={def.id}>
@@ -3068,7 +3126,22 @@ function ChatBubble({
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
       className={cn("group flex w-full scroll-mt-6", isUser && "justify-end")}
     >
-      <div className={cn("flex max-w-[90%] flex-col gap-1.5", isUser && "items-end")}>
+      <div
+        className={cn(
+          "flex w-fit min-w-[8.5rem] max-w-[90%] flex-col gap-1.5",
+          isUser && "items-end"
+        )}
+      >
+        {!typing && !actionOnly && (
+          <span
+            className={cn(
+              "w-max max-w-full shrink-0 select-none overflow-hidden text-ellipsis whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+              isUser ? "self-end" : "self-start"
+            )}
+          >
+            {formatMessageTime(message.createdAt)}
+          </span>
+        )}
         {hasMessageBubble && (
           <div
             className={cn(
@@ -3168,58 +3241,51 @@ function ChatBubble({
         {hasToolCalls && (
           <ToolCallTrace toolCalls={toolCalls} />
         )}
-        {!editing && !actionOnly && (
+        {debug && !editing && !actionOnly && (
           <div
             className={cn(
               "flex items-center gap-1",
               isUser && "flex-row-reverse"
             )}
           >
-            {!typing && (
-              <span className="shrink-0 select-none px-0.5 text-label-12 tabular-nums text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                {formatTime(message.createdAt)}
-              </span>
-            )}
-            {debug && (
-              <div
-                className={cn(
-                  "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
-                  isUser && "flex-row-reverse"
-                )}
-              >
-                {canEdit && (
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title={t("agent_edit_message")}
-                    disabled={actionsDisabled}
-                    onClick={onStartEdit}
-                  >
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                )}
-                {canRetry && (
-                  <Button
-                    size="icon-sm"
-                    variant="ghost"
-                    title={t("agent_retry")}
-                    disabled={actionsDisabled}
-                    onClick={onRetry}
-                  >
-                    <RotateCcw className="h-3.5 w-3.5" />
-                  </Button>
-                )}
+            <div
+              className={cn(
+                "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+                isUser && "flex-row-reverse"
+              )}
+            >
+              {canEdit && (
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  title={t("agent_delete_from_here")}
+                  title={t("agent_edit_message")}
                   disabled={actionsDisabled}
-                  onClick={onDelete}
+                  onClick={onStartEdit}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Pencil className="h-3.5 w-3.5" />
                 </Button>
-              </div>
-            )}
+              )}
+              {canRetry && (
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  title={t("agent_retry")}
+                  disabled={actionsDisabled}
+                  onClick={onRetry}
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                </Button>
+              )}
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                title={t("agent_delete_from_here")}
+                disabled={actionsDisabled}
+                onClick={onDelete}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </div>
           </div>
         )}
       </div>
@@ -3331,8 +3397,8 @@ function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
       ? t("agent_parallel_actions_label")
       : t("agent_actions_label");
   return (
-    <div className="w-full border-l border-dashed border-border pl-3">
-      <div className="grid gap-1">
+    <div className="w-full min-w-0 max-w-full border-l border-dashed border-border pl-3">
+      <div className="grid min-w-0 gap-1">
         {toolCalls.map((call, index) => (
           <ToolCallCard
             key={call.id}
@@ -3451,7 +3517,7 @@ function ToolCallCard({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="relative flex w-full items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left transition-colors hover:bg-secondary/60"
+        className="relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left transition-colors hover:bg-secondary/60"
       >
         {isRunning && !reduce && (
           <motion.span
@@ -3517,25 +3583,25 @@ function ToolCallCard({
         />
       </button>
       {open && (
-        <div className="grid gap-2 border-t border-border/70 px-2.5 py-2">
+        <div className="grid min-w-0 max-w-full gap-2 overflow-hidden border-t border-border/70 px-2.5 py-2">
           {hasArgs && (
-            <div className="grid gap-1">
+            <div className="grid min-w-0 gap-1">
               <div className="text-label-12 font-medium text-muted-foreground">
                 {t("agent_tool_arguments")}
               </div>
-              <pre className="max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-secondary/60 p-2 font-mono text-label-12 text-foreground">
+              <pre className="max-h-60 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-sm bg-secondary/60 p-2 font-mono text-label-12 text-foreground">
                 {argsText}
               </pre>
             </div>
           )}
           {resultText ? (
-            <div className="grid gap-1">
+            <div className="grid min-w-0 gap-1">
               <div className="text-label-12 font-medium text-muted-foreground">
                 {t("agent_tool_result")}
               </div>
               <pre
                 className={cn(
-                  "max-h-60 overflow-auto whitespace-pre-wrap break-words rounded-sm p-2 font-mono text-label-12",
+                  "max-h-60 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-sm p-2 font-mono text-label-12",
                   isError
                     ? "bg-destructive/10 text-destructive"
                     : "bg-secondary/60 text-foreground"

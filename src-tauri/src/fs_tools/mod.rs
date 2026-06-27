@@ -248,7 +248,18 @@ pub fn fs_read(req: FsReadRequest) -> Result<FsReadResponse, String> {
         return Err(format!("目标是目录，请使用 ls: {}", target.display()));
     }
     let raw = fs::read(&target).map_err(|e| format!("读取文件失败: {e}"))?;
-    let text = String::from_utf8_lossy(&raw).to_string();
+    if raw.iter().take(8000).any(|b| *b == 0) {
+        return Err(format!(
+            "read 仅支持 UTF-8 文本文件，当前文件看起来是二进制文件: {}",
+            target.display()
+        ));
+    }
+    let text = String::from_utf8(raw).map_err(|_| {
+        format!(
+            "read 仅支持 UTF-8 文本文件，无法按文本读取: {}",
+            target.display()
+        )
+    })?;
 
     let all_lines: Vec<&str> = text.split('\n').collect();
     let total_lines = all_lines.len();
