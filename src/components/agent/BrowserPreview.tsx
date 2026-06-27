@@ -46,6 +46,12 @@ export interface BrowserPreviewProps {
   onClose?: () => void;
   /** Render quick-link shortcuts on the empty state (standalone browser page). */
   showQuickLinks?: boolean;
+  /**
+   * Hide back / forward / address bar / go controls and keep only the reload
+   * (and close) action. Used by the in-chat preview, which auto-navigates to a
+   * generated artifact and needs no manual URL entry.
+   */
+  minimalChrome?: boolean;
   className?: string;
 }
 
@@ -60,6 +66,7 @@ export function BrowserPreview({
   navNonce,
   onClose,
   showQuickLinks = false,
+  minimalChrome = false,
   className,
 }: BrowserPreviewProps) {
   const { t } = useTranslation("pages");
@@ -191,24 +198,28 @@ export function BrowserPreview({
   return (
     <div className={cn("flex h-full min-h-0 flex-col", className)}>
       <div className="mb-3 flex items-center gap-1.5">
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => void browserBack()}
-          disabled={!canGoBack}
-          title={t("browser_back")}
-        >
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => void browserForward()}
-          disabled={!canGoForward}
-          title={t("browser_forward")}
-        >
-          <ArrowRight className="h-4 w-4" />
-        </Button>
+        {!minimalChrome && (
+          <>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void browserBack()}
+              disabled={!canGoBack}
+              title={t("browser_back")}
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => void browserForward()}
+              disabled={!canGoForward}
+              title={t("browser_forward")}
+            >
+              <ArrowRight className="h-4 w-4" />
+            </Button>
+          </>
+        )}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -222,24 +233,28 @@ export function BrowserPreview({
             <RotateCw className="h-4 w-4" />
           )}
         </Button>
-        <form
-          className="flex flex-1 items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            go();
-          }}
-        >
-          <Input
-            value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder={t("browser_address_placeholder")}
-            spellCheck={false}
-            className="flex-1 font-mono text-copy-13"
-          />
-          <Button type="submit" size="sm" disabled={!address.trim()}>
-            {t("browser_go")}
-          </Button>
-        </form>
+        {minimalChrome ? (
+          <span className="flex-1" />
+        ) : (
+          <form
+            className="flex flex-1 items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              go();
+            }}
+          >
+            <Input
+              value={address}
+              onChange={(e) => setAddress(e.target.value)}
+              placeholder={t("browser_address_placeholder")}
+              spellCheck={false}
+              className="flex-1 font-mono text-copy-13"
+            />
+            <Button type="submit" size="sm" disabled={!address.trim()}>
+              {t("browser_go")}
+            </Button>
+          </form>
+        )}
         {onClose && (
           <Button
             variant="ghost"

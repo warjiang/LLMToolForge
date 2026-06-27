@@ -42,6 +42,7 @@
   "browser_desktop_only_desc": "内置浏览器基于原生 webview，仅在桌面应用（Tauri）中可用。请使用桌面端打开。",
   "browser_close_preview": "关闭预览",
   "agent_preview_title": "预览",
+  "agent_resize_preview": "拖动调整宽度 · 双击恢复默认",
 
   "api_key_edit_title": "编辑 API Key",
   "api_key_create_title": "新建 API Key",

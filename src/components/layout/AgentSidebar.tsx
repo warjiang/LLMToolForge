@@ -26,6 +26,7 @@ import {
   Check,
   ChevronRight,
   Folder,
+  FolderOpen,
   FolderPlus,
   MessageSquare,
   MessageSquarePlus,
@@ -47,9 +48,12 @@ import { useThemeStore } from "@/store/theme";
 import { useLocaleStore } from "@/store/locale";
 import { cn, formatDateTime } from "@/lib/utils";
 import { resolveAgentLabel } from "@/lib/agent/builtinAgents";
+import { openSessionWorkspace } from "@/lib/agent/workspace";
+import { chatRepo } from "@/data/chatRepository";
+import { ResizeHandle } from "@/components/common/ResizeHandle";
+import { SIDEBAR_DEFAULT_WIDTH } from "@/store/sidebar";
 import type { ChatSession } from "@/types/chat";
 
-const EXPANDED = 240;
 const COLLAPSED = 64;
 
 const UNGROUPED = "ungrouped";
@@ -110,6 +114,8 @@ export function AgentSidebar() {
   const { t } = useTranslation("common");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
+  const sidebarWidth = useSidebarStore((s) => s.width);
+  const setSidebarWidth = useSidebarStore((s) => s.setWidth);
   const sessions = useChatStore((s) => s.sessions);
   const agentDefs = useAgentDefStore((s) => s.items);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
@@ -125,6 +131,8 @@ export function AgentSidebar() {
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [resizing, setResizing] = useState(false);
+  const resizeBaseRef = useRef(SIDEBAR_DEFAULT_WIDTH);
 
   const groups = useSessionGroupStore((s) => s.groups);
   const assignments = useSessionGroupStore((s) => s.assignments);
@@ -190,6 +198,17 @@ export function AgentSidebar() {
     void renameSession(id, renameDraft);
     setRenamingId(null);
     setRenameDraft("");
+  };
+  const openWorkspaceFolder = (session: ChatSession) => {
+    void (async () => {
+      try {
+        const settings = await chatRepo.getSettings(session.id);
+        await openSessionWorkspace(session.id, settings.workspacePath);
+      } catch (e) {
+        console.error("Failed to open workspace folder", session.id, e);
+        window.alert(t("open_workspace_folder_failed"));
+      }
+    })();
   };
   const startGroupRename = (id: string, name: string) => {
     setEditingGroupId(id);
@@ -354,7 +373,7 @@ export function AgentSidebar() {
           <>
             <button
               className={cn(
-                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-16 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
+                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-24 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
                 active && "bg-muted ring-1 ring-inset ring-border"
               )}
               onClick={() => selectSession(session.id)}
@@ -385,6 +404,15 @@ export function AgentSidebar() {
               >
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                className="h-7 w-7"
+                title={t("open_workspace_folder")}
+                onClick={() => openWorkspaceFolder(session)}
+              >
+                <FolderOpen className="h-3.5 w-3.5" />
+              </Button>
               {canDeleteSession && (
                 <Button
                   size="icon-sm"
@@ -404,11 +432,14 @@ export function AgentSidebar() {
   };
 
   return (
+    <>
     <motion.aside
       initial={false}
-      animate={{ width: collapsed ? COLLAPSED : EXPANDED }}
+      animate={{ width: collapsed ? COLLAPSED : sidebarWidth }}
       transition={
-        reduce ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 38 }
+        reduce || resizing
+          ? { duration: 0 }
+          : { type: "spring", stiffness: 420, damping: 38 }
       }
       className="flex h-full shrink-0 flex-col overflow-hidden border-r border-border bg-chrome"
     >
@@ -685,5 +716,18 @@ export function AgentSidebar() {
         }}
       />
     </motion.aside>
+    {!collapsed && (
+      <ResizeHandle
+        title={t("resize_sidebar")}
+        onStart={() => {
+          resizeBaseRef.current = sidebarWidth;
+          setResizing(true);
+        }}
+        onDrag={(dx) => setSidebarWidth(resizeBaseRef.current + dx)}
+        onEnd={() => setResizing(false)}
+        onReset={() => setSidebarWidth(SIDEBAR_DEFAULT_WIDTH)}
+      />
+    )}
+    </>
   );
 }

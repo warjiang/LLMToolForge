@@ -426,6 +426,61 @@ fn delete_session_workspace(
     Ok(())
 }
 
+/// Reveals a session's associated workspace folder in the OS file manager.
+///
+/// Resolves the same effective directory as [`ensure_session_workspace`]
+/// (an explicit, user-chosen path when set, otherwise the managed default
+/// `~/.llmtoolforge/sessions/<session id>`), creates it on demand so opening
+/// never fails on a fresh session, then launches the platform file manager.
+#[tauri::command]
+fn open_session_workspace(
+    app: tauri::AppHandle,
+    session_id: String,
+    workspace_path: Option<String>,
+) -> Result<String, String> {
+    let explicit = workspace_path.as_deref().map(str::trim).unwrap_or("");
+    let dir = if explicit.is_empty() {
+        session_workspace_dir(&app, &session_id)?
+    } else {
+        PathBuf::from(explicit)
+    };
+    fs::create_dir_all(&dir).map_err(|e| format!("创建会话工作目录失败: {e}"))?;
+    let dir = dir.canonicalize().unwrap_or(dir);
+    open_in_file_manager(&dir)?;
+    Ok(dir.display().to_string())
+}
+
+/// Opens `path` in the native file manager across platforms.
+///
+/// Uses `open` on macOS, `explorer` on Windows and `xdg-open` on other
+/// Unix-like systems. The child is spawned without waiting; `explorer`
+/// notably returns a non-zero exit code even on success, so the status is
+/// intentionally not inspected.
+fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(path);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("explorer");
+        c.arg(path);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(path);
+        c
+    };
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开文件夹失败: {e}"))
+}
+
 fn sanitize_file_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -894,6 +949,7 @@ pub fn run() {
             save_chat_attachment,
             ensure_session_workspace,
             delete_session_workspace,
+            open_session_workspace,
             sync_skills_to_targets,
             check_skill_bins,
             fs_tools::fs_read,

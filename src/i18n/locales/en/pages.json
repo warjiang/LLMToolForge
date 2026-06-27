@@ -42,6 +42,7 @@
   "browser_desktop_only_desc": "The built-in browser uses a native webview and is only available in the desktop app (Tauri). Please open it there.",
   "browser_close_preview": "Close preview",
   "agent_preview_title": "Preview",
+  "agent_resize_preview": "Drag to resize · double-click to reset",
 
   "api_key_edit_title": "Edit API Key",
   "api_key_create_title": "New API Key",

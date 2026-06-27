@@ -469,6 +469,23 @@ class ChatRepository {
     await db.execute("DELETE FROM sessions WHERE id = $1", [id]);
   }
 
+  async getSettings(sessionId: string): Promise<ChatSessionSettings> {
+    await this.ensureInit();
+    if (!isTauri()) {
+      const state = readFallback();
+      return normalizeSettings(
+        state.settings.find((s) => s.sessionId === sessionId) ??
+          defaultSettings(sessionId)
+      );
+    }
+    const db = await this.db();
+    const rows = await db.select<Record<string, unknown>[]>(
+      "SELECT * FROM session_settings WHERE session_id = $1",
+      [sessionId]
+    );
+    return rows[0] ? rowToSettings(rows[0]) : defaultSettings(sessionId);
+  }
+
   async updateSettings(
     sessionId: string,
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>

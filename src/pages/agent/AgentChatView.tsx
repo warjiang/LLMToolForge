@@ -99,8 +99,13 @@ import {
 } from "@/lib/agent";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { registerPreview } from "@/lib/preview";
-import { usePreviewStore } from "@/store/preview";
+import {
+  usePreviewStore,
+  PREVIEW_DEFAULT_WIDTH,
+} from "@/store/preview";
 import { BrowserPreview } from "@/components/agent/BrowserPreview";
+import { ResizeHandle } from "@/components/common/ResizeHandle";
+import { hideBrowser, showBrowser } from "@/lib/browser";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -507,6 +512,9 @@ export function AgentChatView() {
   const agentDefs = useAgentDefStore();
   const debug = useDebugStore((s) => s.debug);
   const preview = usePreviewStore();
+
+  const [previewResizing, setPreviewResizing] = useState(false);
+  const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -2352,7 +2360,28 @@ export function AgentChatView() {
         )}
 
         {preview.open && isTauri() && (
-          <div className="hidden h-full w-[46%] min-w-[400px] max-w-[760px] shrink-0 flex-col border-l border-border bg-background md:flex">
+          <>
+          <ResizeHandle
+            title={t("agent_resize_preview")}
+            onStart={() => {
+              previewResizeBaseRef.current = preview.width;
+              setPreviewResizing(true);
+              // The native webview swallows pointer events; hide it during the
+              // drag so the gesture keeps tracking, then restore it after.
+              void hideBrowser();
+            }}
+            onDrag={(dx) => preview.setWidth(previewResizeBaseRef.current - dx)}
+            onEnd={() => {
+              setPreviewResizing(false);
+              void showBrowser();
+            }}
+            onReset={() => preview.setWidth(PREVIEW_DEFAULT_WIDTH)}
+            className="hidden md:flex"
+          />
+          <div
+            style={{ width: preview.width }}
+            className="hidden h-full shrink-0 flex-col border-l border-border bg-background md:flex"
+          >
             <div className="flex h-14 shrink-0 items-center gap-2 border-b border-border px-4">
               <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate text-heading-14 text-foreground">
@@ -2364,10 +2393,12 @@ export function AgentChatView() {
                 navUrl={preview.url}
                 navNonce={preview.nonce}
                 onClose={preview.closePreview}
-                className="h-full"
+                minimalChrome
+                className={cn("h-full", previewResizing && "pointer-events-none")}
               />
             </div>
           </div>
+          </>
         )}
 
         <AgentsManagerDialog
