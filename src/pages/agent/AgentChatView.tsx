@@ -3382,34 +3382,13 @@ function ReasoningTrace({
 }
 
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
-  const [open, setOpen] = useState(true);
-  const actionLabel = toolCalls.length === 1 ? "action" : "actions";
   return (
     <div className="w-[min(32rem,calc(100vw-3rem))] min-w-0 max-w-full border-l border-dashed border-border pl-5">
-      <button
-        type="button"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
-        className="mb-1 flex h-6 w-full items-center gap-1.5 rounded-sm px-1 text-left text-label-12 text-muted-foreground transition-colors hover:bg-secondary/50 hover:text-foreground"
-      >
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 transition-transform duration-150",
-            open && "rotate-90"
-          )}
-        />
-        <span className="font-medium text-foreground/80">Step</span>
-        <span className="tabular-nums text-muted-foreground">
-          {toolCalls.length} {actionLabel}
-        </span>
-      </button>
-      {open && (
-        <div className="grid min-w-0 gap-1">
-          {toolCalls.map((call) => (
-            <ToolCallCard key={call.id} call={call} />
-          ))}
-        </div>
-      )}
+      <div className="grid min-w-0 gap-1">
+        {toolCalls.map((call) => (
+          <ToolCallCard key={call.id} call={call} />
+        ))}
+      </div>
     </div>
   );
 }
