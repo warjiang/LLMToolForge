@@ -3293,15 +3293,6 @@ function ChatBubble({
   );
 }
 
-function prettyJson(input: string): string {
-  if (!input) return "";
-  try {
-    return JSON.stringify(JSON.parse(input), null, 2);
-  } catch {
-    return input;
-  }
-}
-
 function parseToolName(raw: string): { name: string; server?: string } {
   if (!raw) return { name: raw };
   const mcp = raw.match(/^mcp__(.+?)__(.+)$/);
@@ -3492,19 +3483,10 @@ function TurnRail({
 }
 
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
-  const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
-  const [open, setOpen] = useState(false);
   const isRunning = call.status === "running";
   const isError = call.status === "error";
-  const argsText = prettyJson(call.argumentsJson);
-  const hasArgs = argsText && argsText !== "{}";
   const parsed = parseToolName(call.toolName || call.title);
-  const resultText =
-    call.resultText ??
-    (call.resultJson !== undefined
-      ? JSON.stringify(call.resultJson, null, 2)
-      : "");
 
   return (
     <div
@@ -3513,11 +3495,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         isRunning && "border-accent/25 bg-background"
       )}
     >
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left transition-colors hover:bg-secondary/60"
-      >
+      <div className="relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left">
         {isRunning && !reduce && (
           <motion.span
             aria-hidden="true"
@@ -3549,50 +3527,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
             </span>
           )}
         </span>
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90"
-          )}
-        />
-      </button>
-      {open && (
-        <div className="grid min-w-0 max-w-full gap-2 overflow-hidden border-t border-border/70 px-2.5 py-2">
-          {hasArgs && (
-            <div className="grid min-w-0 gap-1">
-              <div className="text-label-12 font-medium text-muted-foreground">
-                {t("agent_tool_arguments")}
-              </div>
-              <pre className="max-h-60 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-sm bg-secondary/60 p-2 font-mono text-label-12 text-foreground">
-                {argsText}
-              </pre>
-            </div>
-          )}
-          {resultText ? (
-            <div className="grid min-w-0 gap-1">
-              <div className="text-label-12 font-medium text-muted-foreground">
-                {t("agent_tool_result")}
-              </div>
-              <pre
-                className={cn(
-                  "max-h-60 max-w-full overflow-auto whitespace-pre-wrap break-words rounded-sm p-2 font-mono text-label-12",
-                  isError
-                    ? "bg-destructive/10 text-destructive"
-                    : "bg-secondary/60 text-foreground"
-                )}
-              >
-                {resultText}
-              </pre>
-            </div>
-          ) : (
-            !isRunning && (
-              <div className="text-label-12 text-muted-foreground">
-                {t("agent_tool_no_result")}
-              </div>
-            )
-          )}
-        </div>
-      )}
+      </div>
     </div>
   );
 }
