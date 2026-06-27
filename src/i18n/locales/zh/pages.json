@@ -564,6 +564,7 @@
   "agent_tool_arguments": "入参",
   "agent_tool_result": "结果",
   "agent_tool_no_result": "无返回内容",
+  "agent_tool_error": "错误",
   "agent_select_model_first_short": "先选择模型",
   "agent_refresh_models_hint": "请到模型接入刷新模型",
   "agent_refresh_conn": "刷新 {{name}}",

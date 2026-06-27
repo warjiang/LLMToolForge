@@ -3398,7 +3398,7 @@ function ReasoningTrace({
 }) {
   const { t } = useTranslation("pages");
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? !!streaming;
+  const open = userOpen ?? true;
   const seconds =
     typeof reasoningMs === "number" && reasoningMs > 0
       ? Math.max(1, Math.round(reasoningMs / 1000))
@@ -3514,11 +3514,36 @@ function TurnRail({
   );
 }
 
+function formatMaybeJson(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
+  const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const [open, setOpen] = useState(false);
   const isRunning = call.status === "running";
   const isError = call.status === "error";
   const parsed = parseToolName(call.toolName || call.title);
+
+  const args = formatMaybeJson(call.argumentsJson || "");
+  const resultRaw =
+    call.resultText && call.resultText.trim().length > 0
+      ? call.resultText
+      : call.resultJson != null
+        ? JSON.stringify(call.resultJson, null, 2)
+        : "";
+  const result = formatMaybeJson(resultRaw);
+  const hasArgs = args.length > 0 && args !== "{}";
+  const hasResult = result.length > 0;
+  const hasError = !!call.error && call.error.trim().length > 0;
+  const expandable = hasArgs || hasResult || hasError;
 
   return (
     <div
@@ -3527,7 +3552,15 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         isRunning && "border-accent/25 bg-background"
       )}
     >
-      <div className="relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((v) => !v)}
+        disabled={!expandable}
+        className={cn(
+          "relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
+          expandable && "cursor-pointer hover:bg-muted/40"
+        )}
+      >
         {isRunning && !reduce && (
           <motion.span
             aria-hidden="true"
@@ -3559,7 +3592,71 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
             </span>
           )}
         </span>
+        {typeof call.durationMs === "number" && call.durationMs > 0 && (
+          <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
+            {call.durationMs >= 1000
+              ? `${(call.durationMs / 1000).toFixed(1)}s`
+              : `${call.durationMs}ms`}
+          </span>
+        )}
+        {expandable && (
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+              open && "rotate-90"
+            )}
+          />
+        )}
+      </button>
+      {expandable && open && (
+        <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
+          {hasArgs && (
+            <ToolCallSection label={t("agent_tool_arguments")} body={args} />
+          )}
+          {hasResult ? (
+            <ToolCallSection label={t("agent_tool_result")} body={result} />
+          ) : (
+            !hasError && (
+              <div className="text-label-12 text-muted-foreground">
+                {t("agent_tool_no_result")}
+              </div>
+            )
+          )}
+          {hasError && (
+            <ToolCallSection
+              label={t("agent_tool_error")}
+              body={call.error as string}
+              tone="error"
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallSection({
+  label,
+  body,
+  tone,
+}: {
+  label: string;
+  body: string;
+  tone?: "error";
+}) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
       </div>
+      <pre
+        className={cn(
+          "max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-2 py-1.5 font-mono text-label-12 leading-relaxed",
+          tone === "error" ? "text-destructive" : "text-foreground"
+        )}
+      >
+        {body}
+      </pre>
     </div>
   );
 }
