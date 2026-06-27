@@ -25,3 +25,4 @@ tokio = { version = "1", features = ["process", "time", "macros", "rt-multi-thre
 wait-timeout = "0.2"
 reqwest = { version = "0.12", features = ["json"] }
 regex = "1"
+duckdb = { version = "1.10504.0", features = ["bundled", "json", "parquet"] }

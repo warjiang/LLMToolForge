@@ -427,6 +427,7 @@
   "agent_format_label": "Request Format",
   "agent_no_key_placeholder": "No keys available",
   "agent_streaming": "Streaming",
+  "agent_workspace_label": "Workspace directory",
   "agent_sandbox_hint": "Sandbox mode reserved for local tool execution; macOS will prefer Seatbelt-compatible sandbox.",
   "agent_tool_calls_title": "Tool Calls",
   "agent_no_tool_calls": "No tool calls",

@@ -427,6 +427,7 @@
   "agent_format_label": "请求格式",
   "agent_no_key_placeholder": "无可用 Key",
   "agent_streaming": "流式输出",
+  "agent_workspace_label": "工作目录",
   "agent_sandbox_hint": "沙箱模式保留给本地工具执行；macOS 会优先使用 Seatbelt 兼容沙箱。",
   "agent_tool_calls_title": "工具记录",
   "agent_no_tool_calls": "暂无工具调用",

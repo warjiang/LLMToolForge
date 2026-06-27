@@ -10,6 +10,7 @@ use tauri::Manager;
 use wait_timeout::ChildExt;
 
 mod browser;
+mod data_tools;
 mod fs_tools;
 mod mcp;
 mod unified;
@@ -871,6 +872,9 @@ pub fn run() {
             fs_tools::fs_edit,
             fs_tools::fs_list,
             fs_tools::fs_grep,
+            data_tools::duckdb_query,
+            data_tools::data_chart_html,
+            data_tools::data_report_html,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,
