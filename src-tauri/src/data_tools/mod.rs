@@ -14,6 +14,9 @@ const DEFAULT_QUERY_LIMIT: usize = 200;
 const MAX_QUERY_LIMIT: usize = 5_000;
 const ARTIFACT_DIR: &str = "dataagent-artifacts";
 
+type DataRow = Map<String, Value>;
+type QueryPreview = (Vec<String>, Vec<DataRow>);
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct DataSource {
@@ -587,11 +590,7 @@ fn count_rows(conn: &Connection, sql: &str) -> Result<usize, String> {
         .map_err(|e| format!("统计行数失败: {e}"))
 }
 
-fn preview_rows(
-    conn: &Connection,
-    sql: &str,
-    limit: usize,
-) -> Result<(Vec<String>, Vec<Map<String, Value>>), String> {
+fn preview_rows(conn: &Connection, sql: &str, limit: usize) -> Result<QueryPreview, String> {
     let preview_sql = format!("SELECT * FROM ({sql}) AS __dataagent_query LIMIT {limit}");
     let mut stmt = conn
         .prepare(&preview_sql)
