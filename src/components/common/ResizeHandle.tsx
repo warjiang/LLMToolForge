@@ -63,7 +63,7 @@ export function ResizeHandle({
         className
       )}
     >
-      <span className="h-full w-px bg-transparent transition-colors group-hover/resize:bg-accent/60 group-active/resize:bg-accent" />
+      <span className="h-full w-px bg-transparent transition-colors group-hover/resize:bg-muted-foreground/30 group-active/resize:bg-muted-foreground/50" />
     </div>
   );
 }
