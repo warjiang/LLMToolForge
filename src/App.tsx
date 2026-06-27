@@ -23,6 +23,9 @@ const UnifiedApiPage = lazy(() =>
 const ToolsPage = lazy(() =>
   import("@/pages/tools/ToolsPage").then((m) => ({ default: m.ToolsPage }))
 );
+const BrowserPage = lazy(() =>
+  import("@/pages/browser/BrowserPage").then((m) => ({ default: m.BrowserPage }))
+);
 const SettingsPage = lazy(() =>
   import("@/pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
 );
@@ -56,6 +59,7 @@ const router = createBrowserRouter([
       { path: "skills", element: page(<SkillsPage />) },
       { path: "mcp", element: page(<McpPage />) },
       { path: "tools", element: page(<ToolsPage />) },
+      { path: "browser", element: page(<BrowserPage />) },
       { path: "settings", element: page(<SettingsPage />) },
     ],
   },

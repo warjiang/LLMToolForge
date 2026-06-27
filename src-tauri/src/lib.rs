@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 use wait_timeout::ChildExt;
 
+mod browser;
 mod fs_tools;
 mod mcp;
 mod unified;
@@ -351,6 +352,57 @@ fn execution_root(workspace_root: &str) -> Result<PathBuf, String> {
     } else {
         Ok(PathBuf::from(workspace_root.trim()))
     }
+}
+
+/// Replaces characters unsafe for a directory name so a session id maps to a
+/// single, predictable folder.
+fn sanitize_session_id(id: &str) -> String {
+    id.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+/// Per-session managed workspace under the user's home, used when no explicit
+/// workspace path is set: `~/.llmtoolforge/sessions/<session id>`.
+fn session_workspace_dir(app: &tauri::AppHandle, session_id: &str) -> Result<PathBuf, String> {
+    let safe = sanitize_session_id(session_id);
+    if safe.is_empty() {
+        return Err("无效的会话 ID".to_string());
+    }
+    let home = app
+        .path()
+        .home_dir()
+        .map_err(|e| format!("无法定位用户主目录: {e}"))?;
+    let mut dir = home;
+    dir.push(".llmtoolforge");
+    dir.push("sessions");
+    dir.push(safe);
+    Ok(dir)
+}
+
+/// Resolves and creates the execution root for a chat session, returning its
+/// absolute path. Falls back to a per-session directory under the user's home
+/// when no explicit workspace path was provided.
+#[tauri::command]
+fn ensure_session_workspace(
+    app: tauri::AppHandle,
+    session_id: String,
+    workspace_path: Option<String>,
+) -> Result<String, String> {
+    let explicit = workspace_path.as_deref().map(str::trim).unwrap_or("");
+    let dir = if explicit.is_empty() {
+        session_workspace_dir(&app, &session_id)?
+    } else {
+        PathBuf::from(explicit)
+    };
+    fs::create_dir_all(&dir).map_err(|e| format!("创建会话工作目录失败: {e}"))?;
+    Ok(dir.canonicalize().unwrap_or(dir).display().to_string())
 }
 
 fn sanitize_file_name(name: &str) -> String {
@@ -807,9 +859,11 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .manage(unified::UnifiedManager::default())
         .manage(mcp::McpSessions::default())
+        .manage(browser::BrowserState::default())
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
             save_chat_attachment,
+            ensure_session_workspace,
             sync_skills_to_targets,
             check_skill_bins,
             fs_tools::fs_read,
@@ -828,6 +882,16 @@ pub fn run() {
             mcp::mcp_call_tool,
             mcp::mcp_read_resource,
             mcp::mcp_get_prompt,
+            browser::browser_open,
+            browser::browser_navigate,
+            browser::browser_back,
+            browser::browser_forward,
+            browser::browser_reload,
+            browser::browser_set_bounds,
+            browser::browser_show,
+            browser::browser_hide,
+            browser::browser_close,
+            browser::browser_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

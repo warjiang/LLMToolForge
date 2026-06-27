@@ -6,6 +6,7 @@ import {
   Boxes,
   Server,
   Wrench,
+  Globe,
   Settings,
   Cloud,
   Network,
@@ -37,6 +38,7 @@ export function Sidebar() {
     { to: "/skills", label: t("skills"), icon: Boxes },
     { to: "/mcp", label: t("mcp_servers"), icon: Server },
     { to: "/tools", label: t("tools"), icon: Wrench },
+    { to: "/browser", label: t("browser"), icon: Globe },
     { to: "/settings", label: t("settings"), icon: Settings },
   ];
 

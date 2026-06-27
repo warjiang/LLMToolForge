@@ -95,6 +95,7 @@ import {
   type AgentRuntime,
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
+import { resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, formatTime, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -881,7 +882,10 @@ export function AgentChatView() {
   const saveAttachmentsForExecution = async (
     inputAttachments: ChatAttachment[]
   ): Promise<ChatAttachment[]> => {
-    const workspaceRoot = settings?.workspacePath?.trim() ?? "";
+    const workspaceRoot = await resolveSessionWorkspace(
+      settings?.sessionId ?? "",
+      settings?.workspacePath ?? ""
+    );
     return Promise.all(
       inputAttachments.map((attachment) =>
         saveAttachmentToExecutionRoot(attachment, workspaceRoot)
@@ -1545,7 +1549,10 @@ export function AgentChatView() {
 
     let runtime = agentRuntimeRef.current;
     const meta = agentRuntimeMetaRef.current;
-    const workspacePath = settings?.workspacePath?.trim() ?? "";
+    const workspacePath = await resolveSessionWorkspace(
+      sessionId,
+      settings?.workspacePath ?? ""
+    );
     const signature = agentRuntimeSignature(def, workspacePath);
     const needNew =
       !runtime ||
