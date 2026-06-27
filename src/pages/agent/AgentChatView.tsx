@@ -3392,7 +3392,7 @@ function ReasoningTrace({
 
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
   return (
-    <div className="w-[min(32rem,calc(100vw-3rem))] min-w-0 max-w-full border-l border-dashed border-border pl-3">
+    <div className="w-[min(32rem,calc(100vw-3rem))] min-w-0 max-w-full border-l border-dashed border-border pl-5">
       <div className="grid min-w-0 gap-1">
         {toolCalls.map((call) => (
           <ToolCallCard key={call.id} call={call} />
