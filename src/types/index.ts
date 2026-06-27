@@ -261,7 +261,10 @@ export type AgentInternalToolId =
   | "write"
   | "edit"
   | "ls"
-  | "grep";
+  | "grep"
+  | "duckdb_query"
+  | "data_chart_html"
+  | "data_report_html";
 
 export type AgentSandboxMode =
   | "read-only"
@@ -300,4 +303,7 @@ export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
   "edit",
   "ls",
   "grep",
+  "duckdb_query",
+  "data_chart_html",
+  "data_report_html",
 ];

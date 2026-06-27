@@ -1,0 +1,2 @@
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"New internal tool ids and constants need same-layer consistency checks."}
+{"file":".trellis/spec/frontend/playground-provider-contracts.md","reason":"Quality check for chat/session setting persistence and tool-call display behavior."}

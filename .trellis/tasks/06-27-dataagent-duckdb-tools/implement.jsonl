@@ -1,0 +1,2 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"DataAgent spans chat settings, UI, Tauri commands, persistence, and tool result contracts."}
+{"file":".trellis/spec/frontend/playground-provider-contracts.md","reason":"Chat settings, tool calls, and sandbox-backed agent tools share the Playground persistence and UI contracts."}
