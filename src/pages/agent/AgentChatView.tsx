@@ -3164,7 +3164,7 @@ function ChatBubble({
                     key={attachment.id}
                     src={attachmentSrc(attachment)}
                     alt={attachment.name}
-                    className="max-h-80 w-full rounded-sm border border-border bg-background object-contain"
+                    className="h-auto max-w-full rounded-sm border border-border bg-background"
                   />
                 ))}
               </div>
