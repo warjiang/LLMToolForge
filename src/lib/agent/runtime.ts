@@ -100,7 +100,8 @@ function resultToText(result: AgentToolResult<unknown> | undefined): string {
  */
 export async function createAgentRuntime(
   def: AgentDefinition,
-  callbacks: AgentRuntimeCallbacks
+  callbacks: AgentRuntimeCallbacks,
+  options: { workspacePath?: string } = {}
 ): Promise<AgentRuntime> {
   let unified = useUnifiedStore.getState();
   if (!unified.supported) {
@@ -142,6 +143,7 @@ export async function createAgentRuntime(
   const resolved = await resolveAgent(def, {
     skills: useSkillStore.getState().items,
     mcpServers: useMcpStore.getState().items,
+    workspacePath: options.workspacePath,
   });
 
   console.debug("[agent] runtime built", {

@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentType, ReactNode, TouchEvent, WheelEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useDropzone } from "react-dropzone";
 import { useTranslation } from "react-i18next";
 import i18n from "@/i18n/config";
 import {
+  ArrowDown,
   Bot,
   Boxes,
   Bug,
@@ -14,20 +16,27 @@ import {
   Compass,
   Database,
   Eraser,
+  FileArchive,
+  FileCode,
   FileAudio,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   FileVideo,
+  FolderOpen,
   Code2,
   Lightbulb,
   ListChecks,
   Loader2,
   Paperclip,
   Pencil,
+  Plus,
   RefreshCcw,
   RotateCcw,
   Send,
   Server,
   Settings2,
+  Shield,
   SquareTerminal,
   Trash2,
   Wrench,
@@ -35,7 +44,7 @@ import {
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { MarkdownMessage } from "@/components/agent/MarkdownMessage";
-import { TypingDots, Reveal } from "@/components/common/Reveal";
+import { Reveal } from "@/components/common/Reveal";
 import { getModelFeatureTitle } from "@/components/common/ModelFeatureBadges";
 import {
   ModelIcon,
@@ -87,7 +96,7 @@ import {
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
-import { cn, formatTime, uid } from "@/lib/utils";
+import { cn, formatTime, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
@@ -117,6 +126,7 @@ import type {
   ToolCallRecord,
 } from "@/types/chat";
 import {
+  AGENT_INTERNAL_TOOL_IDS,
   PROVIDER_METAS,
   type VolcCredential,
   type GatewayConnection,
@@ -138,13 +148,15 @@ const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
 
 const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
   { value: "read-only", label: "Read only" },
-  { value: "workspace-write", label: "Workspace write" },
+  { value: "workspace-write", label: "Execution write" },
   { value: "danger-full-access", label: "Full access" },
 ];
 
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
 const STREAM_CONTENT_FLUSH_MS = 50;
+const SCROLL_BOTTOM_THRESHOLD_PX = 96;
+const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 const DIRECT_AGENT_VALUE = "__direct__";
 const ADHOC_AGENT_ID = "__adhoc__";
@@ -153,8 +165,10 @@ const SHOW_AGENT_PICKER = false;
 
 /**
  * Build an in-memory `AgentDefinition` from the current chat session settings.
- * Used to give the "direct chat" mode real tool execution (skills + MCP) via
- * the Pi runtime without forcing the user to create a named agent.
+ * Used to give the "direct chat" mode real tool execution via the Pi runtime
+ * without forcing the user to create a named agent. With no workspace selected,
+ * internal tools use the chat execution root; empty means the backend's
+ * managed temporary sandbox directory.
  */
 function buildAdHocAgentDef(
   settings: ChatSessionSettings,
@@ -169,18 +183,18 @@ function buildAdHocAgentDef(
     description: "",
     systemPrompt: settings.system ?? "",
     modelId: unifiedModelId,
-    enabledInternalTools: ["bash"],
+    enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,
-    workspacePath: "",
+    workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
     maxTokens: Number(settings.maxTokens) || 4096,
   };
 }
 
 /** Stable signature so a cached runtime is reused until its config changes. */
-function agentRuntimeSignature(def: AgentDefinition): string {
+function agentRuntimeSignature(def: AgentDefinition, workspacePath: string): string {
   return [
     def.id,
     def.modelId,
@@ -189,7 +203,7 @@ function agentRuntimeSignature(def: AgentDefinition): string {
     def.enabledSkillIds.join(","),
     def.enabledMcpServerIds.join(","),
     def.sandboxMode,
-    def.workspacePath,
+    workspacePath,
     def.temperature,
     def.maxTokens,
   ].join("|");
@@ -261,6 +275,49 @@ function generatedVideoAttachment(
 
 function attachmentSrc(attachment: ChatAttachment): string | undefined {
   return attachment.dataUrl ?? attachment.path;
+}
+
+interface SaveChatAttachmentResponse {
+  path: string;
+}
+
+async function saveAttachmentToExecutionRoot(
+  attachment: ChatAttachment,
+  workspaceRoot: string
+): Promise<ChatAttachment> {
+  if (!isTauri() || !attachment.dataUrl || attachment.path) return attachment;
+  const { invoke } = await import("@tauri-apps/api/core");
+  const res = await invoke<SaveChatAttachmentResponse>("save_chat_attachment", {
+    req: {
+      workspaceRoot,
+      attachmentId: attachment.id,
+      fileName: attachment.name,
+      dataUrl: attachment.dataUrl,
+    },
+  });
+  return { ...attachment, path: res.path };
+}
+
+function attachmentPathContext(attachments: ChatAttachment[]): string {
+  const localFiles = attachments.filter((attachment) => attachment.path);
+  if (localFiles.length === 0) return "";
+  return [
+    "",
+    "",
+    "[Uploaded files saved in the execution directory]",
+    ...localFiles.map(
+      (attachment) =>
+        `- ${attachment.name} (${attachment.mime || "unknown"}): ${attachment.path}`
+    ),
+  ].join("\n");
+}
+
+function promptWithAttachmentPaths(
+  content: string,
+  attachments: ChatAttachment[]
+): string {
+  const context = attachmentPathContext(attachments);
+  return context ? `${content}${context}`.trim() : content;
 }
 
 function mediaKindForUrl(url: string): VideoGenerationReference["kind"] | null {
@@ -369,8 +426,14 @@ export function AgentChatView() {
   const [titleDraft, setTitleDraft] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentsManagerOpen, setAgentsManagerOpen] = useState(false);
-  const fileRef = useRef<HTMLInputElement>(null);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottomRef = useRef(true);
+  const userScrollLockRef = useRef(false);
+  const lastScrollTopRef = useRef(0);
+  const pendingAutoScrollFrameRef = useRef<number | null>(null);
+  const touchYRef = useRef<number | null>(null);
+  const lastScrollSessionRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const agentRuntimeRef = useRef<AgentRuntime | null>(null);
   const agentRuntimeMetaRef = useRef<{
@@ -543,6 +606,103 @@ export function AgentChatView() {
     el.scrollIntoView({ behavior: "smooth", block: "start" });
     setActiveTurnId(id);
   };
+
+  const isNearScrollBottom = (root: HTMLDivElement) =>
+    root.scrollHeight - root.scrollTop - root.clientHeight <
+    SCROLL_BOTTOM_THRESHOLD_PX;
+
+  const hasScrollableContent = (root: HTMLDivElement) =>
+    root.clientHeight > 0 &&
+    root.scrollHeight - root.clientHeight > SCROLL_OVERFLOW_THRESHOLD_PX;
+
+  const setScrollToBottomVisible = (visible: boolean) => {
+    setShowScrollToBottom((current) =>
+      current === visible ? current : visible
+    );
+  };
+
+  const syncScrollToBottomButton = (root = scrollRef.current) => {
+    if (!root) {
+      setScrollToBottomVisible(false);
+      return;
+    }
+    const visible =
+      chat.messages.length > 0 &&
+      hasScrollableContent(root) &&
+      !isNearScrollBottom(root) &&
+      !stickToBottomRef.current;
+    setScrollToBottomVisible(visible);
+  };
+
+  const cancelPendingAutoScroll = () => {
+    if (pendingAutoScrollFrameRef.current == null) return;
+    cancelAnimationFrame(pendingAutoScrollFrameRef.current);
+    pendingAutoScrollFrameRef.current = null;
+  };
+
+  const lockScrollFollowForUser = () => {
+    const root = scrollRef.current;
+    if (!root) return;
+    cancelPendingAutoScroll();
+    userScrollLockRef.current = true;
+    stickToBottomRef.current = false;
+    syncScrollToBottomButton(root);
+  };
+
+  const updateScrollFollowState = () => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const atBottom = isNearScrollBottom(root);
+    const scrollingUp = root.scrollTop < lastScrollTopRef.current - 1;
+    lastScrollTopRef.current = root.scrollTop;
+
+    if (scrollingUp && !atBottom) {
+      lockScrollFollowForUser();
+      return;
+    }
+
+    if (atBottom) {
+      userScrollLockRef.current = false;
+      stickToBottomRef.current = true;
+    } else if (userScrollLockRef.current) {
+      stickToBottomRef.current = false;
+    } else {
+      stickToBottomRef.current = false;
+    }
+    syncScrollToBottomButton(root);
+  };
+
+  const scrollToBottom = (behavior: ScrollBehavior = "smooth") => {
+    const root = scrollRef.current;
+    if (!root) return;
+    cancelPendingAutoScroll();
+    userScrollLockRef.current = false;
+    root.scrollTo({ top: root.scrollHeight, behavior });
+    lastScrollTopRef.current = root.scrollHeight;
+    stickToBottomRef.current = true;
+    setScrollToBottomVisible(false);
+  };
+
+  const handleMessageWheel = (event: WheelEvent<HTMLDivElement>) => {
+    if (event.deltaY < 0) lockScrollFollowForUser();
+  };
+
+  const handleMessageTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    touchYRef.current = event.touches[0]?.clientY ?? null;
+  };
+
+  const handleMessageTouchMove = (event: TouchEvent<HTMLDivElement>) => {
+    const prevY = touchYRef.current;
+    const nextY = event.touches[0]?.clientY ?? null;
+    if (prevY != null && nextY != null && nextY > prevY) {
+      lockScrollFollowForUser();
+    }
+    touchYRef.current = nextY;
+  };
+
+  const handleMessageTouchEnd = () => {
+    touchYRef.current = null;
+  };
   const manualModels = useMemo<ModelInfo[]>(
     () =>
       (keyConn?.models ?? []).map((id) => ({
@@ -609,8 +769,41 @@ export function AgentChatView() {
   }, [storedModels, settings?.modelId]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [chat.messages]);
+    const root = scrollRef.current;
+    if (!root) return;
+    if (chat.messages.length === 0) {
+      cancelPendingAutoScroll();
+      userScrollLockRef.current = false;
+      stickToBottomRef.current = true;
+      lastScrollTopRef.current = 0;
+      setScrollToBottomVisible(false);
+      return;
+    }
+
+    const sessionChanged = lastScrollSessionRef.current !== chat.activeSessionId;
+    if (sessionChanged) {
+      lastScrollSessionRef.current = chat.activeSessionId;
+      cancelPendingAutoScroll();
+      userScrollLockRef.current = false;
+      stickToBottomRef.current = true;
+    }
+
+    if (stickToBottomRef.current && !userScrollLockRef.current) {
+      cancelPendingAutoScroll();
+      pendingAutoScrollFrameRef.current = requestAnimationFrame(() => {
+        pendingAutoScrollFrameRef.current = null;
+        if (stickToBottomRef.current && !userScrollLockRef.current) {
+          scrollToBottom("auto");
+        } else {
+          syncScrollToBottomButton(root);
+        }
+      });
+    } else {
+      syncScrollToBottomButton(root);
+    }
+  }, [chat.activeSessionId, chat.messages]);
+
+  useEffect(() => () => cancelPendingAutoScroll(), []);
 
   const updateSettings = (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
@@ -675,9 +868,7 @@ export function AgentChatView() {
     }
   };
 
-  const pickFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files ?? []);
-    e.target.value = "";
+  const addAttachmentFiles = async (files: File[]) => {
     if (files.length === 0) return;
     try {
       const next = await Promise.all(files.map((f) => chat.fileToAttachment(f)));
@@ -686,6 +877,33 @@ export function AgentChatView() {
       setError(e instanceof Error ? e.message : t("agent_read_attachment_failed"));
     }
   };
+
+  const saveAttachmentsForExecution = async (
+    inputAttachments: ChatAttachment[]
+  ): Promise<ChatAttachment[]> => {
+    const workspaceRoot = settings?.workspacePath?.trim() ?? "";
+    return Promise.all(
+      inputAttachments.map((attachment) =>
+        saveAttachmentToExecutionRoot(attachment, workspaceRoot)
+      )
+    );
+  };
+
+  const {
+    getRootProps,
+    getInputProps,
+    isDragActive: attachmentDragActive,
+    open: openAttachmentPicker,
+  } = useDropzone({
+    disabled: !settings,
+    multiple: true,
+    noClick: true,
+    noKeyboard: true,
+    onDrop: (acceptedFiles) => {
+      if (!settings) return;
+      void addAttachmentFiles(acceptedFiles);
+    },
+  });
 
   const toolDefinitions = (): ToolDefinition[] => [
     ...activeSkills.map((skill) => ({
@@ -733,15 +951,19 @@ export function AgentChatView() {
             parts.push({ type: "image", url: part.url });
           }
           if (part.kind === "file") {
+            const attachment = m.attachments.find((a) => a.id === part.attachmentId);
+            const pathText = attachment?.path ? `\nLocal path: ${attachment.path}` : "";
             parts.push({
               type: "text",
-              text: `[Attached file: ${part.name ?? "file"} (${part.mime ?? "unknown"})]`,
+              text: `[Attached file: ${part.name ?? "file"} (${part.mime ?? "unknown"})${pathText}]`,
             });
           }
           if (part.kind === "audio" || part.kind === "video") {
+            const attachment = m.attachments.find((a) => a.id === part.attachmentId);
+            const pathText = attachment?.path ? `\nLocal path: ${attachment.path}` : "";
             parts.push({
               type: "text",
-              text: `[Attached ${part.kind}: ${part.name ?? part.kind} (${part.mime ?? "unknown"})]`,
+              text: `[Attached ${part.kind}: ${part.name ?? part.kind} (${part.mime ?? "unknown"})${pathText}]`,
             });
           }
           if (part.kind === "tool_result" && part.text) {
@@ -1211,6 +1433,7 @@ export function AgentChatView() {
     content: string,
     sessionId: string,
     def: AgentDefinition,
+    inputAttachments: ChatAttachment[] = [],
   ) => {
     agentTurnRef.current = {
       assistantId: null,
@@ -1221,10 +1444,26 @@ export function AgentChatView() {
       sessionId,
     };
 
+    const initialAssistant = await chat.addMessage({
+      role: "assistant",
+      content: "",
+      status: "pending",
+      provider: "unified",
+      modelId: def.modelId,
+    });
+    agentTurnRef.current.assistantId = initialAssistant.id;
+    agentTurnRef.current.toolAnchorId = initialAssistant.id;
+
     const callbacks: AgentRuntimeCallbacks = {
       onAssistantStart: async () => {
         const st = agentTurnRef.current;
         if (!st) return;
+        if (st.assistantId) {
+          st.toolAnchorId = st.toolAnchorId ?? st.assistantId;
+          st.acc = "";
+          st.lastFlush = 0;
+          return;
+        }
         const msg = await chat.addMessage({
           role: "assistant",
           content: "",
@@ -1306,14 +1545,15 @@ export function AgentChatView() {
 
     let runtime = agentRuntimeRef.current;
     const meta = agentRuntimeMetaRef.current;
-    const signature = agentRuntimeSignature(def);
+    const workspacePath = settings?.workspacePath?.trim() ?? "";
+    const signature = agentRuntimeSignature(def, workspacePath);
     const needNew =
       !runtime ||
       meta?.signature !== signature ||
       meta?.sessionId !== sessionId;
     if (needNew) {
       runtime?.abort();
-      runtime = await createAgentRuntime(def, callbacks);
+      runtime = await createAgentRuntime(def, callbacks, { workspacePath });
       agentRuntimeRef.current = runtime;
       agentRuntimeMetaRef.current = { signature, sessionId };
       const notices: string[] = [];
@@ -1333,7 +1573,7 @@ export function AgentChatView() {
       }
       if (notices.length > 0) setError(notices.join("\n"));
     }
-    await runtime!.prompt(content);
+    await runtime!.prompt(promptWithAttachmentPaths(content, inputAttachments));
     await runtime!.waitForIdle();
   };
 
@@ -1345,7 +1585,10 @@ export function AgentChatView() {
   const resolveTurnAgent = (): AgentDefinition | null => {
     if (selectedAgent) return selectedAgent;
     if (!settings?.connKey) return null;
-    const wantsTools = activeSkills.length > 0 || activeMcp.length > 0;
+    const wantsTools =
+      AGENT_INTERNAL_TOOL_IDS.length > 0 ||
+      activeSkills.length > 0 ||
+      activeMcp.length > 0;
     if (!wantsTools) return null;
     if (
       selectedModel &&
@@ -1376,14 +1619,14 @@ export function AgentChatView() {
     if (validationError) return setError(validationError);
 
     setError(null);
-    const pendingAttachments = attachments;
-    const parts = partsFromInput(content, pendingAttachments);
-    const turnAgent = resolveTurnAgent();
-    setInput("");
-    setAttachments([]);
     setSending(true);
 
     try {
+      const pendingAttachments = await saveAttachmentsForExecution(attachments);
+      const parts = partsFromInput(content, pendingAttachments);
+      const turnAgent = resolveTurnAgent();
+      setInput("");
+      setAttachments([]);
       const userMsg = await chat.addMessage({
         role: "user",
         content,
@@ -1391,7 +1634,7 @@ export function AgentChatView() {
         attachments: pendingAttachments,
       });
       if (turnAgent) {
-        await runAgentTurn(content, userMsg.sessionId, turnAgent);
+        await runAgentTurn(content, userMsg.sessionId, turnAgent, pendingAttachments);
       } else {
         await generateAssistantForUser({
           userMsg,
@@ -1439,15 +1682,20 @@ export function AgentChatView() {
       await chat.deleteMessagesFrom(message.sessionId, message.id, false);
       const currentMessages = useChatStore.getState().messages;
       const userMsg = currentMessages.find((m) => m.id === message.id) ?? message;
+      const savedAttachments = await saveAttachmentsForExecution(userMsg.attachments);
+      const userMsgWithAttachments = { ...userMsg, attachments: savedAttachments };
+      const history = currentMessages.map((m) =>
+        m.id === userMsg.id ? userMsgWithAttachments : m
+      );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent);
+        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
       } else {
         await generateAssistantForUser({
-          userMsg,
-          history: currentMessages,
+          userMsg: userMsgWithAttachments,
+          history,
           prompt,
-          inputAttachments: userMsg.attachments,
+          inputAttachments: savedAttachments,
         });
       }
     } catch (e) {
@@ -1478,15 +1726,20 @@ export function AgentChatView() {
       await chat.deleteMessagesFrom(message.sessionId, message.id, true);
       const currentMessages = useChatStore.getState().messages;
       const latestUser = currentMessages.find((m) => m.id === userMsg.id) ?? userMsg;
+      const savedAttachments = await saveAttachmentsForExecution(latestUser.attachments);
+      const latestUserWithAttachments = { ...latestUser, attachments: savedAttachments };
+      const history = currentMessages.map((m) =>
+        m.id === latestUser.id ? latestUserWithAttachments : m
+      );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, latestUser.sessionId, turnAgent);
+        await runAgentTurn(prompt, latestUser.sessionId, turnAgent, savedAttachments);
       } else {
         await generateAssistantForUser({
-          userMsg: latestUser,
-          history: currentMessages,
+          userMsg: latestUserWithAttachments,
+          history,
           prompt,
-          inputAttachments: latestUser.attachments,
+          inputAttachments: savedAttachments,
         });
       }
     } catch (e) {
@@ -1569,15 +1822,20 @@ export function AgentChatView() {
       setEditingDraft("");
       const currentMessages = useChatStore.getState().messages;
       const userMsg = currentMessages.find((m) => m.id === edited.id) ?? edited;
+      const savedAttachments = await saveAttachmentsForExecution(userMsg.attachments);
+      const userMsgWithAttachments = { ...userMsg, attachments: savedAttachments };
+      const history = currentMessages.map((m) =>
+        m.id === userMsg.id ? userMsgWithAttachments : m
+      );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent);
+        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
       } else {
         await generateAssistantForUser({
-          userMsg,
-          history: currentMessages,
+          userMsg: userMsgWithAttachments,
+          history,
           prompt,
-          inputAttachments: userMsg.attachments,
+          inputAttachments: savedAttachments,
         });
       }
     } catch (e) {
@@ -1661,7 +1919,16 @@ export function AgentChatView() {
           )}
 
           <div className="relative flex min-h-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 pb-4 pt-6">
+          <div
+            ref={scrollRef}
+            onScroll={updateScrollFollowState}
+            onWheel={handleMessageWheel}
+            onTouchStart={handleMessageTouchStart}
+            onTouchMove={handleMessageTouchMove}
+            onTouchEnd={handleMessageTouchEnd}
+            onTouchCancel={handleMessageTouchEnd}
+            className="flex-1 overflow-y-auto px-4 pb-4 pt-6"
+          >
             <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
               {chat.loading ? (
                 <MessageSkeletons />
@@ -1707,6 +1974,22 @@ export function AgentChatView() {
               )}
             </div>
           </div>
+          <AnimatePresence>
+            {showScrollToBottom && (
+              <motion.button
+                type="button"
+                initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.96 }}
+                transition={{ duration: 0.16, ease: [0.16, 1, 0.3, 1] }}
+                onClick={() => scrollToBottom("smooth")}
+                title={t("agent_scroll_to_bottom")}
+                className="absolute bottom-4 left-1/2 z-20 flex h-9 w-9 -translate-x-1/2 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-[0_8px_24px_rgba(0,0,0,0.12),0_2px_8px_rgba(0,0,0,0.08)] transition-colors hover:text-foreground"
+              >
+                <ArrowDown className="h-4 w-4" />
+              </motion.button>
+            )}
+          </AnimatePresence>
           {turns.length > 1 && (
             <TurnRail
               turns={turns}
@@ -1717,14 +2000,6 @@ export function AgentChatView() {
           </div>
 
           <div className="shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*,audio/*,video/*,.txt,.md,.json,.csv,.log"
-              multiple
-              className="hidden"
-              onChange={pickFiles}
-            />
             <AnimatePresence>
               {error && (
                 <motion.div
@@ -1739,9 +2014,48 @@ export function AgentChatView() {
                 </motion.div>
               )}
             </AnimatePresence>
-            <div className="mx-auto w-full max-w-[800px] overflow-hidden rounded-lg border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-shadow duration-150 ease-geist focus-within:border-muted-foreground/40">
+            <div
+              {...getRootProps({
+                className: cn(
+                  "relative mx-auto w-full max-w-[800px] overflow-hidden rounded-lg border border-input bg-card shadow-[0_14px_42px_rgba(0,0,0,0.11),0_3px_10px_rgba(0,0,0,0.06)] transition-[border-color,background-color,box-shadow] duration-150 ease-geist focus-within:border-muted-foreground/40",
+                  attachmentDragActive &&
+                    "border-accent/70 bg-accent/5 shadow-[0_16px_48px_rgba(0,0,0,0.14),0_0_0_3px_hsl(var(--accent)/0.14)]"
+                ),
+              })}
+            >
+              <input {...getInputProps()} />
+              {attachmentDragActive && (
+                <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center border border-dashed border-accent/70 bg-background/75 text-label-13 font-medium text-accent backdrop-blur-[1px]">
+                  {t("agent_drop_files")}
+                </div>
+              )}
+              {attachments.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 px-3 pb-1.5 pt-3">
+                  {attachments.map((a) => (
+                    <AttachmentPreviewCard
+                      key={a.id}
+                      attachment={a}
+                      onRemove={() =>
+                        setAttachments((prev) => prev.filter((x) => x.id !== a.id))
+                      }
+                    />
+                  ))}
+                  <button
+                    type="button"
+                    disabled={!settings}
+                    title={t("agent_add_attachment")}
+                    onClick={openAttachmentPicker}
+                    className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-background/40 text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus className="h-5 w-5" />
+                  </button>
+                </div>
+              )}
               <Textarea
-                className="h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
+                className={cn(
+                  "h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none",
+                  attachments.length > 0 && "pt-2.5"
+                )}
                 placeholder={t("agent_textarea_placeholder")}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
@@ -1752,26 +2066,13 @@ export function AgentChatView() {
                   }
                 }}
               />
-              {attachments.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 border-t border-border px-2.5 py-2">
-                  {attachments.map((a) => (
-                    <AttachmentPill
-                      key={a.id}
-                      attachment={a}
-                      onRemove={() =>
-                        setAttachments((prev) => prev.filter((x) => x.id !== a.id))
-                      }
-                    />
-                  ))}
-                </div>
-              )}
-              <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 border-t border-border/60 px-2 py-2">
+              <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-2 pb-2 pt-1">
                 <Button
                   size="icon-sm"
                   variant="ghost"
                   disabled={!settings}
                   title={t("agent_add_attachment")}
-                  onClick={() => fileRef.current?.click()}
+                  onClick={openAttachmentPicker}
                 >
                   <Paperclip className="h-4 w-4" />
                 </Button>
@@ -1792,15 +2093,13 @@ export function AgentChatView() {
                 </div>
 
                 {settings && (
-                  <Badge
-                    variant="outline"
-                    className="h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                  <SandboxModeSelect
+                    value={settings.sandboxMode}
+                    onChange={(sandboxMode) => updateSettings({ sandboxMode })}
+                    triggerClassName="h-7 w-[140px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
                     title={t("agent_current_sandbox")}
-                  >
-                    <ShieldIcon className="h-3.5 w-3.5" />
-                    {SANDBOX_MODES.find((m) => m.value === settings.sandboxMode)
-                      ?.label ?? "Sandbox"}
-                  </Badge>
+                    showIcon
+                  />
                 )}
 
                 <ComposerToolMenu
@@ -2183,24 +2482,30 @@ function ConfigRail({
         </div>
       </RailSection>
 
+      <RailSection icon={FolderOpen} title={t("agents_workspace_label")}>
+        <div className="grid gap-1.5">
+          <Label htmlFor="agent-chat-workspace">
+            {t("agents_workspace_label")}
+          </Label>
+          <Input
+            id="agent-chat-workspace"
+            placeholder={t("agents_workspace_placeholder")}
+            value={settings.workspacePath}
+            onChange={(e) => onSettings({ workspacePath: e.target.value })}
+          />
+        </div>
+        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
+          {t("agents_workspace_hint")}
+        </div>
+      </RailSection>
+
+      <Separator className="my-4" />
+
       <RailSection icon={ShieldIcon} title={t("agent_sandbox_section")}>
-        <Select
+        <SandboxModeSelect
           value={settings.sandboxMode}
-          onValueChange={(sandboxMode) =>
-            onSettings({ sandboxMode: sandboxMode as SandboxMode })
-          }
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {SANDBOX_MODES.map((m) => (
-              <SelectItem key={m.value} value={m.value}>
-                {m.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+          onChange={(sandboxMode) => onSettings({ sandboxMode })}
+        />
         <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
           {t("agent_sandbox_hint")}
         </div>
@@ -2478,7 +2783,141 @@ function RailSection({
   );
 }
 
-function AttachmentPill({
+function SandboxModeSelect({
+  value,
+  onChange,
+  triggerClassName,
+  title,
+  showIcon = false,
+}: {
+  value: SandboxMode;
+  onChange: (value: SandboxMode) => void;
+  triggerClassName?: string;
+  title?: string;
+  showIcon?: boolean;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(sandboxMode) => onChange(sandboxMode as SandboxMode)}
+    >
+      <SelectTrigger className={triggerClassName} title={title}>
+        {showIcon && <ShieldIcon className="h-3.5 w-3.5 shrink-0" />}
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {SANDBOX_MODES.map((m) => (
+          <SelectItem key={m.value} value={m.value}>
+            {m.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
+function formatAttachmentSize(size: number) {
+  if (size <= 0) return "";
+  if (size < 1024) return `${size}B`;
+  const units = ["KB", "MB", "GB"];
+  let value = size / 1024;
+  let unitIndex = 0;
+  while (value >= 1024 && unitIndex < units.length - 1) {
+    value /= 1024;
+    unitIndex += 1;
+  }
+  const precision = value >= 100 ? 2 : value >= 10 ? 2 : 1;
+  const formatted = value
+    .toFixed(precision)
+    .replace(/\.0$/, "")
+    .replace(/(\.\d)0$/, "$1")
+    .replace(/\.00$/, "");
+  return `${formatted}${units[unitIndex]}`;
+}
+
+function attachmentFallbackLabel(
+  attachment: ChatAttachment,
+  t: (key: string) => string
+) {
+  if (attachment.kind === "video") return t("agent_attachment_video");
+  if (attachment.kind === "image") return t("agent_attachment_image");
+  return t("agent_attachment");
+}
+
+function attachmentExtension(name: string) {
+  const [, ext = ""] = /\.([^.]+)$/.exec(name.toLowerCase()) ?? [];
+  return ext;
+}
+
+function attachmentVisual(attachment: ChatAttachment): {
+  Icon: ComponentType<{ className?: string }>;
+  frameClassName: string;
+  iconClassName: string;
+} {
+  const ext = attachmentExtension(attachment.name);
+  const mime = attachment.mime.toLowerCase();
+  if (
+    attachment.kind === "image" ||
+    mime.startsWith("image/") ||
+    ["png", "jpg", "jpeg", "webp", "gif", "svg"].includes(ext)
+  ) {
+    return {
+      Icon: FileImage,
+      frameClassName: "bg-sky-500",
+      iconClassName: "text-white",
+    };
+  }
+  if (attachment.kind === "video") {
+    return {
+      Icon: FileVideo,
+      frameClassName: "bg-violet-500",
+      iconClassName: "text-white",
+    };
+  }
+  if (attachment.kind === "audio") {
+    return {
+      Icon: FileAudio,
+      frameClassName: "bg-amber-500",
+      iconClassName: "text-white",
+    };
+  }
+  if (
+    mime.includes("spreadsheet") ||
+    mime.includes("excel") ||
+    ["csv", "xls", "xlsx", "numbers"].includes(ext)
+  ) {
+    return {
+      Icon: FileSpreadsheet,
+      frameClassName: "bg-emerald-500",
+      iconClassName: "text-white",
+    };
+  }
+  if (
+    mime.includes("json") ||
+    mime.includes("javascript") ||
+    ["json", "jsonl", "ts", "tsx", "js", "jsx", "html", "css", "xml"].includes(ext)
+  ) {
+    return {
+      Icon: FileCode,
+      frameClassName: "bg-indigo-500",
+      iconClassName: "text-white",
+    };
+  }
+  if (["zip", "gz", "tar", "rar", "7z"].includes(ext)) {
+    return {
+      Icon: FileArchive,
+      frameClassName: "bg-stone-500",
+      iconClassName: "text-white",
+    };
+  }
+  return {
+    Icon: FileText,
+    frameClassName: "bg-muted",
+    iconClassName: "text-muted-foreground",
+  };
+}
+
+function AttachmentPreviewCard({
   attachment,
   onRemove,
 }: {
@@ -2487,41 +2926,45 @@ function AttachmentPill({
 }) {
   const { t } = useTranslation("pages");
   const isImage = attachment.kind === "image";
-  const isVideo = attachment.kind === "video";
-  const isAudio = attachment.kind === "audio";
   const imageSrc = attachmentSrc(attachment);
+  const sizeLabel =
+    formatAttachmentSize(attachment.size) || attachmentFallbackLabel(attachment, t);
+  const visual = attachmentVisual(attachment);
+  const Icon = visual.Icon;
   return (
-    <div className="flex max-w-full items-center gap-2 rounded-sm border border-border bg-secondary/60 px-2 py-1.5">
+    <div className="flex h-[52px] w-full max-w-[280px] items-center gap-2.5 rounded-md border border-border bg-background px-2.5 shadow-[0_1px_1px_rgba(0,0,0,0.03)] sm:w-[280px]">
       {isImage && imageSrc ? (
         <img
           src={imageSrc}
           alt={attachment.name}
-          className="h-8 w-8 rounded-sm object-cover"
+          className="h-8 w-8 shrink-0 rounded-sm object-cover"
         />
-      ) : isVideo ? (
-        <FileVideo className="h-4 w-4 text-muted-foreground" />
-      ) : isAudio ? (
-        <FileAudio className="h-4 w-4 text-muted-foreground" />
       ) : (
-        <FileText className="h-4 w-4 text-muted-foreground" />
+        <span
+          className={cn(
+            "flex h-8 w-8 shrink-0 items-center justify-center rounded-sm",
+            visual.frameClassName
+          )}
+        >
+          <Icon className={cn("h-4 w-4", visual.iconClassName)} />
+        </span>
       )}
-      <div className="min-w-0">
-        <div className="truncate text-label-12 font-medium">
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-label-13 font-semibold text-foreground">
           {attachment.name}
         </div>
-        <div className="text-label-12 text-muted-foreground">
-          {attachment.size > 0
-            ? `${Math.ceil(attachment.size / 1024)} KB`
-            : attachment.kind === "video"
-              ? t("agent_attachment_video")
-              : attachment.kind === "image"
-                ? t("agent_attachment_image")
-                : t("agent_attachment")}
+        <div className="truncate text-label-12 text-muted-foreground">
+          {sizeLabel}
         </div>
       </div>
       {onRemove && (
-        <Button size="icon-sm" variant="ghost" onClick={onRemove}>
-          <X className="h-3.5 w-3.5" />
+        <Button
+          size="icon-sm"
+          variant="ghost"
+          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+          onClick={onRemove}
+        >
+          <X className="h-4 w-4" />
         </Button>
       )}
     </div>
@@ -2590,6 +3033,16 @@ function ChatBubble({
     message.error && message.content.trim() === message.error.trim()
       ? ""
       : message.content;
+  const hasToolCalls = !isUser && !!toolCalls && toolCalls.length > 0;
+  const hasMessageBubble =
+    editing ||
+    generatedImages.length > 0 ||
+    generatedVideos.length > 0 ||
+    pillAttachments.length > 0 ||
+    !!visibleContent ||
+    !!message.error ||
+    (!isUser && !!message.reasoning);
+  const actionOnly = hasToolCalls && !hasMessageBubble && !typing;
 
   useEffect(() => {
     if (!editing) return;
@@ -2616,113 +3069,106 @@ function ChatBubble({
       className={cn("group flex w-full scroll-mt-6", isUser && "justify-end")}
     >
       <div className={cn("flex max-w-[90%] flex-col gap-1.5", isUser && "items-end")}>
-        <div
-          className={cn(
-            "text-copy-14",
-            editing
-              ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-              : "rounded-md px-3.5 py-2.5",
-            !editing &&
-              (isUser
-                ? "rounded-tr-sm bg-muted text-foreground"
-                : isTool
-                  ? "rounded-tl-sm border border-border bg-secondary text-foreground"
-                  : "rounded-tl-sm border border-border bg-card text-foreground shadow-geist-sm")
-          )}
-        >
-          {generatedImages.length > 0 && (
-            <div className="mb-3 grid gap-2">
-              {generatedImages.map((attachment) => (
-                <img
-                  key={attachment.id}
-                  src={attachmentSrc(attachment)}
-                  alt={attachment.name}
-                  className="max-h-80 w-full rounded-sm border border-border bg-background object-contain"
-                />
-              ))}
-            </div>
-          )}
-          {generatedVideos.length > 0 && (
-            <div className="mb-3 grid gap-2">
-              {generatedVideos.map((attachment) => (
-                <video
-                  key={attachment.id}
-                  src={attachmentSrc(attachment)}
-                  controls
-                  className="max-h-80 w-full rounded-sm border border-border bg-background"
-                />
-              ))}
-            </div>
-          )}
-          {pillAttachments.length > 0 && (
-            <div className="mb-2 grid gap-2">
-              {pillAttachments.map((a) => (
-                <AttachmentPill key={a.id} attachment={a} />
-              ))}
-            </div>
-          )}
-          {editing ? (
-            <div className="grid w-[min(42rem,70vw)] max-w-full gap-2">
-              <Textarea
-                ref={editTextareaRef}
-                className="min-h-[96px] resize-y border-0 bg-transparent px-2 py-2 text-copy-14 text-foreground shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
-                value={editingDraft}
-                onChange={(e) => onEditDraftChange(e.target.value)}
-                autoFocus
-              />
-              <div className="flex justify-end gap-1.5 border-t border-border/70 pt-1.5">
-                <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onCancelEdit}>
-                  <X className="h-3.5 w-3.5" />
-                  {t("agent_cancel")}
-                </Button>
-                <Button size="sm" variant="primary" className="h-7 px-2.5" onClick={onSaveEdit}>
-                  <Check className="h-3.5 w-3.5" />
-                  {isUser ? t("agent_save_retry") : t("agent_save")}
-                </Button>
-              </div>
-            </div>
-          ) : typing ? (
-            <div className="grid min-w-48 gap-2">
-              <div className="flex items-center gap-2 text-label-13 text-muted-foreground">
-                <TypingDots />
-                <span>{t("agent_generating")}</span>
-              </div>
-              <div className="h-2 w-36 overflow-hidden rounded-full bg-muted">
-                <div className="h-full w-1/2 animate-pulse rounded-full bg-accent/50" />
-              </div>
-            </div>
-          ) : (
-            <div className="grid gap-2">
-              {!isUser && message.reasoning && (
-                <ReasoningTrace
-                  reasoning={message.reasoning}
-                  reasoningMs={message.reasoningMs}
-                  streaming={streaming && message.status === "pending"}
-                />
-              )}
-              {visibleContent &&
-                (isUser ? (
-                  <div className="whitespace-pre-wrap break-words">
-                    {visibleContent}
-                  </div>
-                ) : (
-                  <MarkdownMessage
-                    content={visibleContent}
-                    streaming={streaming && message.status === "pending"}
+        {hasMessageBubble && (
+          <div
+            className={cn(
+              "text-copy-14",
+              editing
+                ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
+                : "rounded-md px-3.5 py-2.5",
+              !editing &&
+                (isUser
+                  ? "rounded-tr-sm bg-muted text-foreground"
+                  : isTool
+                    ? "rounded-tl-sm border border-border bg-secondary text-foreground"
+                    : "rounded-tl-sm border border-border bg-card text-foreground shadow-geist-sm")
+            )}
+          >
+            {generatedImages.length > 0 && (
+              <div className="mb-3 grid gap-2">
+                {generatedImages.map((attachment) => (
+                  <img
+                    key={attachment.id}
+                    src={attachmentSrc(attachment)}
+                    alt={attachment.name}
+                    className="max-h-80 w-full rounded-sm border border-border bg-background object-contain"
                   />
                 ))}
-              {message.error && (
-                <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
-                  {message.error}
+              </div>
+            )}
+            {generatedVideos.length > 0 && (
+              <div className="mb-3 grid gap-2">
+                {generatedVideos.map((attachment) => (
+                  <video
+                    key={attachment.id}
+                    src={attachmentSrc(attachment)}
+                    controls
+                    className="max-h-80 w-full rounded-sm border border-border bg-background"
+                  />
+                ))}
+              </div>
+            )}
+            {pillAttachments.length > 0 && (
+              <div className="mb-2 grid gap-2">
+                {pillAttachments.map((a) => (
+                  <AttachmentPreviewCard key={a.id} attachment={a} />
+                ))}
+              </div>
+            )}
+            {editing ? (
+              <div className="grid w-[min(42rem,70vw)] max-w-full gap-2">
+                <Textarea
+                  ref={editTextareaRef}
+                  className="min-h-[96px] resize-y border-0 bg-transparent px-2 py-2 text-copy-14 text-foreground shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none"
+                  value={editingDraft}
+                  onChange={(e) => onEditDraftChange(e.target.value)}
+                  autoFocus
+                />
+                <div className="flex justify-end gap-1.5 border-t border-border/70 pt-1.5">
+                  <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onCancelEdit}>
+                    <X className="h-3.5 w-3.5" />
+                    {t("agent_cancel")}
+                  </Button>
+                  <Button size="sm" variant="primary" className="h-7 px-2.5" onClick={onSaveEdit}>
+                    <Check className="h-3.5 w-3.5" />
+                    {isUser ? t("agent_save_retry") : t("agent_save")}
+                  </Button>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
-        {!isUser && toolCalls && toolCalls.length > 0 && (
+              </div>
+            ) : (
+              <div className="grid gap-2">
+                {!isUser && message.reasoning && (
+                  <ReasoningTrace
+                    reasoning={message.reasoning}
+                    reasoningMs={message.reasoningMs}
+                    streaming={streaming && message.status === "pending"}
+                  />
+                )}
+                {visibleContent &&
+                  (isUser ? (
+                    <div className="whitespace-pre-wrap break-words">
+                      {visibleContent}
+                    </div>
+                  ) : (
+                    <MarkdownMessage
+                      content={visibleContent}
+                      streaming={streaming && message.status === "pending"}
+                    />
+                  ))}
+                {message.error && (
+                  <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
+                    {message.error}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+        {!isUser && typing && !hasToolCalls && <AssistantWorkingStatus />}
+        {hasToolCalls && (
           <ToolCallTrace toolCalls={toolCalls} />
         )}
-        {!editing && (
+        {!editing && !actionOnly && (
           <div
             className={cn(
               "flex items-center gap-1",
@@ -2730,7 +3176,7 @@ function ChatBubble({
             )}
           >
             {!typing && (
-              <span className="shrink-0 select-none px-0.5 text-label-12 tabular-nums text-muted-foreground/70">
+              <span className="shrink-0 select-none px-0.5 text-label-12 tabular-nums text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                 {formatTime(message.createdAt)}
               </span>
             )}
@@ -2800,6 +3246,37 @@ function parseToolName(raw: string): { name: string; server?: string } {
   return { name: raw };
 }
 
+function AssistantWorkingStatus() {
+  const { t } = useTranslation("pages");
+  const reduce = useReducedMotion();
+
+  return (
+    <div
+      className="flex w-fit items-center gap-2 rounded-sm border border-border bg-secondary/40 px-2.5 py-1.5 text-label-12 text-muted-foreground"
+      role="status"
+      aria-live="polite"
+    >
+      <Bot className="h-3.5 w-3.5 shrink-0" />
+      <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-muted">
+        {reduce ? (
+          <span className="block h-full w-1/3 rounded-full bg-muted-foreground/55" />
+        ) : (
+          <motion.span
+            className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-foreground/60"
+            animate={{ x: ["-120%", "320%"] }}
+            transition={{
+              duration: 1.15,
+              repeat: Infinity,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+          />
+        )}
+      </span>
+      <span>{t("agent_execution_starting")}</span>
+    </div>
+  );
+}
+
 function ReasoningTrace({
   reasoning,
   reasoningMs,
@@ -2849,20 +3326,24 @@ function ReasoningTrace({
 
 function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
   const { t } = useTranslation("pages");
+  const label =
+    toolCalls.length > 1
+      ? t("agent_parallel_actions_label")
+      : t("agent_actions_label");
   return (
-    <div className="w-full border-l border-border pl-3">
-      <div className="mb-1.5 flex items-center gap-1.5 text-label-12 font-medium text-muted-foreground">
-        <Wrench className="h-3 w-3" />
-        <span>{t("agent_actions_label")}</span>
-        {toolCalls.length > 1 && (
-          <span className="tabular-nums text-muted-foreground/70">
-            · {toolCalls.length}
-          </span>
-        )}
-      </div>
+    <div className="w-full border-l border-dashed border-border pl-3">
       <div className="grid gap-1">
-        {toolCalls.map((call) => (
-          <ToolCallCard key={call.id} call={call} />
+        {toolCalls.map((call, index) => (
+          <ToolCallCard
+            key={call.id}
+            call={call}
+            label={index === 0 ? label : undefined}
+            count={
+              index === 0 && toolCalls.length > 1
+                ? toolCalls.length
+                : undefined
+            }
+          />
         ))}
       </div>
     </div>
@@ -2937,8 +3418,17 @@ function TurnRail({
   );
 }
 
-function ToolCallCard({ call }: { call: ToolCallRecord }) {
+function ToolCallCard({
+  call,
+  label,
+  count,
+}: {
+  call: ToolCallRecord;
+  label?: string;
+  count?: number;
+}) {
   const { t } = useTranslation("pages");
+  const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
   const isRunning = call.status === "running";
   const isError = call.status === "error";
@@ -2952,18 +3442,40 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
       : "");
 
   return (
-    <div className="overflow-hidden rounded-md border border-border bg-card">
+    <div
+      className={cn(
+        "overflow-hidden rounded-sm border border-border/70 bg-card",
+        isRunning && "border-accent/25 bg-background"
+      )}
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="flex w-full items-center gap-2 px-2.5 py-2 text-left transition-colors hover:bg-secondary/60"
+        className="relative flex w-full items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left transition-colors hover:bg-secondary/60"
       >
-        <ChevronRight
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
-            open && "rotate-90"
-          )}
-        />
+        {isRunning && !reduce && (
+          <motion.span
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/10 to-transparent"
+            animate={{ x: ["-120%", "420%"] }}
+            transition={{
+              duration: 1.25,
+              repeat: Infinity,
+              ease: [0.16, 1, 0.3, 1],
+            }}
+          />
+        )}
+        {label && (
+          <span className="flex shrink-0 items-center gap-1.5 text-label-12 font-medium text-muted-foreground">
+            <Wrench className="h-3 w-3" />
+            <span>{label}</span>
+            {typeof count === "number" && (
+              <span className="tabular-nums text-muted-foreground/70">
+                · {count}
+              </span>
+            )}
+          </span>
+        )}
         {isRunning ? (
           <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
         ) : isError ? (
@@ -2971,7 +3483,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         ) : (
           <Check className="h-3.5 w-3.5 shrink-0 text-success" />
         )}
-        <span className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="truncate font-mono text-label-12 font-medium text-foreground">
             {parsed.name}
           </span>
@@ -2982,13 +3494,9 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
             </span>
           )}
         </span>
-        {typeof call.durationMs === "number" && !isRunning && (
-          <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
-            {call.durationMs >= 1000
-              ? `${(call.durationMs / 1000).toFixed(1)}s`
-              : `${call.durationMs}ms`}
-          </span>
-        )}
+        <span className="shrink-0 text-label-12 tabular-nums text-muted-foreground">
+          {formatTime(call.startedAt)}
+        </span>
         <Badge
           variant={
             isRunning ? "outline" : isError ? "destructive" : "success"
@@ -3001,6 +3509,12 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               ? t("agent_tool_status_error")
               : t("agent_tool_status_success")}
         </Badge>
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            open && "rotate-90"
+          )}
+        />
       </button>
       {open && (
         <div className="grid gap-2 border-t border-border/70 px-2.5 py-2">
@@ -3048,5 +3562,5 @@ function SlidersIcon({ className }: { className?: string }) {
 }
 
 function ShieldIcon({ className }: { className?: string }) {
-  return <Settings2 className={className} />;
+  return <Shield className={className} />;
 }

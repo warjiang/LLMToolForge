@@ -4,7 +4,9 @@
  * - `bash`  → `run_sandboxed_command`
  * - `read` / `write` / `edit` / `ls` / `grep` → `fs_*` commands
  *
- * All tools honour the active sandbox mode and are scoped to a workspace root.
+ * All tools honour the active sandbox mode. Relative paths resolve under the
+ * configured execution root, or under the backend's managed temporary sandbox
+ * directory when no workspace was selected.
  * Tools throw on failure (Pi convention) so the loop records an error result.
  */
 
@@ -43,16 +45,8 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
 
 export interface InternalToolDeps {
   sandboxMode: SandboxMode;
-  /** Absolute workspace root used to resolve relative paths. */
+  /** Absolute execution root. Empty means the backend uses its managed sandbox dir. */
   workspaceRoot: string;
-}
-
-function requireWorkspace(root: string): string {
-  const trimmed = root.trim();
-  if (!trimmed) {
-    throw new Error("未设置工作目录（workspace root），无法使用文件/命令工具");
-  }
-  return trimmed;
 }
 
 interface SandboxRunResponse {
@@ -78,12 +72,11 @@ function bashTool(deps: InternalToolDeps): AgentTool {
       ),
     }),
     execute: async (_id, params) => {
-      const root = deps.workspaceRoot.trim();
       const res = await invoke<SandboxRunResponse>("run_sandboxed_command", {
         req: {
           command: "bash",
           args: ["-lc", params.command],
-          cwd: root || undefined,
+          cwd: deps.workspaceRoot.trim() || undefined,
           sandboxMode: deps.sandboxMode,
           timeoutMs: params.timeoutMs,
         },
@@ -112,15 +105,16 @@ function readTool(deps: InternalToolDeps): AgentTool {
     label: "Read file",
     description: "Read a UTF-8 text file. Optionally start at a 1-based line offset.",
     parameters: Type.Object({
-      path: Type.String({ description: "File path (absolute or workspace-relative)." }),
+      path: Type.String({
+        description: "File path (absolute or relative to the execution root).",
+      }),
       offset: Type.Optional(Type.Number({ description: "1-based start line." })),
       limit: Type.Optional(Type.Number({ description: "Max lines to return." })),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
       const res = await invoke<FsReadResponse>("fs_read", {
         req: {
-          workspaceRoot: root,
+          workspaceRoot: deps.workspaceRoot.trim(),
           path: params.path,
           sandboxMode: deps.sandboxMode,
           offset: params.offset,
@@ -144,16 +138,17 @@ function writeTool(deps: InternalToolDeps): AgentTool {
     label: "Write file",
     description:
       "Create or overwrite a text file. Denied in read-only sandbox; in " +
-      "workspace-write the path must stay inside the workspace.",
+      "workspace-write the path must stay inside the execution root or temp.",
     parameters: Type.Object({
-      path: Type.String({ description: "File path (absolute or workspace-relative)." }),
+      path: Type.String({
+        description: "File path (absolute or relative to the execution root).",
+      }),
       content: Type.String({ description: "Full file content to write." }),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
       const res = await invoke<FsWriteResponse>("fs_write", {
         req: {
-          workspaceRoot: root,
+          workspaceRoot: deps.workspaceRoot.trim(),
           path: params.path,
           content: params.content,
           sandboxMode: deps.sandboxMode,
@@ -177,7 +172,9 @@ function editTool(deps: InternalToolDeps): AgentTool {
       "Replace an exact string in a file. Fails if oldStr is missing or matches " +
       "more than once (unless replaceAll is set).",
     parameters: Type.Object({
-      path: Type.String({ description: "File path (absolute or workspace-relative)." }),
+      path: Type.String({
+        description: "File path (absolute or relative to the execution root).",
+      }),
       oldStr: Type.String({ description: "Exact text to replace." }),
       newStr: Type.String({ description: "Replacement text." }),
       replaceAll: Type.Optional(
@@ -185,10 +182,9 @@ function editTool(deps: InternalToolDeps): AgentTool {
       ),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
       const res = await invoke<FsEditResponse>("fs_edit", {
         req: {
-          workspaceRoot: root,
+          workspaceRoot: deps.workspaceRoot.trim(),
           path: params.path,
           oldStr: params.oldStr,
           newStr: params.newStr,
@@ -218,14 +214,15 @@ function lsTool(deps: InternalToolDeps): AgentTool {
     description: "List the entries of a directory.",
     parameters: Type.Object({
       path: Type.Optional(
-        Type.String({ description: "Directory path. Defaults to workspace root." })
+        Type.String({
+          description: "Directory path. Defaults to the current execution root.",
+        })
       ),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
       const res = await invoke<FsListResponse>("fs_list", {
         req: {
-          workspaceRoot: root,
+          workspaceRoot: deps.workspaceRoot.trim(),
           path: params.path,
           sandboxMode: deps.sandboxMode,
         },
@@ -260,16 +257,17 @@ function grepTool(deps: InternalToolDeps): AgentTool {
     parameters: Type.Object({
       pattern: Type.String({ description: "Regular expression to search for." }),
       path: Type.Optional(
-        Type.String({ description: "Root path to search. Defaults to workspace root." })
+        Type.String({
+          description: "Root path to search. Defaults to the current execution root.",
+        })
       ),
       ignoreCase: Type.Optional(Type.Boolean({ description: "Case-insensitive." })),
       maxResults: Type.Optional(Type.Number({ description: "Cap on matches." })),
     }),
     execute: async (_id, params) => {
-      const root = requireWorkspace(deps.workspaceRoot);
       const res = await invoke<FsGrepResponse>("fs_grep", {
         req: {
-          workspaceRoot: root,
+          workspaceRoot: deps.workspaceRoot.trim(),
           pattern: params.pattern,
           path: params.path,
           ignoreCase: params.ignoreCase,

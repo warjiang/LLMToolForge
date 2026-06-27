@@ -37,6 +37,21 @@ struct SandboxRunResponse {
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct SaveChatAttachmentRequest {
+    workspace_root: String,
+    attachment_id: String,
+    file_name: String,
+    data_url: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SaveChatAttachmentResponse {
+    path: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct SyncSkillsRequest {
     mode: String,
     skills: Vec<SyncSkillPayload>,
@@ -87,10 +102,7 @@ struct SyncSkillResult {
 }
 
 #[tauri::command]
-fn run_sandboxed_command(
-    app: tauri::AppHandle,
-    req: SandboxRunRequest,
-) -> Result<SandboxRunResponse, String> {
+fn run_sandboxed_command(req: SandboxRunRequest) -> Result<SandboxRunResponse, String> {
     if req.command.trim().is_empty() {
         return Err("缺少命令".to_string());
     }
@@ -105,15 +117,25 @@ fn run_sandboxed_command(
     let started = Instant::now();
     // Fall back to a managed sandbox directory when no workspace path is set,
     // so command execution works even before the user picks a workspace.
-    let cwd = match req.cwd.as_deref().map(str::trim) {
-        Some(c) if !c.is_empty() && c != "." => c.to_string(),
-        _ => default_sandbox_dir(&app)?,
+    let cwd_path = match req.cwd.as_deref().map(str::trim) {
+        Some(c) if !c.is_empty() && c != "." => PathBuf::from(c),
+        _ => default_sandbox_dir()?,
     };
-    let mut command = build_platform_command(&req, &cwd)?;
+    let cwd = cwd_path
+        .canonicalize()
+        .unwrap_or(cwd_path)
+        .display()
+        .to_string();
+    let temp_dir = sandbox_temp_dir()?;
+    let temp_dir_str = temp_dir.display().to_string();
+    let mut command = build_platform_command(&req, &cwd, &temp_dir_str)?;
     command.current_dir(&cwd);
     command.env_clear();
     command.env("PATH", std::env::var("PATH").unwrap_or_default());
     command.env("HOME", std::env::var("HOME").unwrap_or_default());
+    command.env("TMPDIR", &temp_dir_str);
+    command.env("TMP", &temp_dir_str);
+    command.env("TEMP", &temp_dir_str);
     command.env("LLMTOOLFORGE_SANDBOX_MODE", &req.sandbox_mode);
     if let Some(env) = req.env.as_ref() {
         for (key, value) in env {
@@ -156,6 +178,22 @@ fn run_sandboxed_command(
         timed_out,
         duration_ms: started.elapsed().as_millis(),
         sandbox_backend: sandbox_backend(&req.sandbox_mode).to_string(),
+    })
+}
+
+#[tauri::command]
+fn save_chat_attachment(
+    req: SaveChatAttachmentRequest,
+) -> Result<SaveChatAttachmentResponse, String> {
+    let root = execution_root(&req.workspace_root)?;
+    fs::create_dir_all(&root).map_err(|e| format!("创建执行目录失败: {e}"))?;
+
+    let file_name = sanitize_file_name(&req.file_name);
+    let path = unique_attachment_path(&root, &file_name, &req.attachment_id);
+    let bytes = bytes_from_data_url(&req.data_url)?;
+    fs::write(&path, bytes).map_err(|e| format!("写入附件失败: {e}"))?;
+    Ok(SaveChatAttachmentResponse {
+        path: path.display().to_string(),
     })
 }
 
@@ -292,14 +330,75 @@ fn source_skill_dir(app: &tauri::AppHandle, skill: &SyncSkillPayload) -> Result<
 }
 
 /// Managed working directory used by the sandbox when no workspace is selected.
-fn default_sandbox_dir(app: &tauri::AppHandle) -> Result<String, String> {
-    let mut dir = app
-        .path()
-        .app_config_dir()
-        .map_err(|e| format!("获取应用配置目录失败: {e}"))?;
+pub(crate) fn default_sandbox_dir() -> Result<PathBuf, String> {
+    let mut dir = std::env::temp_dir();
+    dir.push("LLMToolForge");
     dir.push("agent-sandbox");
     fs::create_dir_all(&dir).map_err(|e| format!("创建沙箱目录失败: {e}"))?;
-    Ok(dir.display().to_string())
+    Ok(dir.canonicalize().unwrap_or(dir))
+}
+
+fn sandbox_temp_dir() -> Result<PathBuf, String> {
+    let mut dir = default_sandbox_dir()?;
+    dir.push("tmp");
+    fs::create_dir_all(&dir).map_err(|e| format!("创建沙箱临时目录失败: {e}"))?;
+    Ok(dir.canonicalize().unwrap_or(dir))
+}
+
+fn execution_root(workspace_root: &str) -> Result<PathBuf, String> {
+    if workspace_root.trim().is_empty() {
+        default_sandbox_dir()
+    } else {
+        Ok(PathBuf::from(workspace_root.trim()))
+    }
+}
+
+fn sanitize_file_name(name: &str) -> String {
+    let cleaned: String = name
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches([' ', '.']).trim();
+    if trimmed.is_empty() {
+        "attachment".to_string()
+    } else {
+        trimmed.to_string()
+    }
+}
+
+fn unique_attachment_path(root: &Path, file_name: &str, attachment_id: &str) -> PathBuf {
+    let candidate = root.join(file_name);
+    if !candidate.exists() {
+        return candidate;
+    }
+    let path = Path::new(file_name);
+    let stem = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("attachment");
+    let ext = path.extension().and_then(|s| s.to_str());
+    let suffix: String = attachment_id.chars().take(8).collect();
+    let unique_name = match ext {
+        Some(ext) if !ext.is_empty() => format!("{stem}-{suffix}.{ext}"),
+        _ => format!("{stem}-{suffix}"),
+    };
+    root.join(unique_name)
+}
+
+fn bytes_from_data_url(data_url: &str) -> Result<Vec<u8>, String> {
+    let Some((header, payload)) = data_url.split_once(',') else {
+        return Err("附件内容不是 data URL".to_string());
+    };
+    if !header.starts_with("data:") || !header.contains(";base64") {
+        return Err("仅支持 base64 data URL 附件".to_string());
+    }
+    decode_base64(payload).ok_or_else(|| "附件 base64 解码失败".to_string())
 }
 
 fn write_skill_dir(dir: &Path, skill: &SyncSkillPayload, replace_dir: bool) -> Result<(), String> {
@@ -644,14 +743,18 @@ fn sandbox_backend(mode: &str) -> &'static str {
     }
 }
 
-fn build_platform_command(req: &SandboxRunRequest, _cwd: &str) -> Result<Command, String> {
+fn build_platform_command(
+    req: &SandboxRunRequest,
+    _cwd: &str,
+    _temp_dir: &str,
+) -> Result<Command, String> {
     #[cfg(target_os = "macos")]
     {
         if req.sandbox_mode != "danger-full-access" {
             let mut command = Command::new("sandbox-exec");
             command
                 .arg("-p")
-                .arg(seatbelt_profile(&req.sandbox_mode, _cwd));
+                .arg(seatbelt_profile(&req.sandbox_mode, _cwd, _temp_dir));
             command.arg(&req.command).args(&req.args);
             return Ok(command);
         }
@@ -663,15 +766,25 @@ fn build_platform_command(req: &SandboxRunRequest, _cwd: &str) -> Result<Command
 }
 
 #[cfg(target_os = "macos")]
-fn seatbelt_profile(mode: &str, cwd: &str) -> String {
+fn seatbelt_profile(mode: &str, cwd: &str, temp_dir: &str) -> String {
     let mut profile = String::from("(version 1)\n(allow default)\n");
     if mode == "read-only" {
         profile.push_str("(deny file-write*)\n");
+        profile.push_str(&format!(
+            "(allow file-write* (subpath \"{}\"))\n",
+            escape_seatbelt_path(temp_dir)
+        ));
+        profile.push_str("(allow file-write* (subpath \"/tmp\"))\n");
+        profile.push_str("(allow file-write* (subpath \"/private/tmp\"))\n");
     } else if mode == "workspace-write" {
         profile.push_str("(deny file-write*)\n");
         profile.push_str(&format!(
             "(allow file-write* (subpath \"{}\"))\n",
             escape_seatbelt_path(cwd)
+        ));
+        profile.push_str(&format!(
+            "(allow file-write* (subpath \"{}\"))\n",
+            escape_seatbelt_path(temp_dir)
         ));
         profile.push_str("(allow file-write* (subpath \"/tmp\"))\n");
         profile.push_str("(allow file-write* (subpath \"/private/tmp\"))\n");
@@ -696,6 +809,7 @@ pub fn run() {
         .manage(mcp::McpSessions::default())
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
+            save_chat_attachment,
             sync_skills_to_targets,
             check_skill_bins,
             fs_tools::fs_read,

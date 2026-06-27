@@ -17,6 +17,8 @@ export interface ResolveAgentDeps {
   skills: Skill[];
   /** All known MCP servers (filtered to the definition's enabled set). */
   mcpServers: McpServer[];
+  /** Absolute execution root for internal tools. Empty = managed temp sandbox. */
+  workspacePath?: string;
 }
 
 export interface ResolvedAgent {
@@ -59,13 +61,11 @@ export async function resolveAgent(
 
   const tools: AgentTool[] = [];
 
-  // `bash` runs in the sandbox and falls back to a managed working directory,
-  // so it works without a workspace. The file tools need a workspace root to
-  // resolve relative paths, so they stay gated on `workspacePath`.
-  const root = def.workspacePath.trim();
-  const enabledInternal = root
-    ? def.enabledInternalTools
-    : def.enabledInternalTools.filter((id) => id === "bash");
+  // Internal tools use the run/session execution root, not the reusable agent
+  // definition. The backend resolves an empty root to its managed temporary
+  // sandbox directory.
+  const root = deps.workspacePath?.trim() ?? "";
+  const enabledInternal = def.enabledInternalTools;
   if (enabledInternal.length > 0) {
     tools.push(
       ...buildInternalTools(enabledInternal, {

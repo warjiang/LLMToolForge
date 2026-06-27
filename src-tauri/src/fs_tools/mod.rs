@@ -5,18 +5,20 @@
 //! same sandbox modes as `run_sandboxed_command`:
 //!
 //! - `read-only`       : reads / listing / grep allowed, writes denied.
-//! - `workspace-write` : writes allowed only inside the workspace root (or /tmp).
+//! - `workspace-write` : writes allowed only inside the execution root (or temp).
 //! - `danger-full-access` : no path restrictions.
 //!
 //! Reads are always allowed anywhere (parity with the bash sandbox, which uses
 //! `allow default` + `deny file-write`). Listing and grep are bounded to the
-//! workspace root unless full access is granted, to keep their blast radius small.
+//! execution root unless full access is granted, to keep their blast radius small.
 
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use regex::RegexBuilder;
 use serde::{Deserialize, Serialize};
+
+use crate::default_sandbox_dir;
 
 /// Hard cap on bytes returned by `fs_read` (256 KiB).
 const MAX_READ_BYTES: usize = 256 * 1024;
@@ -159,7 +161,15 @@ fn normalize_lexical(path: &Path) -> PathBuf {
     out
 }
 
-/// Resolve `path` against the workspace root and normalize it.
+fn effective_root(workspace_root: &str) -> Result<PathBuf, String> {
+    if workspace_root.trim().is_empty() {
+        default_sandbox_dir().map(|p| normalize_lexical(&p))
+    } else {
+        Ok(normalize_lexical(Path::new(workspace_root)))
+    }
+}
+
+/// Resolve `path` against the execution root and normalize it.
 fn resolve(workspace_root: &str, path: &str) -> Result<PathBuf, String> {
     if path.trim().is_empty() {
         return Err("缺少路径".to_string());
@@ -168,10 +178,7 @@ fn resolve(workspace_root: &str, path: &str) -> Result<PathBuf, String> {
     let base = if candidate.is_absolute() {
         candidate.to_path_buf()
     } else {
-        if workspace_root.trim().is_empty() {
-            return Err("未设置工作目录（workspace root）".to_string());
-        }
-        Path::new(workspace_root).join(candidate)
+        effective_root(workspace_root)?.join(candidate)
     };
     Ok(normalize_lexical(&base))
 }
@@ -186,44 +193,47 @@ fn check_write(mode: &str, workspace_root: &str, target: &Path) -> Result<(), St
     match mode {
         "read-only" => Err("只读沙箱：写入被拒绝".to_string()),
         "workspace-write" => {
-            let root = Path::new(workspace_root);
-            let tmp = Path::new("/tmp");
-            let private_tmp = Path::new("/private/tmp");
-            if is_within(root, target) || is_within(tmp, target) || is_within(private_tmp, target) {
-                Ok(())
-            } else {
-                Err(format!(
-                    "workspace-write 沙箱：仅允许写入工作目录内，目标越界: {}",
-                    target.display()
-                ))
+            let root = effective_root(workspace_root)?;
+            let tmp = normalize_lexical(&std::env::temp_dir());
+            if is_within(&root, target) || is_within(&tmp, target) {
+                return Ok(());
             }
+            #[cfg(unix)]
+            if is_within(Path::new("/tmp"), target) {
+                return Ok(());
+            }
+            #[cfg(target_os = "macos")]
+            if is_within(Path::new("/private/tmp"), target) {
+                return Ok(());
+            }
+            Err(format!(
+                "workspace-write 沙箱：仅允许写入执行目录或临时目录内，目标越界: {}",
+                target.display()
+            ))
         }
         "danger-full-access" => Ok(()),
         _ => Err(format!("未知沙箱模式: {mode}")),
     }
 }
 
-/// Bound listing / grep traversal to the workspace root unless full access.
+/// Bound listing / grep traversal to the execution root unless full access.
 fn check_read_scope(mode: &str, workspace_root: &str, target: &Path) -> Result<(), String> {
     if mode == "danger-full-access" {
         return Ok(());
     }
-    if workspace_root.trim().is_empty() {
-        return Err("未设置工作目录（workspace root）".to_string());
-    }
-    let root = Path::new(workspace_root);
-    if is_within(root, target) {
+    let root = effective_root(workspace_root)?;
+    if is_within(&root, target) {
         Ok(())
     } else {
         Err(format!(
-            "该沙箱模式下仅允许访问工作目录内: {}",
+            "该沙箱模式下仅允许访问执行目录内: {}",
             target.display()
         ))
     }
 }
 
 fn relative_display(root: &str, path: &Path) -> String {
-    let root = normalize_lexical(Path::new(root));
+    let root = effective_root(root).unwrap_or_else(|_| normalize_lexical(Path::new(root)));
     path.strip_prefix(&root)
         .map(|p| p.display().to_string())
         .unwrap_or_else(|_| path.display().to_string())
@@ -320,10 +330,7 @@ pub fn fs_edit(req: FsEditRequest) -> Result<FsEditResponse, String> {
 #[tauri::command]
 pub fn fs_list(req: FsListRequest) -> Result<FsListResponse, String> {
     validate_mode(&req.sandbox_mode)?;
-    let raw_path = req
-        .path
-        .clone()
-        .unwrap_or_else(|| req.workspace_root.clone());
+    let raw_path = req.path.clone().unwrap_or_else(|| ".".to_string());
     let target = resolve(&req.workspace_root, &raw_path)?;
     check_read_scope(&req.sandbox_mode, &req.workspace_root, &target)?;
 
@@ -367,10 +374,7 @@ pub fn fs_grep(req: FsGrepRequest) -> Result<FsGrepResponse, String> {
     if req.pattern.trim().is_empty() {
         return Err("缺少匹配模式".to_string());
     }
-    let raw_path = req
-        .path
-        .clone()
-        .unwrap_or_else(|| req.workspace_root.clone());
+    let raw_path = req.path.clone().unwrap_or_else(|| ".".to_string());
     let root = resolve(&req.workspace_root, &raw_path)?;
     check_read_scope(&req.sandbox_mode, &req.workspace_root, &root)?;
 

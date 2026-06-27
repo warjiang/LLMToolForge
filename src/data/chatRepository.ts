@@ -63,6 +63,13 @@ function defaultSettings(sessionId: string): ChatSessionSettings {
   };
 }
 
+function normalizeSettings(settings: ChatSessionSettings): ChatSessionSettings {
+  return {
+    ...settings,
+    workspacePath: settings.workspacePath ?? "",
+  };
+}
+
 async function sha256(text: string): Promise<string | undefined> {
   if (!globalThis.crypto?.subtle) return undefined;
   const data = new TextEncoder().encode(text);
@@ -129,6 +136,7 @@ const migrations = [
     enabled_skill_ids TEXT NOT NULL DEFAULT '[]',
     enabled_mcp_server_ids TEXT NOT NULL DEFAULT '[]',
     sandbox_mode TEXT NOT NULL DEFAULT 'read-only',
+    workspace_path TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
   )`,
   `CREATE TABLE IF NOT EXISTS messages (
@@ -236,6 +244,7 @@ class ChatRepository {
     const wanted: { table: string; column: string; ddl: string }[] = [
       { table: "messages", column: "reasoning", ddl: "ALTER TABLE messages ADD COLUMN reasoning TEXT" },
       { table: "messages", column: "reasoning_ms", ddl: "ALTER TABLE messages ADD COLUMN reasoning_ms INTEGER" },
+      { table: "session_settings", column: "workspace_path", ddl: "ALTER TABLE session_settings ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''" },
     ];
     for (const { table, column, ddl } of wanted) {
       const cols = await db.select<{ name: string }[]>(
@@ -325,9 +334,10 @@ class ChatRepository {
         }));
       return {
         session,
-        settings:
+        settings: normalizeSettings(
           state.settings.find((s) => s.sessionId === sessionId) ??
-          defaultSettings(sessionId),
+            defaultSettings(sessionId)
+        ),
         messages,
         toolCalls: state.toolCalls.filter((t) => t.sessionId === sessionId),
         sandboxRuns: state.sandboxRuns.filter((r) => r.sessionId === sessionId),
@@ -473,8 +483,8 @@ class ChatRepository {
       `INSERT INTO session_settings (
         session_id, conn_key, model_id, key_idx, wire_format, system,
         temperature, max_tokens, streaming, enabled_skill_ids,
-        enabled_mcp_server_ids, sandbox_mode, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+        enabled_mcp_server_ids, sandbox_mode, workspace_path, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       ON CONFLICT(session_id) DO UPDATE SET
         conn_key = excluded.conn_key,
         model_id = excluded.model_id,
@@ -487,6 +497,7 @@ class ChatRepository {
         enabled_skill_ids = excluded.enabled_skill_ids,
         enabled_mcp_server_ids = excluded.enabled_mcp_server_ids,
         sandbox_mode = excluded.sandbox_mode,
+        workspace_path = excluded.workspace_path,
         updated_at = excluded.updated_at`,
       [
         settings.sessionId,
@@ -501,6 +512,7 @@ class ChatRepository {
         JSON.stringify(settings.enabledSkillIds),
         JSON.stringify(settings.enabledMcpServerIds),
         settings.sandboxMode,
+        settings.workspacePath,
         settings.updatedAt,
       ]
     );
@@ -1041,6 +1053,7 @@ function rowToSettings(row: Record<string, unknown>): ChatSessionSettings {
     enabledMcpServerIds: parseJson(String(row.enabled_mcp_server_ids ?? "[]"), []),
     sandboxMode:
       (row.sandbox_mode as ChatSessionSettings["sandboxMode"]) ?? "read-only",
+    workspacePath: String(row.workspace_path ?? ""),
     updatedAt: String(row.updated_at),
   };
 }
