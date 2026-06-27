@@ -11,6 +11,7 @@ import type {
   ToolCallRecord,
 } from "@/types/chat";
 import { uid } from "@/lib/utils";
+import { deleteSessionWorkspace } from "@/lib/agent/workspace";
 
 interface ChatState {
   sessions: ChatSession[];
@@ -151,6 +152,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (id) => {
     await chatRepo.deleteSession(id);
+    // Best-effort cleanup of the managed per-session workspace folder. Never
+    // blocks deletion and safely no-ops for legacy sessions without a folder.
+    await deleteSessionWorkspace(id);
     const sessions = await chatRepo.listSessions();
     set({ sessions });
     if (sessions.length === 0) {

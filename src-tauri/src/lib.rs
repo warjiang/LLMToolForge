@@ -407,6 +407,25 @@ fn ensure_session_workspace(
     Ok(dir.canonicalize().unwrap_or(dir).display().to_string())
 }
 
+/// Removes the managed per-session workspace directory
+/// (`~/.llmtoolforge/sessions/<session id>`) when it exists.
+///
+/// Only ever touches the managed default directory; an explicit, user-chosen
+/// workspace path is never deleted here. A missing directory is treated as a
+/// successful no-op so deleting legacy sessions (created before managed
+/// workspaces existed, or that never wrote artifacts) stays stable.
+#[tauri::command]
+fn delete_session_workspace(
+    app: tauri::AppHandle,
+    session_id: String,
+) -> Result<(), String> {
+    let dir = session_workspace_dir(&app, &session_id)?;
+    if dir.exists() {
+        fs::remove_dir_all(&dir).map_err(|e| format!("删除会话工作目录失败: {e}"))?;
+    }
+    Ok(())
+}
+
 fn sanitize_file_name(name: &str) -> String {
     let cleaned: String = name
         .chars()
@@ -874,6 +893,7 @@ pub fn run() {
             run_sandboxed_command,
             save_chat_attachment,
             ensure_session_workspace,
+            delete_session_workspace,
             sync_skills_to_targets,
             check_skill_bins,
             fs_tools::fs_read,
@@ -961,5 +981,31 @@ mod skill_document_tests {
         assert_eq!(doc.matches("---").count(), 2);
         assert!(doc.ends_with("just some text\n"));
         assert!(doc.contains("name: \"Lark Doc\""));
+    }
+}
+
+#[cfg(test)]
+mod session_workspace_tests {
+    use super::sanitize_session_id;
+
+    #[test]
+    fn keeps_safe_identifier_chars() {
+        assert_eq!(sanitize_session_id("chat_abc-123"), "chat_abc-123");
+    }
+
+    #[test]
+    fn neutralizes_path_traversal() {
+        // Path separators and dots must never survive, so a session id can only
+        // ever resolve inside `~/.llmtoolforge/sessions/`.
+        let safe = sanitize_session_id("../../etc/passwd");
+        assert!(!safe.contains('/'));
+        assert!(!safe.contains('.'));
+        assert_eq!(safe, "______etc_passwd");
+    }
+
+    #[test]
+    fn empty_when_all_chars_unsafe() {
+        // Used by callers to reject empty/blank ids before touching the fs.
+        assert!(sanitize_session_id("").is_empty());
     }
 }
