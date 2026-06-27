@@ -120,6 +120,7 @@ const migrations = [
     id TEXT PRIMARY KEY,
     title TEXT NOT NULL,
     archived INTEGER NOT NULL DEFAULT 0,
+    agent_id TEXT,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
   )`,
@@ -245,6 +246,7 @@ class ChatRepository {
       { table: "messages", column: "reasoning", ddl: "ALTER TABLE messages ADD COLUMN reasoning TEXT" },
       { table: "messages", column: "reasoning_ms", ddl: "ALTER TABLE messages ADD COLUMN reasoning_ms INTEGER" },
       { table: "session_settings", column: "workspace_path", ddl: "ALTER TABLE session_settings ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''" },
+      { table: "sessions", column: "agent_id", ddl: "ALTER TABLE sessions ADD COLUMN agent_id TEXT" },
     ];
     for (const { table, column, ddl } of wanted) {
       const cols = await db.select<{ name: string }[]>(
@@ -284,7 +286,7 @@ class ChatRepository {
       );
     }
     const rows = await (await this.db()).select<Record<string, unknown>[]>(
-      "SELECT id, title, archived, created_at, updated_at FROM sessions WHERE archived = 0 ORDER BY updated_at DESC"
+      "SELECT id, title, archived, agent_id, created_at, updated_at FROM sessions WHERE archived = 0 ORDER BY updated_at DESC"
     );
     return rows.map(rowToSession);
   }
@@ -296,6 +298,7 @@ class ChatRepository {
       id: uid("chat"),
       title,
       archived: false,
+      agentId: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -346,7 +349,7 @@ class ChatRepository {
 
     const db = await this.db();
     const sessions = await db.select<Record<string, unknown>[]>(
-      "SELECT id, title, archived, created_at, updated_at FROM sessions WHERE id = $1",
+      "SELECT id, title, archived, agent_id, created_at, updated_at FROM sessions WHERE id = $1",
       [sessionId]
     );
     if (sessions.length === 0) return null;
@@ -399,7 +402,10 @@ class ChatRepository {
     };
   }
 
-  async updateSession(id: string, patch: Partial<Pick<ChatSession, "title">>) {
+  async updateSession(
+    id: string,
+    patch: Partial<Pick<ChatSession, "title" | "agentId">>
+  ) {
     await this.ensureInit();
     const updatedAt = nowIso();
     if (!isTauri()) {
@@ -410,13 +416,25 @@ class ChatRepository {
       writeFallback(state);
       return;
     }
-    await (
-      await this.db()
-    ).execute("UPDATE sessions SET title = COALESCE($1, title), updated_at = $2 WHERE id = $3", [
-      patch.title ?? null,
-      updatedAt,
-      id,
-    ]);
+    const db = await this.db();
+    if (patch.title !== undefined) {
+      await db.execute(
+        "UPDATE sessions SET title = $1, updated_at = $2 WHERE id = $3",
+        [patch.title, updatedAt, id]
+      );
+    }
+    if (patch.agentId !== undefined) {
+      await db.execute(
+        "UPDATE sessions SET agent_id = $1, updated_at = $2 WHERE id = $3",
+        [patch.agentId, updatedAt, id]
+      );
+    }
+    if (patch.title === undefined && patch.agentId === undefined) {
+      await db.execute("UPDATE sessions SET updated_at = $1 WHERE id = $2", [
+        updatedAt,
+        id,
+      ]);
+    }
   }
 
   async touchSession(id: string) {
@@ -1033,6 +1051,7 @@ function rowToSession(row: Record<string, unknown>): ChatSession {
     id: String(row.id),
     title: String(row.title),
     archived: Number(row.archived) === 1,
+    agentId: row.agent_id == null ? null : String(row.agent_id),
     createdAt: String(row.created_at),
     updatedAt: String(row.updated_at),
   };

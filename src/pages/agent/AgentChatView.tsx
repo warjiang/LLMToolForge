@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ComponentType, ReactNode, TouchEvent, WheelEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -29,6 +29,7 @@ import {
   Lightbulb,
   ListChecks,
   Loader2,
+  Lock,
   Paperclip,
   Pencil,
   Plus,
@@ -138,6 +139,10 @@ import {
   type ApiKey,
   type AgentDefinition,
 } from "@/types";
+import {
+  DIRECT_AGENT_VALUE,
+  DATA_AGENT_ID,
+} from "@/lib/agent/builtinAgents";
 
 interface ConnOption {
   key: string;
@@ -163,9 +168,7 @@ const STREAM_CONTENT_FLUSH_MS = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
-const DIRECT_AGENT_VALUE = "__direct__";
 const ADHOC_AGENT_ID = "__adhoc__";
-const DATA_AGENT_ID = "__builtin_dataagent__";
 const SHOW_AGENT_PICKER = true;
 const DATA_AGENT_PROMPT = [
   "You are DataAgent, a careful local-data analysis assistant.",
@@ -552,6 +555,36 @@ export function AgentChatView() {
       ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
       : null;
   }, [selectedAgentId, settings, agentDefs.items]);
+
+  // Once a conversation has started, its agent is committed and can't be
+  // switched. Before the first message the picker is freely editable.
+  const agentLocked = chat.messages.length > 0;
+
+  // Restore the committed/pending agent whenever the active session changes.
+  useEffect(() => {
+    const sid = chat.activeSessionId;
+    if (!sid) {
+      setSelectedAgentId(null);
+      return;
+    }
+    const sess = chat.sessions.find((s) => s.id === sid);
+    setSelectedAgentId(sess?.agentId ?? null);
+    // Intentionally keyed on the session id only: user-driven picker changes
+    // are persisted immediately, so we must not clobber them on unrelated
+    // `sessions` updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.activeSessionId]);
+
+  const handleAgentChange = useCallback(
+    (value: string) => {
+      if (agentLocked) return;
+      const next = value === DIRECT_AGENT_VALUE ? null : value;
+      setSelectedAgentId(next);
+      const sid = chat.activeSessionId;
+      if (sid) void chat.setSessionAgent(sid, next);
+    },
+    [agentLocked, chat]
+  );
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -2214,13 +2247,18 @@ export function AgentChatView() {
                   <>
                     <Select
                       value={selectedAgentId ?? DIRECT_AGENT_VALUE}
-                      onValueChange={(v) =>
-                        setSelectedAgentId(v === DIRECT_AGENT_VALUE ? null : v)
-                      }
+                      onValueChange={handleAgentChange}
+                      disabled={agentLocked}
                     >
-                      <SelectTrigger className="h-7 w-[138px] gap-1.5 text-label-12">
+                      <SelectTrigger
+                        className="h-7 w-[138px] gap-1.5 text-label-12"
+                        title={agentLocked ? t("agent_locked_hint") : undefined}
+                      >
                         <Bot className="h-3.5 w-3.5 shrink-0" />
                         <SelectValue />
+                        {agentLocked && (
+                          <Lock className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={DIRECT_AGENT_VALUE}>

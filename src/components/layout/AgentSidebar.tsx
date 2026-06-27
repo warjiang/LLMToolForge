@@ -22,6 +22,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
+  Bot,
   Check,
   ChevronRight,
   Folder,
@@ -39,12 +40,13 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { FormModeToggle } from "./FormModeToggle";
-import { useChatStore } from "@/store";
+import { useChatStore, useAgentDefStore } from "@/store";
 import { useSidebarStore } from "@/store/sidebar";
 import { useSessionGroupStore } from "@/store/sessionGroups";
 import { useThemeStore } from "@/store/theme";
 import { useLocaleStore } from "@/store/locale";
 import { cn, formatDateTime } from "@/lib/utils";
+import { resolveAgentLabel } from "@/lib/agent/builtinAgents";
 import type { ChatSession } from "@/types/chat";
 
 const EXPANDED = 240;
@@ -109,6 +111,7 @@ export function AgentSidebar() {
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const sessions = useChatStore((s) => s.sessions);
+  const agentDefs = useAgentDefStore((s) => s.items);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
@@ -169,6 +172,10 @@ export function AgentSidebar() {
   useEffect(() => {
     if (!draggingId) setContainers(baseContainers);
   }, [baseContainers, draggingId]);
+
+  useEffect(() => {
+    void useAgentDefStore.getState().load();
+  }, []);
 
   const pendingDeleteGroup = groups.find((g) => g.id === deleteGroupId);
 
@@ -309,6 +316,7 @@ export function AgentSidebar() {
   const renderSession = (session: ChatSession) => {
     const active = activeSessionId === session.id;
     const renaming = renamingId === session.id;
+    const agentLabel = resolveAgentLabel(session.agentId, agentDefs);
     return (
       <DraggableSession key={session.id} id={session.id} disabled={renaming}>
         {renaming ? (
@@ -354,8 +362,14 @@ export function AgentSidebar() {
               <span className="truncate text-label-13 font-medium">
                 {session.title}
               </span>
-              <span className="whitespace-nowrap text-label-12 tabular-nums text-muted-foreground">
-                {formatDateTime(session.updatedAt)}
+              <span className="flex items-center gap-1.5 whitespace-nowrap text-label-12 tabular-nums text-muted-foreground">
+                <span>{formatDateTime(session.updatedAt)}</span>
+                {agentLabel && (
+                  <span className="inline-flex max-w-[8rem] items-center gap-1 truncate rounded-sm bg-accent/10 px-1.5 py-px font-medium text-accent">
+                    <Bot className="h-3 w-3 shrink-0" />
+                    <span className="truncate">{agentLabel}</span>
+                  </span>
+                )}
               </span>
             </button>
             <div

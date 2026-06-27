@@ -511,6 +511,7 @@
   "agent_no_skills": "还没有可用 Skill",
   "agent_no_mcp": "还没有可用 MCP Server",
   "agent_mode_direct": "直接对话",
+  "agent_locked_hint": "对话开始后无法再切换 Agent",
   "agent_mcp_errors": "部分 MCP Server 无法加载：{{servers}}",
   "agent_mcp_pending": "正在连接 MCP Server（本轮已跳过，稍后重试即可）：{{servers}}",
   "agent_tools_need_gateway": "已启用工具（Skill / MCP），但当前模型未通过本地 Unified 网关暴露。请在 Unified 页面启动网关并启用该模型后再试。",

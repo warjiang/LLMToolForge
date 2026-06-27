@@ -25,6 +25,7 @@ interface ChatState {
   newSession: () => Promise<void>;
   selectSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
+  setSessionAgent: (id: string, agentId: string | null) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   saveSettings: (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
@@ -135,6 +136,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({
       sessions: get().sessions.map((s) =>
         s.id === id ? { ...s, title: title.trim() || i18n.t("pages:chat_new_session") } : s
+      ),
+    });
+  },
+
+  setSessionAgent: async (id, agentId) => {
+    await chatRepo.updateSession(id, { agentId });
+    set({
+      sessions: get().sessions.map((s) =>
+        s.id === id ? { ...s, agentId } : s
       ),
     });
   },

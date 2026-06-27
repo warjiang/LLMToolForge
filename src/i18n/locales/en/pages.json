@@ -511,6 +511,7 @@
   "agent_no_skills": "No Skills available",
   "agent_no_mcp": "No MCP Servers available",
   "agent_mode_direct": "Direct chat",
+  "agent_locked_hint": "Agent is locked once the conversation has started",
   "agent_mcp_errors": "Some MCP servers failed to load: {{servers}}",
   "agent_mcp_pending": "Still connecting to MCP servers (skipped this turn, retry shortly): {{servers}}",
   "agent_tools_need_gateway": "Tools (skills / MCP) are enabled, but the current model isn't exposed through the local Unified gateway. Start the gateway and enable this model on the Unified page, then try again.",
