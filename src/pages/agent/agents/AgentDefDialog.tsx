@@ -45,7 +45,6 @@ interface FormState {
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
   sandboxMode: AgentSandboxMode;
-  workspacePath: string;
   temperature: string;
   maxTokens: string;
 }
@@ -59,14 +58,13 @@ const EMPTY: FormState = {
   enabledSkillIds: [],
   enabledMcpServerIds: [],
   sandboxMode: "read-only",
-  workspacePath: "",
   temperature: "0.7",
   maxTokens: "4096",
 };
 
 const SANDBOX_MODES: { value: AgentSandboxMode; label: string }[] = [
   { value: "read-only", label: "Read only" },
-  { value: "workspace-write", label: "Workspace write" },
+  { value: "workspace-write", label: "Execution write" },
   { value: "danger-full-access", label: "Full access" },
 ];
 
@@ -102,7 +100,6 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
             enabledSkillIds: [...editing.enabledSkillIds],
             enabledMcpServerIds: [...editing.enabledMcpServerIds],
             sandboxMode: editing.sandboxMode,
-            workspacePath: editing.workspacePath,
             temperature: String(editing.temperature),
             maxTokens: String(editing.maxTokens),
           }
@@ -128,7 +125,7 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
       enabledSkillIds: form.enabledSkillIds,
       enabledMcpServerIds: form.enabledMcpServerIds,
       sandboxMode: form.sandboxMode,
-      workspacePath: form.workspacePath.trim(),
+      workspacePath: "",
       temperature: Number(form.temperature) || 0,
       maxTokens: Number(form.maxTokens) || 4096,
     };
@@ -246,23 +243,6 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
             </div>
             <p className="text-label-12 text-muted-foreground">
               {t("agents_internal_tools_hint")}
-            </p>
-          </div>
-
-          <div className="grid gap-1.5">
-            <Label htmlFor="agent-workspace">
-              {t("agents_workspace_label")}
-            </Label>
-            <Input
-              id="agent-workspace"
-              placeholder="/Users/me/project"
-              value={form.workspacePath}
-              onChange={(e) =>
-                setForm({ ...form, workspacePath: e.target.value })
-              }
-            />
-            <p className="text-label-12 text-muted-foreground">
-              {t("agents_workspace_hint")}
             </p>
           </div>
 

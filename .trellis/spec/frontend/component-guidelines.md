@@ -43,6 +43,14 @@ Questions to answer:
 - Icon components should accept `className` and default to stable `h-4 w-4`
   sizing so Select triggers, badges, and list rows do not shift layout.
 
+## File Drop Inputs
+
+- Use a maintained dropzone helper such as `react-dropzone` for file drag/drop
+  areas instead of wiring `dragenter` / `dragleave` / `drop` state by hand.
+- For Tauri desktop windows that need HTML5 drop events in React, set the
+  window `dragDropEnabled` config to `false`; otherwise the WebView consumes
+  native file-drop events before the frontend component can handle them.
+
 ---
 
 ## Accessibility

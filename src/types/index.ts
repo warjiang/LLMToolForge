@@ -270,8 +270,9 @@ export type AgentSandboxMode =
 
 /**
  * A user-defined (or built-in) agent: a reusable bundle of system prompt,
- * model routing, enabled tools/skills/MCP, and sandbox configuration. Runs on
- * the Pi runtime via `resolveAgent` / `createAgentRuntime`.
+ * model routing, enabled tools/skills/MCP, and sandbox configuration. The
+ * execution root is supplied by the chat/session runtime, so agents can be
+ * reused across workspaces.
  */
 export interface AgentDefinition extends BaseEntity {
   name: string;
@@ -283,7 +284,10 @@ export interface AgentDefinition extends BaseEntity {
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
   sandboxMode: AgentSandboxMode;
-  /** Absolute workspace root for file/command tools. Empty = disabled. */
+  /**
+   * @deprecated Execution root now comes from ChatSessionSettings.workspacePath.
+   * Kept so older saved agent definitions still deserialize cleanly.
+   */
   workspacePath: string;
   temperature: number;
   maxTokens: number;

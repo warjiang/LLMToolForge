@@ -34,6 +34,8 @@ export interface ChatSessionSettings {
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
   sandboxMode: SandboxMode;
+  /** Absolute execution root for local tools. Empty = managed temp sandbox. */
+  workspacePath: string;
   updatedAt: string;
 }
 
@@ -143,4 +145,5 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   enabledSkillIds: [],
   enabledMcpServerIds: [],
   sandboxMode: "read-only",
+  workspacePath: "",
 };
