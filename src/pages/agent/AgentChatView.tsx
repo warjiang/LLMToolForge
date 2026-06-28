@@ -12,6 +12,8 @@ import {
   Bug,
   Check,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   CircleAlert,
   Compass,
   Database,
@@ -678,6 +680,10 @@ export function AgentChatView() {
     toolAnchorId: string | null;
     acc: string;
     lastFlush: number;
+    reasoning: string;
+    reasoningStart: number;
+    reasoningEnd: number;
+    reasoningFlush: number;
     toolRecords: Map<string, string>;
     sessionId: string;
   } | null>(null);
@@ -1935,6 +1941,10 @@ export function AgentChatView() {
       toolAnchorId: null,
       acc: "",
       lastFlush: 0,
+      reasoning: "",
+      reasoningStart: 0,
+      reasoningEnd: 0,
+      reasoningFlush: 0,
       toolRecords: new Map(),
       sessionId,
     };
@@ -1953,6 +1963,10 @@ export function AgentChatView() {
       onAssistantStart: async () => {
         const st = agentTurnRef.current;
         if (!st) return;
+        st.reasoning = "";
+        st.reasoningStart = 0;
+        st.reasoningEnd = 0;
+        st.reasoningFlush = 0;
         if (st.assistantId) {
           st.toolAnchorId = st.toolAnchorId ?? st.assistantId;
           st.acc = "";
@@ -1971,6 +1985,18 @@ export function AgentChatView() {
         st.acc = "";
         st.lastFlush = 0;
       },
+      onReasoningDelta: async (reasoning) => {
+        const st = agentTurnRef.current;
+        if (!st || !st.assistantId || !reasoning) return;
+        if (!st.reasoningStart) st.reasoningStart = Date.now();
+        st.reasoning = reasoning;
+        st.reasoningEnd = Date.now();
+        const now = Date.now();
+        if (now - st.reasoningFlush >= STREAM_CONTENT_FLUSH_MS) {
+          st.reasoningFlush = now;
+          await chat.updateMessage(st.assistantId, { reasoning });
+        }
+      },
       onAssistantDelta: async (textContent) => {
         const st = agentTurnRef.current;
         if (!st || !st.assistantId) return;
@@ -1984,9 +2010,15 @@ export function AgentChatView() {
       onAssistantEnd: async (textContent) => {
         const st = agentTurnRef.current;
         if (!st || !st.assistantId) return;
+        const reasoningMs =
+          st.reasoningStart && st.reasoningEnd > st.reasoningStart
+            ? st.reasoningEnd - st.reasoningStart
+            : undefined;
         await chat.updateMessage(st.assistantId, {
           content: textContent,
           status: "complete",
+          reasoning: st.reasoning || undefined,
+          reasoningMs,
         });
         st.assistantId = null;
       },
@@ -2523,7 +2555,7 @@ export function AgentChatView() {
                   onPickStarter={(text) => setInput(text)}
                 />
               ) : (
-                <div className="space-y-5">
+                <div className="space-y-4">
                   {chat.messages.map((m, i) => {
                     const editingThisMessage = editingMessageId === m.id;
                     return (
@@ -2554,6 +2586,18 @@ export function AgentChatView() {
                       />
                     );
                   })}
+                  {(() => {
+                    // While the agent keeps working but the last visible turn
+                    // already settled (intermediate text/tools completed), the
+                    // per-message typing indicator is gone — show a persistent
+                    // footer so it never looks finished mid-run.
+                    const last = chat.messages[chat.messages.length - 1];
+                    const showRunningFooter =
+                      sending && !!last && last.status !== "pending";
+                    return showRunningFooter ? (
+                      <AssistantWorkingStatus label={t("agent_running")} />
+                    ) : null;
+                  })()}
                 </div>
               )}
             </div>
@@ -4045,15 +4089,53 @@ function ChatBubble({
     checkpointFallback: t("agent_leaked_checkpoint_tool_call"),
   });
   const hasToolCalls = !isUser && !!toolCalls && toolCalls.length > 0;
+  const trimmedContent = visibleContent.trim();
+  const trimmedContentChars = [...trimmedContent].length;
+  // Reasoning models do their real work in the reasoning channel + the tool
+  // call, and often emit only an aborted preamble fragment (e.g. "如果") right
+  // before invoking a tool. Such tiny fragments aren't a real reply and render
+  // as a broken-looking bubble, so suppress them when the turn also produced
+  // tool calls. Standalone short replies (no tool calls) are still shown.
+  const TINY_TOOL_PREAMBLE_CHARS = 6;
+  const isTinyToolPreamble =
+    hasToolCalls &&
+    !message.error &&
+    trimmedContentChars > 0 &&
+    trimmedContentChars <= TINY_TOOL_PREAMBLE_CHARS;
+  const hasVisibleContent = trimmedContentChars > 0 && !isTinyToolPreamble;
+  // Render order within a turn: reasoning → content → tool calls. Reasoning is
+  // shown as its own borderless trace above the message bubble; tool calls are
+  // grouped into a separate trace rendered below the bubble.
+  const showReasoning = !isUser && !!message.reasoning?.trim();
   const hasMessageBubble =
     editing ||
     generatedImages.length > 0 ||
     generatedVideos.length > 0 ||
     pillAttachments.length > 0 ||
-    !!visibleContent ||
-    !!message.error ||
-    (!isUser && !!message.reasoning);
-  const actionOnly = hasToolCalls && !hasMessageBubble && !typing;
+    hasVisibleContent ||
+    !!message.error;
+  const actionOnly =
+    (hasToolCalls || showReasoning) && !hasMessageBubble && !typing;
+  // An assistant/tool turn that produced no bubble, no reasoning, no tool calls
+  // and isn't actively typing renders nothing useful — skip it so intermediate
+  // empty turns don't leave a tall gap.
+  const isBlankAssistant =
+    !isUser &&
+    !hasMessageBubble &&
+    !hasToolCalls &&
+    !showReasoning &&
+    !typing &&
+    !editing;
+
+  const toolsActive =
+    hasToolCalls &&
+    ((streaming && message.status === "pending") ||
+      (toolCalls?.some(
+        (c) => c.status === "running" || c.status === "pending"
+      ) ??
+        false));
+  const [toolsUserOpen, setToolsUserOpen] = useState<boolean | null>(null);
+  const toolsOpen = toolsUserOpen ?? toolsActive;
 
   useEffect(() => {
     if (!editing) return;
@@ -4070,6 +4152,8 @@ function ChatBubble({
     return () => cancelAnimationFrame(frame);
   }, [editing, message.id]);
 
+  if (isBlankAssistant) return null;
+
   return (
     <motion.div
       id={turnId ? `turn-anchor-${turnId}` : undefined}
@@ -4077,29 +4161,27 @@ function ChatBubble({
       initial={reduce ? false : { opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
-      className={cn("group flex w-full scroll-mt-6", isUser && "justify-end")}
+      className={cn("flex w-full scroll-mt-6", isUser && "justify-end")}
     >
       <div
         className={cn(
-          "flex w-fit min-w-[8.5rem] max-w-[90%] flex-col gap-1.5",
+          "group relative flex w-fit min-w-[8.5rem] max-w-[90%] flex-col gap-1.5",
           isUser && "items-end"
         )}
       >
-        {!typing && !actionOnly && (
-          <span
-            className={cn(
-              "w-max max-w-full shrink-0 select-none overflow-hidden text-ellipsis whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground/70 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
-              isUser ? "self-end" : "self-start"
-            )}
-          >
-            {formatMessageTime(message.createdAt)}
-          </span>
+        {showReasoning && (
+          <ReasoningTrace
+            reasoning={message.reasoning!}
+            reasoningMs={message.reasoningMs}
+            streaming={streaming && message.status === "pending"}
+          />
         )}
-        {hasMessageBubble && (
-          <div
-            className={cn(
-              "text-copy-14",
-              editing
+        <div className="flex items-center gap-2">
+          {hasMessageBubble && (
+            <div
+              className={cn(
+                "text-copy-14",
+                editing
                 ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
                 : "rounded-md px-3.5 py-2.5",
               !editing &&
@@ -4163,14 +4245,7 @@ function ChatBubble({
               </div>
             ) : (
               <div className="grid gap-2">
-                {!isUser && message.reasoning && (
-                  <ReasoningTrace
-                    reasoning={message.reasoning}
-                    reasoningMs={message.reasoningMs}
-                    streaming={streaming && message.status === "pending"}
-                  />
-                )}
-                {visibleContent &&
+                {hasVisibleContent &&
                   (isUser ? (
                     <div className="whitespace-pre-wrap break-words">
                       {visibleContent}
@@ -4190,55 +4265,90 @@ function ChatBubble({
             )}
           </div>
         )}
-        {!isUser && typing && !hasToolCalls && <AssistantWorkingStatus />}
-        {hasToolCalls && (
-          <ToolCallTrace toolCalls={toolCalls} />
+          {hasToolCalls && hasMessageBubble && (
+            <button
+              type="button"
+              onClick={() => setToolsUserOpen(!toolsOpen)}
+              title={t("agent_thinking_actions", { count: toolCalls!.length })}
+              aria-label={t("agent_thinking_actions", {
+                count: toolCalls!.length,
+              })}
+              className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              {toolsOpen ? (
+                <ChevronsDownUp className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronsUpDown className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+        </div>
+        {hasToolCalls && !hasMessageBubble && (
+          <ToolCallsTrace
+            count={toolCalls!.length}
+            open={toolsOpen}
+            active={toolsActive}
+            onToggle={() => setToolsUserOpen(!toolsOpen)}
+          />
         )}
-        {debug && !editing && !actionOnly && (
+        {hasToolCalls && toolsOpen && (
+          <div className="grid w-full min-w-0 gap-1 border-l border-border pl-3 ml-3">
+            {toolCalls!.map((call) => (
+              <ToolCallCard key={call.id} call={call} />
+            ))}
+          </div>
+        )}
+        {!isUser && typing && !hasToolCalls && <AssistantWorkingStatus />}
+        {!typing && !actionOnly && (
           <div
             className={cn(
-              "flex items-center gap-1",
+              "flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
               isUser && "flex-row-reverse"
             )}
           >
-            <div
-              className={cn(
-                "flex gap-1 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
-                isUser && "flex-row-reverse"
-              )}
-            >
-              {canEdit && (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  title={t("agent_edit_message")}
-                  disabled={actionsDisabled}
-                  onClick={onStartEdit}
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              {canRetry && (
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  title={t("agent_retry")}
-                  disabled={actionsDisabled}
-                  onClick={onRetry}
-                >
-                  <RotateCcw className="h-3.5 w-3.5" />
-                </Button>
-              )}
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                title={t("agent_delete_from_here")}
-                disabled={actionsDisabled}
-                onClick={onDelete}
+            <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
+              {formatMessageTime(message.createdAt)}
+            </span>
+            {debug && !editing && !actionsDisabled && (
+              <div
+                className={cn(
+                  "flex gap-1",
+                  isUser && "flex-row-reverse"
+                )}
               >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </div>
+                {canEdit && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title={t("agent_edit_message")}
+                    disabled={actionsDisabled}
+                    onClick={onStartEdit}
+                  >
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                {canRetry && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    title={t("agent_retry")}
+                    disabled={actionsDisabled}
+                    onClick={onRetry}
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+                <Button
+                  size="icon-sm"
+                  variant="ghost"
+                  title={t("agent_delete_from_here")}
+                  disabled={actionsDisabled}
+                  onClick={onDelete}
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -4256,7 +4366,7 @@ function parseToolName(raw: string): { name: string; server?: string } {
   return { name: raw };
 }
 
-function AssistantWorkingStatus() {
+function AssistantWorkingStatus({ label }: { label?: string }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
 
@@ -4282,8 +4392,60 @@ function AssistantWorkingStatus() {
           />
         )}
       </span>
-      <span>{t("agent_execution_starting")}</span>
+      <span>{label ?? t("agent_execution_starting")}</span>
     </div>
+  );
+}
+
+function useElapsedSeconds(running: boolean): number | null {
+  const [ms, setMs] = useState(0);
+  const startRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (!running) {
+      startRef.current = null;
+      return;
+    }
+    startRef.current = startRef.current ?? Date.now();
+    setMs(Date.now() - startRef.current);
+    const id = setInterval(() => {
+      if (startRef.current != null) setMs(Date.now() - startRef.current);
+    }, 500);
+    return () => clearInterval(id);
+  }, [running]);
+  if (!running) return null;
+  return Math.max(1, Math.round(ms / 1000));
+}
+
+function ToolCallsTrace({
+  count,
+  open,
+  active,
+  onToggle,
+}: {
+  count: number;
+  open: boolean;
+  active?: boolean;
+  onToggle: () => void;
+}) {
+  const { t } = useTranslation("pages");
+  const label = active
+    ? t("agent_actions_running")
+    : t("agent_actions_done", { count });
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      className="flex w-fit items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
+    >
+      <Wrench className={cn("h-3.5 w-3.5", active && "animate-pulse")} />
+      <span>{label}</span>
+      <ChevronRight
+        className={cn(
+          "h-3.5 w-3.5 transition-transform duration-200",
+          open && "rotate-90"
+        )}
+      />
+    </button>
   );
 }
 
@@ -4298,11 +4460,14 @@ function ReasoningTrace({
 }) {
   const { t } = useTranslation("pages");
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? true;
-  const seconds =
+  // Fold once the model finishes thinking; keep it open while streaming.
+  const open = userOpen ?? !!streaming;
+  const liveSeconds = useElapsedSeconds(!!streaming);
+  const finalSeconds =
     typeof reasoningMs === "number" && reasoningMs > 0
       ? Math.max(1, Math.round(reasoningMs / 1000))
       : null;
+  const seconds = streaming ? liveSeconds : finalSeconds;
   const label =
     seconds != null
       ? t("agent_thought_for", { seconds })
@@ -4326,22 +4491,13 @@ function ReasoningTrace({
         />
       </button>
       {open && (
-        <div className="mt-1.5 whitespace-pre-wrap break-words border-l border-border pl-3 text-copy-13 italic leading-relaxed text-muted-foreground">
-          {reasoning}
+        <div className="mt-1.5 border-l border-border pl-3">
+          <MarkdownMessage
+            content={reasoning}
+            className="text-muted-foreground"
+          />
         </div>
       )}
-    </div>
-  );
-}
-
-function ToolCallTrace({ toolCalls }: { toolCalls: ToolCallRecord[] }) {
-  return (
-    <div className="w-[min(32rem,calc(100vw-3rem))] min-w-0 max-w-full border-l border-dashed border-border pl-5">
-      <div className="grid min-w-0 gap-1">
-        {toolCalls.map((call) => (
-          <ToolCallCard key={call.id} call={call} />
-        ))}
-      </div>
     </div>
   );
 }

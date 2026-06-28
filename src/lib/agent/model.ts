@@ -37,6 +37,10 @@ export function buildPiModel(
     api: "openai-completions",
     provider: UNIFIED_PROVIDER_ID,
     baseUrl: options.baseUrl,
+    // Keep this false: pi-ai parses upstream `reasoning_content` into thinking
+    // blocks unconditionally (so reasoning still surfaces), while enabling it
+    // would switch the system prompt to the OpenAI `developer` role, which many
+    // upstreams behind the gateway reject (400 invalid role).
     reasoning: false,
     input,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

@@ -60,6 +60,12 @@ export interface AgentRuntimeCallbacks {
   onAssistantStart?: () => void | Promise<void>;
   /** Accumulated text of the current assistant turn. */
   onAssistantDelta?: (text: string) => void | Promise<void>;
+  /**
+   * Accumulated reasoning / thinking text of the current assistant turn.
+   * Emitted as the model streams its chain-of-thought (parsed from
+   * `reasoning_content` into pi-ai "thinking" blocks). Empty turns never fire.
+   */
+  onReasoningDelta?: (reasoning: string) => void | Promise<void>;
   /** Current assistant turn finished. */
   onAssistantEnd?: (text: string) => void | Promise<void>;
   onToolStart?: (info: AgentToolStartInfo) => void | Promise<void>;
@@ -156,6 +162,22 @@ function assistantText(message: AgentMessage): string {
     .map((c) => c.text)
     .join("");
   return sanitizeLeakedToolCallText(text);
+}
+
+/**
+ * Extract reasoning / chain-of-thought from an assistant message. pi-ai parses
+ * upstream `reasoning_content` / `reasoning` deltas into `thinking` content
+ * blocks; we concatenate them so the UI can surface the model's thinking.
+ */
+function assistantReasoning(message: AgentMessage): string {
+  if (message.role !== "assistant") return "";
+  return message.content
+    .filter(
+      (c): c is { type: "thinking"; thinking: string } =>
+        (c as { type?: string }).type === "thinking",
+    )
+    .map((c) => c.thinking)
+    .join("");
 }
 
 function resultToText(result: AgentToolResult<unknown> | undefined): string {
@@ -308,6 +330,8 @@ export async function createAgentRuntime(
         break;
       case "message_update":
         if ((event.message as AgentMessage).role === "assistant") {
+          const reasoning = assistantReasoning(event.message);
+          if (reasoning) await callbacks.onReasoningDelta?.(reasoning);
           await callbacks.onAssistantDelta?.(assistantText(event.message));
         }
         break;
@@ -323,6 +347,8 @@ export async function createAgentRuntime(
             contentTypes: msg.content.map((c) => c.type),
             text: assistantText(event.message).slice(0, 120),
           });
+          const reasoning = assistantReasoning(event.message);
+          if (reasoning) await callbacks.onReasoningDelta?.(reasoning);
           if (msg.errorMessage) {
             await callbacks.onError?.(msg.errorMessage);
           } else {
