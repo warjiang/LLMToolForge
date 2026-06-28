@@ -245,6 +245,22 @@ impl Default for UnifiedManager {
     }
 }
 
+impl UnifiedManager {
+    /// Kill the sidecar we spawned, if any. Synchronous and lock-contention
+    /// tolerant so it is safe to call from the app's exit handler — this is what
+    /// stops a force-quit/normal exit from leaving an orphaned gateway whose
+    /// stdout (and call logs) the next run can no longer capture.
+    pub fn shutdown(&self) {
+        if let Ok(mut inner) = self.inner.try_lock() {
+            if let Some(child) = inner.child.take() {
+                let _ = child.kill();
+            }
+            inner.external = false;
+            inner.running_port = None;
+        }
+    }
+}
+
 /// Resolve (and create) the gateway config file path inside the app config dir.
 fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app
@@ -330,15 +346,25 @@ pub async fn unified_api_start(
     }
 
     // A gateway may already be listening on the port — typically an orphan
-    // sidecar left over from a previous app run that still holds the port. Trying
-    // to spawn another one would fail with EADDRINUSE, so adopt the existing one
-    // instead. It watches the same config file, so our routes still apply.
+    // sidecar left over from a previous app run (e.g. a crash or force-quit)
+    // that still holds the port. Adopting it keeps routing working (it watches
+    // the same config file), but we can no longer read that process's stdout, so
+    // its structured call-log lines are lost and the monitor stays empty.
+    //
+    // To keep call logs reliable, reclaim the port instead: terminate the
+    // orphaned sidecar and spawn a fresh one we own (so its stdout — and thus
+    // the call log — is captured). Only fall back to adopting when the port
+    // cannot be freed (e.g. it is held by a process we may not touch), so the
+    // gateway always stays usable.
     if probe_healthy(&manager.client, port).await {
-        let mut inner = manager.inner.lock().await;
-        inner.external = true;
-        inner.running_port = Some(port);
-        drop(inner);
-        return status(&manager).await;
+        let reclaimed = reclaim_port(&manager.client, port).await;
+        if !reclaimed {
+            let mut inner = manager.inner.lock().await;
+            inner.external = true;
+            inner.running_port = Some(port);
+            drop(inner);
+            return status(&manager).await;
+        }
     }
 
     let sidecar = app
@@ -475,6 +501,112 @@ async fn handle_stdout_line(shared: &Arc<RwLock<SharedState>>, app: &tauri::AppH
         }
         Err(e) => eprintln!("[gateway] 无法解析调用日志：{e}"),
     }
+}
+
+/// Best-effort reclaim of a port held by an orphaned gateway sidecar: terminate
+/// the listener (only when it looks like our own sidecar) and wait until the
+/// port is free. Returns `true` once nothing is answering on `/health` anymore,
+/// so the caller can spawn a fresh sidecar it owns. Returns `false` if the port
+/// could not be freed, in which case the caller should adopt the existing one.
+async fn reclaim_port(client: &reqwest::Client, port: u16) -> bool {
+    let killed = tokio::task::spawn_blocking(move || kill_gateway_on_port(port))
+        .await
+        .unwrap_or(false);
+    if !killed {
+        return false;
+    }
+    // Wait for the OS to actually release the port before we try to bind it.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(3);
+    loop {
+        if !probe_healthy(client, port).await {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    }
+}
+
+/// Terminate any process listening on `port` that is our gateway sidecar.
+/// Returns `true` if at least one matching sidecar was signalled. Other
+/// processes on the port are left untouched so we never kill an unrelated
+/// listener. Blocking; run via `spawn_blocking`.
+#[cfg(unix)]
+fn kill_gateway_on_port(port: u16) -> bool {
+    use std::process::Command;
+    let Ok(out) = Command::new("lsof")
+        .args(["-nP", &format!("-iTCP:{port}"), "-sTCP:LISTEN", "-t"])
+        .output()
+    else {
+        return false;
+    };
+    let pids: Vec<u32> = String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| l.trim().parse::<u32>().ok())
+        .collect();
+    let mut signalled = false;
+    for pid in pids {
+        let comm = Command::new("ps")
+            .args(["-p", &pid.to_string(), "-o", "comm="])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .unwrap_or_default();
+        if !comm.contains("portkey") {
+            continue;
+        }
+        if Command::new("kill")
+            .args(["-TERM", &pid.to_string()])
+            .status()
+            .is_ok()
+        {
+            signalled = true;
+        }
+    }
+    signalled
+}
+
+/// Windows variant of [`kill_gateway_on_port`].
+#[cfg(windows)]
+fn kill_gateway_on_port(port: u16) -> bool {
+    use std::process::Command;
+    let Ok(out) = Command::new("netstat").args(["-ano", "-p", "TCP"]).output() else {
+        return false;
+    };
+    let text = String::from_utf8_lossy(&out.stdout);
+    let needle = format!(":{port}");
+    let mut pids: Vec<u32> = text
+        .lines()
+        .filter(|l| l.contains("LISTENING") && l.contains(&needle))
+        .filter_map(|l| {
+            l.split_whitespace()
+                .last()
+                .and_then(|p| p.parse::<u32>().ok())
+        })
+        .collect();
+    pids.sort_unstable();
+    pids.dedup();
+    let mut signalled = false;
+    for pid in pids {
+        let tasks = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()
+            .ok()
+            .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
+            .unwrap_or_default();
+        if !tasks.contains("portkey") {
+            continue;
+        }
+        if Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/F"])
+            .status()
+            .is_ok()
+        {
+            signalled = true;
+        }
+    }
+    signalled
 }
 
 /// One-shot health probe: returns true if a gateway is already answering on the

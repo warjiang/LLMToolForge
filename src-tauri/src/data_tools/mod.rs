@@ -833,13 +833,6 @@ body {
 #app { width: min(1080px, calc(100vw - 40px)); margin: 0 auto; padding: 40px 0 64px; }
 .boot { color: var(--muted); padding: 80px 0; text-align: center; }
 .page-head { margin: 0 0 24px; }
-.eyebrow {
-  margin: 0 0 10px;
-  display: inline-flex; align-items: center; gap: 8px;
-  color: var(--accent); font-size: 11px; font-weight: 700;
-  letter-spacing: .12em; text-transform: uppercase;
-}
-.eyebrow::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
 h1 { margin: 0; font-size: 30px; line-height: 1.12; letter-spacing: -.01em; font-weight: 700; }
 .meta { margin: 10px 0 0; color: var(--muted); font-size: 13px; }
 .card {
@@ -1012,7 +1005,7 @@ function mountChart(el, spec){
 function renderChartPage(app, data){
   const head = document.createElement("div");
   head.className = "page-head";
-  head.innerHTML = `<p class="eyebrow">DataAgent Chart</p><h1>${esc(data.title||"Chart")}</h1>`+
+  head.innerHTML = `<h1>${esc(data.title||"Chart")}</h1>`+
     `<p class="meta">${data.rowCount||0} 行 · x: ${esc(data.x)} · y: ${esc(data.y)}${data.series?` · series: ${esc(data.series)}`:""}</p>`;
   app.appendChild(head);
 
@@ -1031,7 +1024,7 @@ function renderChartPage(app, data){
 function renderReport(app, data){
   const head = document.createElement("div");
   head.className = "page-head";
-  head.innerHTML = `<p class="eyebrow">DataAgent Report</p><h1>${esc(data.title||"Report")}</h1>`;
+  head.innerHTML = `<h1>${esc(data.title||"Report")}</h1>`;
   app.appendChild(head);
 
   for (const s of (data.sections||[])){

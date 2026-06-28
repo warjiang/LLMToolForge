@@ -983,8 +983,16 @@ pub fn run() {
             browser::browser_status,
             web_fetch::web_fetch,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while running tauri application")
+        .run(|app_handle, event| {
+            // Tear down the gateway sidecar we spawned on exit so we never leave
+            // an orphan holding the port (an orphan can still route via the
+            // shared config but its stdout/call-log is no longer captured).
+            if let tauri::RunEvent::Exit = event {
+                app_handle.state::<unified::UnifiedManager>().shutdown();
+            }
+        });
 }
 
 #[cfg(test)]
