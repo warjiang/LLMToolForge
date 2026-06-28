@@ -153,3 +153,268 @@ await chat.replaceMessageContent(userId, edited, parts);
 await chat.deleteMessagesFrom(sessionId, userId, false);
 await generateAssistantFromCurrentHistory(userId);
 ```
+
+## Scenario: Agent Checkpoint Tool With In-App Approval
+
+### 1. Scope / Trigger
+- Trigger: internal agent tools can pause a live Pi agent turn for human
+  approval before a protected action.
+
+### 2. Signatures
+- `buildInternalTools(enabled, { sandboxMode, workspaceRoot, requestCheckpoint })`
+- `requestCheckpoint(request, signal): Promise<CheckpointDecision>`
+- Tool request fields: `toolCallId`, `title`, `summary`, `proposedAction`,
+  optional `risk`, optional `artifacts`.
+- Tool decision fields: `approved`, optional `note`, `decidedAt`.
+- Optional session setting: `autoApproveCheckpoints: boolean`, persisted as
+  `session_settings.auto_approve_checkpoints` and defaulting to false.
+
+### 3. Contracts
+- The `checkpoint` tool must create a `tool_calls` record with status `pending`
+  before rendering approval UI.
+- ResearchAgent may synthesize a checkpoint from `beforeToolCall` when a model
+  directly calls protected tools without an explicit `checkpoint` call.
+- Approve resolves the tool with `approved: true`; reject resolves with
+  `approved: false` and aborts the current runtime so later tool calls in the
+  same batch do not run.
+- If `autoApproveCheckpoints` is true, checkpoint requests resolve immediately
+  with `approved: true` and an auto-approval note; no approval card is shown or
+  awaited, and sandbox permissions are not changed.
+- Stop/reset/session rewrite rejects the pending checkpoint and clears the UI.
+- Checkpoint suspension is in-memory only; persisted tool calls are audit
+  records, not resumable promises after app restart.
+- If a model writes pseudo tool syntax such as `<functions.checkpoint ...>` in
+  assistant text instead of issuing a real tool call, the app must not display
+  the raw function-call blob or treat approval as pending. Runtime/UI text
+  sanitization should replace it with a retry notice.
+
+### 4. Validation & Error Matrix
+- Missing `requestCheckpoint` -> tool error.
+- A second active checkpoint -> tool error.
+- Runtime abort while pending -> tool error and no stale approval card.
+- User rejection -> successful checkpoint result with `approved: false`, then
+  current runtime stops.
+- Direct protected ResearchAgent `bash/write/edit/data_*_html` call -> pending
+  checkpoint before execution.
+- Auto-approval enabled -> no pending card, protected action continues, and the
+  checkpoint tool result records the auto-approval note.
+- Assistant text contains leaked `<functions.checkpoint ...>` -> no approval is
+  considered active; render a retry notice instead of the raw pseudo call.
+
+### 5. Good/Base/Bad Cases
+- Good: ResearchAgent asks for approval, user approves, and the same turn
+  continues with the protected command.
+- Good: A model with no visible reasoning directly calls a protected command;
+  runtime pauses before execution and waits for approval.
+- Base: User rejects, the checkpoint result is recorded, and no following tool
+  calls execute in that turn.
+- Base: Model leaks checkpoint syntax as text; user sees a retry notice, not a
+  giant JSON blob or a fake pending approval claim.
+- Bad: Rendering an approval card without a linked pending `tool_calls` record.
+- Bad: Showing raw `<functions.checkpoint ...>` text in a chat bubble.
+
+### 6. Tests Required
+- Type/build checks must cover checkpoint request/decision types.
+- Manual desktop test should approve, reject, and stop a pending checkpoint.
+- Manual desktop test should enable auto-approval, run a protected ResearchAgent
+  action, and verify the turn continues without a pending approval card.
+- Manual test should verify Direct/DataAgent behavior remains unchanged.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await dangerousResearchStep();
+await checkpoint();
+```
+
+#### Correct
+```typescript
+const decision = await checkpoint({ title, summary, proposedAction });
+if (!decision.approved) return;
+await dangerousResearchStep();
+```
+
+## Scenario: Session Agent Selector Placement
+
+### 1. Scope / Trigger
+- Trigger: built-in and custom agent modes are selected per chat session.
+
+### 2. Signatures
+- Session field: `ChatSession.agentId?: string | null`.
+- Store action: `chatStore.setSessionAgent(sessionId, agentId)`.
+- Built-in values: `null`/`DIRECT_AGENT_VALUE`, `DATA_AGENT_ID`,
+  `RESEARCH_AGENT_ID`.
+
+### 3. Contracts
+- The session agent selector lives in the sidebar header, next to the app logo,
+  and acts as an agent partition filter for the session list.
+- The composer must not render a second agent selector.
+- The session list must not duplicate agent type badges; list rows show title,
+  timestamp, and row actions only.
+- Switching the sidebar selector shows only sessions whose stored `agentId`
+  matches that agent type. Existing conversation `agentId` values are not
+  mutated by the selector.
+- If the selected agent partition has no session, the sidebar creates a new
+  session for that `agentId`. The new-session button also inherits the selected
+  partition's `agentId`.
+- `AgentChatView` should derive the active agent from the active session record
+  so switching partitions updates the runtime through normal session selection.
+- Drag/reorder/group operations in a filtered partition must preserve hidden
+  sessions from other agent partitions in the persisted ordering/assignment
+  stores.
+
+### 4. Validation & Error Matrix
+- Empty partition + selector change -> a new session is created with the
+  selected `agent_id`, then selected.
+- Partition with existing sessions + selector change -> the newest matching
+  session is selected.
+- Existing sessions with `agentId: null` -> sidebar shows the default direct
+  chat label.
+- Reordering filtered sessions -> other agent partitions keep their existing
+  assignments/order instead of being dropped from the store.
+
+### 5. Good/Base/Bad Cases
+- Good: User picks ResearchAgent in the sidebar header and sees only
+  ResearchAgent sessions; composer stays focused on model/tools/sandbox
+  controls.
+- Base: Old DataAgent/ResearchAgent sessions load without row badges but still
+  run with their stored `agentId`.
+- Bad: Showing one agent selector in the sidebar and another in the composer
+  with potentially divergent state.
+- Bad: Treating the sidebar selector as an edit control that rewrites the active
+  conversation's `agentId` after that conversation already exists.
+
+### 6. Tests Required
+- Type/build checks cover selector state flow and removed composer picker.
+- Manual UI test should switch agent partitions, verify each partition shows its
+  own sessions, verify new sessions inherit the current partition, and verify
+  session rows no longer show agent badges.
+
+### 7. Wrong vs Correct
+#### Wrong
+```tsx
+<ComposerToolbar>
+  <AgentSelect />
+</ComposerToolbar>
+<SessionRow badge="ResearchAgent" />
+```
+
+#### Correct
+```tsx
+<SidebarHeader>
+  <AgentPartitionSelect value={agentFilterValue} />
+</SidebarHeader>
+<SessionList sessions={sessions.filter(matchesAgentPartition)} />
+```
+
+## Scenario: ResearchAgent HTML Deliverables
+
+### 1. Scope / Trigger
+- Trigger: `ResearchAgent` needs browser-previewable research pages while
+  keeping the existing DataAgent local HTML artifact pipeline.
+
+### 2. Signatures
+- Internal tools: `data_chart_html`, `data_report_html`.
+- `data_chart_html` response must include `outputDir`, `outputPath`, `title`.
+- `data_report_html` response must include `outputDir`, `outputPath`, `title`.
+- Artifact preview: `dataArtifact(toolName, resultJson)` recognizes those two
+  tool names and opens `outputDir`.
+
+### 3. Contracts
+- `ResearchAgent` uses `data_chart_html` for interactive ECharts charts and
+  `data_report_html` for multi-section report pages.
+- These tools are generated-artifact tools and require checkpoint approval, or
+  auto-approval when the session setting is explicitly enabled.
+- Research pages must be evidence-backed; final conclusions require audit-clean
+  evidence first.
+- Prefer explicit output paths under the session project root, such as
+  `analysis/<scenario>/web-report` or `research-artifacts/<scenario>/report`,
+  rather than relying on the `dataagent-artifacts` default directory.
+- Do not create a separate TypeScript reporting pipeline for ResearchAgent.
+
+### 4. Validation & Error Matrix
+- Sandbox mode blocks writing the requested output path -> tool error.
+- Missing audit-clean evidence for final conclusions -> do not generate a final
+  conclusions page.
+- Direct `data_chart_html` / `data_report_html` call without explicit checkpoint
+  -> ResearchAgent runtime guard synthesizes a checkpoint first.
+
+### 5. Good/Base/Bad Cases
+- Good: After audit approval, ResearchAgent calls `data_report_html` with
+  section text that cites local evidence artifacts and opens the result preview.
+- Base: A planning-only page request first asks for approval before generating a
+  draft HTML artifact.
+- Bad: ResearchAgent writes raw HTML/React files by hand to bypass the built-in
+  artifact tools.
+
+### 6. Tests Required
+- Type/build checks must cover ResearchAgent prompt and tool definitions.
+- Manual desktop test should generate a ResearchAgent HTML report and verify the
+  browser preview opens the artifact.
+- Manual test should verify Direct/DataAgent behavior remains unchanged.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await write({ path: "report.html", content: handcraftedHtml });
+```
+
+#### Correct
+```typescript
+const decision = await checkpoint({ title, summary, proposedAction });
+if (!decision.approved) return;
+await data_report_html({ title, sections, outputPath });
+```
+
+## Scenario: Tool-Call Goals In Agent Timeline
+
+### 1. Scope / Trigger
+- Trigger: agent tool timelines need a concise human-readable reason for each
+  tool call without changing the persisted tool-call model.
+
+### 2. Signatures
+- Internal tool schemas may include optional `goal: string`.
+- UI helper: `toolCallGoal(argumentsJson?: string): string | null`.
+- Persisted storage remains `tool_calls.arguments_json`.
+
+### 3. Contracts
+- `goal` is a user-visible readability field, not an execution input.
+- Internal tools ignore `goal` when invoking Tauri commands.
+- ResearchAgent and DataAgent prompts should ask models to fill `goal` whenever
+  the tool schema supports it.
+- `ToolCallCard` renders `arguments.goal` inline after the tool name on the
+  collapsed card and still preserves the original arguments in the expanded
+  details.
+- Missing or invalid `goal` is allowed for backward compatibility; old tool-call
+  records render unchanged.
+- MCP and skill tools may also display a goal if their serialized arguments
+  include a top-level `goal` string.
+
+### 4. Validation & Error Matrix
+- `arguments_json` is invalid JSON -> no goal rendered, card remains usable.
+- `goal` is empty or non-string -> no goal rendered.
+- Very long `goal` -> truncate on one line and avoid horizontal overflow.
+
+### 5. Good/Base/Bad Cases
+- Good: `read` call shows "读取 audit.md 以确认是否存在阻断性缺失来源问题".
+- Base: older `read` call without `goal` still shows only the tool name.
+- Bad: storing goal in a separate column or using it to change tool execution.
+
+### 6. Tests Required
+- Type/build checks must cover optional schema fields and JSX rendering.
+- Manual desktop test should run a ResearchAgent turn and verify collapsed tool
+  cards show goals for new internal tool calls.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await chat.recordToolCall({ title: goal, argumentsJson: "{}" });
+```
+
+#### Correct
+```typescript
+await chat.recordToolCall({
+  title: toolName,
+  argumentsJson: JSON.stringify({ goal, ...toolArgs }),
+});
+```

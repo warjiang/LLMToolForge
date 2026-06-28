@@ -9,6 +9,7 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { AgentDefinition, McpServer, Skill } from "@/types";
 import { buildInternalTools } from "./tools/internal";
+import type { RequestCheckpoint } from "./tools/internal";
 import { buildMcpTools } from "./tools/mcp";
 import { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";
 
@@ -19,6 +20,8 @@ export interface ResolveAgentDeps {
   mcpServers: McpServer[];
   /** Absolute execution root for internal tools. Empty = managed temp sandbox. */
   workspacePath?: string;
+  /** Optional human approval bridge used by the checkpoint internal tool. */
+  requestCheckpoint?: RequestCheckpoint;
 }
 
 export interface ResolvedAgent {
@@ -71,6 +74,7 @@ export async function resolveAgent(
       ...buildInternalTools(enabledInternal, {
         sandboxMode: def.sandboxMode,
         workspaceRoot: root,
+        requestCheckpoint: deps.requestCheckpoint,
       })
     );
   }

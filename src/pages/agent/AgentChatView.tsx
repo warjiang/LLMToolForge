@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ComponentType, ReactNode, TouchEvent, WheelEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -29,7 +29,6 @@ import {
   Lightbulb,
   ListChecks,
   Loader2,
-  Lock,
   Paperclip,
   Pencil,
   Plus,
@@ -97,7 +96,10 @@ import {
   ModelUnavailableError,
   type AgentRuntime,
   type AgentRuntimeCallbacks,
+  type CheckpointDecision,
+  type CheckpointRequest,
 } from "@/lib/agent";
+import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { registerPreview } from "@/lib/preview";
 import {
@@ -112,7 +114,6 @@ import {
   browserReload,
   onBrowserLoading,
 } from "@/lib/browser";
-import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
@@ -151,15 +152,27 @@ import {
   type AgentDefinition,
 } from "@/types";
 import {
-  DIRECT_AGENT_VALUE,
   DATA_AGENT_ID,
+  RESEARCH_AGENT_ID,
 } from "@/lib/agent/builtinAgents";
+import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
 interface ConnOption {
   key: string;
   name: string;
   kind: "volc" | "gateway" | "manual";
   provider: string;
+}
+
+interface ActiveCheckpoint {
+  toolCallId: string;
+  toolCallRecordId?: string;
+  title: string;
+  summary: string;
+  proposedAction: string;
+  risk?: string;
+  artifacts: string[];
+  requestedAt: string;
 }
 
 const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
@@ -180,13 +193,13 @@ const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
 const ADHOC_AGENT_ID = "__adhoc__";
-const SHOW_AGENT_PICKER = true;
 const DATA_AGENT_PROMPT = [
   "You are DataAgent, a careful local-data analysis assistant.",
   "Use DuckDB for tabular analysis over local CSV, TSV, JSON, JSONL, and Parquet files.",
   "Never query file paths directly in user SQL; register sources with aliases and query the aliases.",
   "Prefer a tight workflow: inspect available files, profile schema/sample rows, write read-only SQL, explain assumptions, then generate charts or reports when useful.",
   "For visual output, use data_chart_html. For deliverable summaries, use data_report_html.",
+  "For every tool call whose schema includes goal, include a concise goal value so the UI timeline explains why the step is running.",
   "If the workspace path is missing or a file is outside the sandbox scope, explain exactly what must be configured.",
 ].join("\n");
 
@@ -245,6 +258,30 @@ function buildDataAgentDef(
       "data_chart_html",
       "data_report_html",
     ],
+    enabledSkillIds: settings.enabledSkillIds,
+    enabledMcpServerIds: settings.enabledMcpServerIds,
+    sandboxMode: settings.sandboxMode,
+    workspacePath: settings.workspacePath,
+    temperature: Number(settings.temperature) || 0,
+    maxTokens: Number(settings.maxTokens) || 4096,
+  };
+}
+
+function buildResearchAgentDef(
+  settings: ChatSessionSettings,
+  unifiedModelId: string
+): AgentDefinition {
+  const now = new Date().toISOString();
+  return {
+    id: RESEARCH_AGENT_ID,
+    createdAt: now,
+    updatedAt: now,
+    name: "ResearchAgent",
+    description:
+      "Operate a local research-harness workspace and create evidence-backed HTML research deliverables.",
+    systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
+    modelId: unifiedModelId,
+    enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,
@@ -552,8 +589,10 @@ export function AgentChatView() {
   const [titleEditing, setTitleEditing] = useState(false);
   const [titleDraft, setTitleDraft] = useState("");
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
-  const [agentsManagerOpen, setAgentsManagerOpen] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+  const [activeCheckpoint, setActiveCheckpoint] =
+    useState<ActiveCheckpoint | null>(null);
+  const [checkpointNote, setCheckpointNote] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const userScrollLockRef = useRef(false);
@@ -575,6 +614,12 @@ export function AgentChatView() {
     toolRecords: Map<string, string>;
     sessionId: string;
   } | null>(null);
+  const checkpointResolverRef = useRef<{
+    toolCallId: string;
+    resolve: (decision: CheckpointDecision) => void;
+    reject: (error: Error) => void;
+  } | null>(null);
+  const autoApproveCheckpointsRef = useRef(false);
   const videoPollingRef = useRef<Set<string>>(new Set());
 
   const settings = chat.settings;
@@ -601,40 +646,25 @@ export function AgentChatView() {
     if (selectedAgentId === DATA_AGENT_ID && settings) {
       return buildDataAgentDef(settings, settings.modelId);
     }
+    if (selectedAgentId === RESEARCH_AGENT_ID && settings) {
+      return buildResearchAgentDef(settings, settings.modelId);
+    }
     return selectedAgentId
       ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
       : null;
   }, [selectedAgentId, settings, agentDefs.items]);
 
-  // Once a conversation has started, its agent is committed and can't be
-  // switched. Before the first message the picker is freely editable.
-  const agentLocked = chat.messages.length > 0;
+  const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
 
-  // Restore the committed/pending agent whenever the active session changes.
+  // Restore the committed/pending agent whenever the active session or its
+  // sidebar-controlled agent selection changes.
   useEffect(() => {
-    const sid = chat.activeSessionId;
-    if (!sid) {
+    if (!activeSession) {
       setSelectedAgentId(null);
       return;
     }
-    const sess = chat.sessions.find((s) => s.id === sid);
-    setSelectedAgentId(sess?.agentId ?? null);
-    // Intentionally keyed on the session id only: user-driven picker changes
-    // are persisted immediately, so we must not clobber them on unrelated
-    // `sessions` updates.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chat.activeSessionId]);
-
-  const handleAgentChange = useCallback(
-    (value: string) => {
-      if (agentLocked) return;
-      const next = value === DIRECT_AGENT_VALUE ? null : value;
-      setSelectedAgentId(next);
-      const sid = chat.activeSessionId;
-      if (sid) void chat.setSessionAgent(sid, next);
-    },
-    [agentLocked, chat]
-  );
+    setSelectedAgentId(activeSession.agentId ?? null);
+  }, [activeSession?.id, activeSession?.agentId]);
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -904,7 +934,13 @@ export function AgentChatView() {
   const activeMcp = mcp.items.filter(
     (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
   );
-  const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
+  const isResearchAgent = selectedAgentId === RESEARCH_AGENT_ID;
+  const researchSandboxWarning =
+    isResearchAgent && settings?.sandboxMode !== "workspace-write";
+  useEffect(() => {
+    autoApproveCheckpointsRef.current =
+      isResearchAgent && (settings?.autoApproveCheckpoints ?? false);
+  }, [isResearchAgent, settings?.autoApproveCheckpoints]);
 
   // Warm enabled MCP servers in the background so a healthy server (e.g. a
   // remote HTTP one) is ready instantly when the user sends, and a slow/broken
@@ -968,6 +1004,126 @@ export function AgentChatView() {
   ) => {
     if (!settings) return;
     chat.saveSettings(patch);
+  };
+
+  const validateResearchAgent = (): string | null => {
+    if (!isResearchAgent) return null;
+    if (
+      selectedModel &&
+      (isImageGenerationModel(selectedModel) ||
+        isVideoGenerationModel(selectedModel))
+    ) {
+      return t("agent_research_chat_model_required");
+    }
+    return null;
+  };
+
+  const autoApprovedCheckpointDecision = (): CheckpointDecision => ({
+    approved: true,
+    note: t("agent_checkpoint_auto_approved_note"),
+    decidedAt: new Date().toISOString(),
+  });
+
+  const openCheckpoint = (
+    request: CheckpointRequest,
+    signal?: AbortSignal
+  ): Promise<CheckpointDecision> => {
+    if (checkpointResolverRef.current) {
+      return Promise.reject(new Error(t("agent_checkpoint_already_pending")));
+    }
+    if (signal?.aborted) {
+      return Promise.reject(new Error(t("agent_checkpoint_cancelled")));
+    }
+    if (autoApproveCheckpointsRef.current) {
+      return Promise.resolve(autoApprovedCheckpointDecision());
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let onAbort: () => void;
+      const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
+        if (checkpointResolverRef.current?.toolCallId === request.toolCallId) {
+          checkpointResolverRef.current = null;
+        }
+        setActiveCheckpoint((current) =>
+          current?.toolCallId === request.toolCallId ? null : current
+        );
+        setCheckpointNote("");
+      };
+      const settleResolve = (decision: CheckpointDecision) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(decision);
+      };
+      const settleReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      onAbort = () => settleReject(new Error(t("agent_checkpoint_cancelled")));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      checkpointResolverRef.current = {
+        toolCallId: request.toolCallId,
+        resolve: settleResolve,
+        reject: settleReject,
+      };
+      const toolCallRecordId =
+        agentTurnRef.current?.toolRecords.get(request.toolCallId) ?? undefined;
+      if (toolCallRecordId) {
+        void chat.updateToolCall(toolCallRecordId, {
+          status: "pending",
+        });
+      }
+      setCheckpointNote("");
+      setActiveCheckpoint({
+        toolCallId: request.toolCallId,
+        toolCallRecordId,
+        title: request.title,
+        summary: request.summary,
+        proposedAction: request.proposedAction,
+        risk: request.risk,
+        artifacts: request.artifacts ?? [],
+        requestedAt: new Date().toISOString(),
+      });
+    });
+  };
+
+  const decideActiveCheckpoint = (approved: boolean, noteOverride?: string) => {
+    const checkpoint = activeCheckpoint;
+    const pending = checkpointResolverRef.current;
+    if (!checkpoint || !pending || pending.toolCallId !== checkpoint.toolCallId) {
+      return;
+    }
+    const note = noteOverride ?? checkpointNote.trim();
+    pending.resolve({
+      approved,
+      note: note || undefined,
+      decidedAt: new Date().toISOString(),
+    });
+    if (!approved) {
+      agentRuntimeRef.current?.abort();
+    }
+  };
+
+  const updateAutoApproveCheckpoints = (autoApproveCheckpoints: boolean) => {
+    autoApproveCheckpointsRef.current =
+      isResearchAgent && autoApproveCheckpoints;
+    updateSettings({ autoApproveCheckpoints });
+    if (autoApproveCheckpoints && activeCheckpoint) {
+      decideActiveCheckpoint(true, t("agent_checkpoint_auto_approved_note"));
+    }
+  };
+
+  const cancelActiveCheckpoint = (reason = t("agent_checkpoint_cancelled")) => {
+    const pending = checkpointResolverRef.current;
+    if (!pending) {
+      setActiveCheckpoint(null);
+      setCheckpointNote("");
+      return;
+    }
+    pending.reject(new Error(reason));
   };
 
   const fetchModels = async (targetConnKey = settings?.connKey ?? options[0]?.key) => {
@@ -1659,14 +1815,27 @@ export function AgentChatView() {
       onToolStart: async ({ toolCallId, toolName, args }) => {
         const st = agentTurnRef.current;
         if (!st) return;
+        const checkpointTitle =
+          toolName === "checkpoint" &&
+          args &&
+          typeof args === "object" &&
+          typeof (args as { title?: unknown }).title === "string"
+            ? String((args as { title: string }).title)
+            : null;
         const rec = await chat.recordToolCall({
           sessionId: st.sessionId,
           messageId: st.toolAnchorId ?? st.assistantId ?? undefined,
-          source: toolName.startsWith("mcp__") ? "mcp" : "skill",
+          source: toolName.startsWith("mcp__")
+            ? "mcp"
+            : AGENT_INTERNAL_TOOL_IDS.includes(
+                toolName as (typeof AGENT_INTERNAL_TOOL_IDS)[number]
+              )
+              ? "internal"
+              : "skill",
           toolName,
-          title: toolName,
+          title: checkpointTitle ?? toolName,
           argumentsJson: JSON.stringify(args ?? {}),
-          status: "running",
+          status: toolName === "checkpoint" ? "pending" : "running",
           startedAt: new Date().toISOString(),
         });
         st.toolRecords.set(toolCallId, rec.id);
@@ -1722,7 +1891,11 @@ export function AgentChatView() {
       meta?.sessionId !== sessionId;
     if (needNew) {
       runtime?.abort();
-      runtime = await createAgentRuntime(def, callbacks, { workspacePath });
+      runtime = await createAgentRuntime(def, callbacks, {
+        workspacePath,
+        requestCheckpoint: openCheckpoint,
+        autoCheckpoint: def.id === RESEARCH_AGENT_ID,
+      });
       agentRuntimeRef.current = runtime;
       agentRuntimeMetaRef.current = { signature, sessionId };
       const notices: string[] = [];
@@ -1744,6 +1917,7 @@ export function AgentChatView() {
     }
     await runtime!.prompt(promptWithAttachmentPaths(content, inputAttachments));
     await runtime!.waitForIdle();
+    cancelActiveCheckpoint();
   };
 
   /**
@@ -1752,11 +1926,18 @@ export function AgentChatView() {
    * skills/MCP, or null to fall back to the direct (non-tool) chat path.
    */
   const resolveTurnAgent = (): AgentDefinition | null => {
-    if (selectedAgent && selectedAgentId !== DATA_AGENT_ID) return selectedAgent;
+    if (
+      !isResearchAgent &&
+      selectedAgent &&
+      selectedAgentId !== DATA_AGENT_ID
+    ) {
+      return selectedAgent;
+    }
     if (!settings?.connKey) return null;
     const wantsTools =
       AGENT_INTERNAL_TOOL_IDS.length > 0 ||
       selectedAgentId === DATA_AGENT_ID ||
+      selectedAgentId === RESEARCH_AGENT_ID ||
       activeSkills.length > 0 ||
       activeMcp.length > 0;
     if (!wantsTools) return null;
@@ -1782,6 +1963,9 @@ export function AgentChatView() {
     if (selectedAgentId === DATA_AGENT_ID) {
       return buildDataAgentDef(settings, exposed.id);
     }
+    if (selectedAgentId === RESEARCH_AGENT_ID) {
+      return buildResearchAgentDef(settings, exposed.id);
+    }
     if (selectedAgent) return selectedAgent;
     return buildAdHocAgentDef(settings, exposed.id);
   };
@@ -1791,6 +1975,8 @@ export function AgentChatView() {
     const content = input.trim();
     const validationError = validateGenerationInput(content, attachments);
     if (validationError) return setError(validationError);
+    const researchValidationError = validateResearchAgent();
+    if (researchValidationError) return setError(researchValidationError);
 
     setError(null);
     setSending(true);
@@ -1826,6 +2012,7 @@ export function AgentChatView() {
   };
 
   const stop = () => {
+    cancelActiveCheckpoint();
     abortRef.current?.abort();
     agentRuntimeRef.current?.abort();
   };
@@ -1837,6 +2024,7 @@ export function AgentChatView() {
    * persisted conversation.
    */
   const resetAgentRuntime = () => {
+    cancelActiveCheckpoint();
     agentRuntimeRef.current?.abort();
     agentRuntimeRef.current = null;
     agentRuntimeMetaRef.current = null;
@@ -1847,6 +2035,8 @@ export function AgentChatView() {
     const prompt = message.content.trim();
     const validationError = validateGenerationInput(prompt, message.attachments);
     if (validationError) return setError(validationError);
+    const researchValidationError = validateResearchAgent();
+    if (researchValidationError) return setError(researchValidationError);
     abortRef.current?.abort();
     resetAgentRuntime();
     setError(null);
@@ -1891,6 +2081,8 @@ export function AgentChatView() {
     const prompt = userMsg.content.trim();
     const validationError = validateGenerationInput(prompt, userMsg.attachments);
     if (validationError) return setError(validationError);
+    const researchValidationError = validateResearchAgent();
+    if (researchValidationError) return setError(researchValidationError);
     abortRef.current?.abort();
     resetAgentRuntime();
     setError(null);
@@ -1981,6 +2173,8 @@ export function AgentChatView() {
     }
     const validationError = validateGenerationInput(prompt, message.attachments);
     if (validationError) return setError(validationError);
+    const researchValidationError = validateResearchAgent();
+    if (researchValidationError) return setError(researchValidationError);
     abortRef.current?.abort();
     resetAgentRuntime();
     setError(null);
@@ -2173,7 +2367,27 @@ export function AgentChatView() {
           )}
           </div>
 
-          <div className="shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
+          <div className="min-h-0 shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
+            <AnimatePresence>
+              {activeCheckpoint && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: "auto" }}
+                  exit={{ opacity: 0, y: 8, height: 0 }}
+                  className="mx-auto w-full max-w-[800px] overflow-hidden"
+                >
+                  <CheckpointApprovalPanel
+                    checkpoint={activeCheckpoint}
+                    note={checkpointNote}
+                    autoApprove={settings?.autoApproveCheckpoints ?? false}
+                    onNoteChange={setCheckpointNote}
+                    onAutoApproveChange={updateAutoApproveCheckpoints}
+                    onApprove={() => decideActiveCheckpoint(true)}
+                    onReject={() => decideActiveCheckpoint(false)}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
             <AnimatePresence>
               {error && (
                 <motion.div
@@ -2225,6 +2439,12 @@ export function AgentChatView() {
                   </button>
                 </div>
               )}
+              {isResearchAgent && researchSandboxWarning && (
+                <div className="mx-3 mt-3 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-label-12 text-warning-foreground/90">
+                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  <span>{t("agent_research_workspace_write_hint")}</span>
+                </div>
+              )}
               <Textarea
                 className={cn(
                   "h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none",
@@ -2240,109 +2460,70 @@ export function AgentChatView() {
                   }
                 }}
               />
-              <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-2 pb-2 pt-1">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={!settings}
-                  title={t("agent_add_attachment")}
-                  onClick={openAttachmentPicker}
-                >
-                  <Paperclip className="h-4 w-4" />
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-2.5 pb-2 pt-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    disabled={!settings}
+                    title={t("agent_add_attachment")}
+                    onClick={openAttachmentPicker}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
 
-                <div className="w-[176px] shrink-0">
-                  <ComposerModelCascade
-                    options={options}
-                    currentConn={currentConn}
-                    selectedModel={selectedModel}
-                    modelsLoading={modelsLoading}
-                    disabled={!settings || options.length === 0}
-                    modelsForOption={modelsForOption}
-                    onRefresh={(connKey) => fetchModels(connKey)}
-                    onSelect={(connKey, modelId) =>
-                      updateSettings({ connKey, modelId })
-                    }
-                  />
+                  <div className="min-w-[164px] max-w-[260px] flex-[1_1_176px]">
+                    <ComposerModelCascade
+                      options={options}
+                      currentConn={currentConn}
+                      selectedModel={selectedModel}
+                      modelsLoading={modelsLoading}
+                      disabled={!settings || options.length === 0}
+                      modelsForOption={modelsForOption}
+                      onRefresh={(connKey) => fetchModels(connKey)}
+                      onSelect={(connKey, modelId) =>
+                        updateSettings({ connKey, modelId })
+                      }
+                    />
+                  </div>
+
+                  {settings && (
+                    <SandboxModeSelect
+                      value={settings.sandboxMode}
+                      onChange={(sandboxMode) => updateSettings({ sandboxMode })}
+                      triggerClassName="h-7 w-[142px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                      title={t("agent_current_sandbox")}
+                      showIcon
+                    />
+                  )}
                 </div>
 
-                {settings && (
-                  <SandboxModeSelect
-                    value={settings.sandboxMode}
-                    onChange={(sandboxMode) => updateSettings({ sandboxMode })}
-                    triggerClassName="h-7 w-[140px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
-                    title={t("agent_current_sandbox")}
-                    showIcon
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                  <ComposerToolMenu
+                    icon={Boxes}
+                    label="Skills"
+                    empty={t("agent_no_skills")}
+                    items={skills.items}
+                    activeIds={settings?.enabledSkillIds ?? []}
+                    onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
                   />
-                )}
+                  <ComposerToolMenu
+                    icon={Server}
+                    label="MCP"
+                    empty={t("agent_no_mcp")}
+                    items={mcp.items}
+                    activeIds={settings?.enabledMcpServerIds ?? []}
+                    onChange={(enabledMcpServerIds) =>
+                      updateSettings({ enabledMcpServerIds })
+                    }
+                  />
 
-                <ComposerToolMenu
-                  icon={Boxes}
-                  label="Skills"
-                  empty={t("agent_no_skills")}
-                  items={skills.items}
-                  activeIds={settings?.enabledSkillIds ?? []}
-                  onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
-                />
-                <ComposerToolMenu
-                  icon={Server}
-                  label="MCP"
-                  empty={t("agent_no_mcp")}
-                  items={mcp.items}
-                  activeIds={settings?.enabledMcpServerIds ?? []}
-                  onChange={(enabledMcpServerIds) =>
-                    updateSettings({ enabledMcpServerIds })
-                  }
-                />
-
-                {SHOW_AGENT_PICKER && (
-                  <>
-                    <Select
-                      value={selectedAgentId ?? DIRECT_AGENT_VALUE}
-                      onValueChange={handleAgentChange}
-                      disabled={agentLocked}
-                    >
-                      <SelectTrigger
-                        className="h-7 w-[138px] gap-1.5 text-label-12"
-                        title={agentLocked ? t("agent_locked_hint") : undefined}
-                      >
-                        <Bot className="h-3.5 w-3.5 shrink-0" />
-                        <SelectValue />
-                        {agentLocked && (
-                          <Lock className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
-                        )}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={DIRECT_AGENT_VALUE}>
-                          {t("agent_mode_direct")}
-                        </SelectItem>
-                        <SelectItem value={DATA_AGENT_ID}>
-                          DataAgent
-                        </SelectItem>
-                        {agentDefs.items.map((def) => (
-                          <SelectItem key={def.id} value={def.id}>
-                            {def.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title={t("agents_manage_title")}
-                      onClick={() => setAgentsManagerOpen(true)}
-                    >
-                      <Settings2 className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
-
-                <div className="ml-auto pl-1">
                   {sending ? (
                     <Button
                       size="icon"
                       variant="secondary"
-                      className="h-8 w-8 rounded-full"
+                      className="h-8 w-8 shrink-0 rounded-full"
                       onClick={stop}
                       title={t("agent_stop")}
                     >
@@ -2352,7 +2533,7 @@ export function AgentChatView() {
                     <Button
                       size="icon"
                       variant="accent"
-                      className="h-8 w-8 rounded-full shadow-geist-md"
+                      className="h-8 w-8 shrink-0 rounded-full shadow-geist-md"
                       onClick={send}
                       disabled={
                         (!selectedModel && !selectedAgent) ||
@@ -2373,10 +2554,12 @@ export function AgentChatView() {
           <div className="hidden h-full w-[300px] shrink-0 border-l border-border lg:flex">
             <ConfigRail
               settings={settings}
+              isResearchAgent={isResearchAgent}
               isVolc={isVolc}
               usableKeys={usableKeys}
               toolCalls={chat.toolCalls}
               onSettings={updateSettings}
+              onAutoApproveCheckpoints={updateAutoApproveCheckpoints}
               onClose={() => setConfigOpen(false)}
             />
           </div>
@@ -2442,11 +2625,6 @@ export function AgentChatView() {
           </div>
           </>
         )}
-
-        <AgentsManagerDialog
-          open={agentsManagerOpen}
-          onOpenChange={setAgentsManagerOpen}
-        />
     </div>
   );
 }
@@ -2601,19 +2779,23 @@ function MessageSkeletons() {
 
 function ConfigRail({
   settings,
+  isResearchAgent,
   isVolc,
   usableKeys,
   toolCalls,
   onSettings,
+  onAutoApproveCheckpoints,
   onClose,
 }: {
   settings: ChatSessionSettings | null;
+  isResearchAgent: boolean;
   isVolc: boolean;
   usableKeys: { name: string; key?: string; arkId?: number }[];
   toolCalls: ReturnType<typeof useChatStore.getState>["toolCalls"];
   onSettings: (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
   ) => void;
+  onAutoApproveCheckpoints: (value: boolean) => void;
   onClose: () => void;
 }) {
   const { t } = useTranslation("pages");
@@ -2749,6 +2931,26 @@ function ConfigRail({
           value={settings.sandboxMode}
           onChange={(sandboxMode) => onSettings({ sandboxMode })}
         />
+        {isResearchAgent && (
+          <>
+            <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+              <Label
+                className="cursor-pointer"
+                htmlFor="agent-auto-approve-checkpoints"
+              >
+                {t("agent_checkpoint_auto_approve")}
+              </Label>
+              <Switch
+                id="agent-auto-approve-checkpoints"
+                checked={settings.autoApproveCheckpoints}
+                onCheckedChange={onAutoApproveCheckpoints}
+              />
+            </div>
+            <div className="rounded-md border border-warning/30 bg-warning/10 p-3 text-label-12 text-warning-foreground/90">
+              {t("agent_checkpoint_auto_approve_hint")}
+            </div>
+          </>
+        )}
         <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
           {t("agent_sandbox_hint")}
         </div>
@@ -3214,6 +3416,122 @@ function AttachmentPreviewCard({
   );
 }
 
+function CheckpointApprovalPanel({
+  checkpoint,
+  note,
+  autoApprove,
+  onNoteChange,
+  onAutoApproveChange,
+  onApprove,
+  onReject,
+}: {
+  checkpoint: ActiveCheckpoint;
+  note: string;
+  autoApprove: boolean;
+  onNoteChange: (value: string) => void;
+  onAutoApproveChange: (value: boolean) => void;
+  onApprove: () => void;
+  onReject: () => void;
+}) {
+  const { t } = useTranslation("pages");
+  return (
+    <div className="mb-2 flex max-h-[min(52vh,32rem)] min-h-0 flex-col overflow-hidden rounded-md border border-warning/35 bg-card shadow-geist-md">
+      <div className="flex shrink-0 items-start gap-2 border-b border-border/70 bg-warning/10 px-3 py-2.5">
+        <ListChecks className="mt-0.5 h-4 w-4 shrink-0 text-warning-foreground" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-heading-14 font-medium text-foreground">
+              {checkpoint.title || t("agent_checkpoint_title")}
+            </span>
+            <Badge variant="warning" className="rounded-sm">
+              {t("agent_checkpoint_pending")}
+            </Badge>
+          </div>
+          <p className="mt-1 text-label-12 text-muted-foreground">
+            {t("agent_checkpoint_approval_required")}
+          </p>
+        </div>
+      </div>
+      <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3">
+        <div className="grid min-w-0 max-w-full gap-3">
+          <div className="grid min-w-0 gap-1">
+            <div className="text-label-12 font-medium text-muted-foreground">
+              {t("agent_checkpoint_summary")}
+            </div>
+            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+              {checkpoint.summary}
+            </div>
+          </div>
+          <div className="grid min-w-0 gap-1">
+            <div className="text-label-12 font-medium text-muted-foreground">
+              {t("agent_checkpoint_proposed_action")}
+            </div>
+            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-sm bg-secondary/60 px-2.5 py-2 font-mono text-label-12 text-foreground [overflow-wrap:anywhere]">
+              {checkpoint.proposedAction}
+            </div>
+          </div>
+          {checkpoint.risk && (
+            <div className="grid min-w-0 gap-1">
+              <div className="text-label-12 font-medium text-muted-foreground">
+                {t("agent_checkpoint_risk")}
+              </div>
+              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+                {checkpoint.risk}
+              </div>
+            </div>
+          )}
+          {checkpoint.artifacts.length > 0 && (
+            <div className="flex min-w-0 max-w-full flex-wrap gap-1.5">
+              {checkpoint.artifacts.slice(0, 8).map((artifact) => (
+                <span
+                  key={artifact}
+                  className="max-w-full whitespace-pre-wrap break-words rounded-sm border border-border bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]"
+                >
+                  {artifact}
+                </span>
+              ))}
+            </div>
+          )}
+          <div className="flex items-center justify-between gap-3 rounded-sm border border-warning/30 bg-warning/10 px-2.5 py-2">
+            <div className="min-w-0">
+              <Label
+                className="cursor-pointer text-label-12 font-medium text-foreground"
+                htmlFor="checkpoint-auto-approve"
+              >
+                {t("agent_checkpoint_auto_approve")}
+              </Label>
+              <div className="mt-0.5 text-label-12 text-muted-foreground">
+                {t("agent_checkpoint_auto_approve_card_hint")}
+              </div>
+            </div>
+            <Switch
+              id="checkpoint-auto-approve"
+              checked={autoApprove}
+              onCheckedChange={onAutoApproveChange}
+            />
+          </div>
+          <Textarea
+            className="min-h-[58px] resize-y text-copy-13"
+            value={note}
+            onChange={(e) => onNoteChange(e.target.value)}
+            placeholder={t("agent_checkpoint_note_placeholder")}
+          />
+        </div>
+      </div>
+      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/70 bg-card px-3 py-2">
+        <Button size="sm" variant="ghost" className="h-8" onClick={onReject}>
+          <X className="h-3.5 w-3.5" />
+          {t("agent_checkpoint_reject")}
+        </Button>
+        <Button size="sm" variant="primary" className="h-8" onClick={onApprove}>
+          <Check className="h-3.5 w-3.5" />
+          {t("agent_checkpoint_approve")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function ChatBubble({
   message,
   turnId,
@@ -3272,10 +3590,13 @@ function ChatBubble({
             !generatedVideos.includes(attachment)
         )
       : message.attachments;
-  const visibleContent =
+  const rawVisibleContent =
     message.error && message.content.trim() === message.error.trim()
       ? ""
       : message.content;
+  const visibleContent = sanitizeLeakedToolCallText(rawVisibleContent, {
+    checkpointFallback: t("agent_leaked_checkpoint_tool_call"),
+  });
   const hasToolCalls = !isUser && !!toolCalls && toolCalls.length > 0;
   const hasMessageBubble =
     editing ||
@@ -3656,11 +3977,26 @@ function formatMaybeJson(value: string): string {
   }
 }
 
+function toolCallGoal(argumentsJson: string | undefined): string | null {
+  if (!argumentsJson) return null;
+  try {
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const goal = (parsed as { goal?: unknown }).goal;
+    return typeof goal === "string" && goal.trim().length > 0
+      ? goal.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
   const isRunning = call.status === "running";
+  const isPending = call.status === "pending";
   const isError = call.status === "error";
   const parsed = parseToolName(call.toolName || call.title);
 
@@ -3676,14 +4012,15 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const hasResult = result.length > 0;
   const hasError = !!call.error && call.error.trim().length > 0;
   const expandable = hasArgs || hasResult || hasError;
+  const goal = toolCallGoal(call.argumentsJson);
   const artifact =
-    !isRunning && !isError ? dataArtifact(call.toolName, call.resultJson) : null;
+    call.status === "success" ? dataArtifact(call.toolName, call.resultJson) : null;
 
   return (
     <div
       className={cn(
         "w-full overflow-hidden rounded-sm border border-border/70 bg-card",
-        isRunning && "border-accent/25 bg-background"
+        (isRunning || isPending) && "border-accent/25 bg-background"
       )}
     >
       <div className="relative flex w-full min-w-0 items-center overflow-hidden">
@@ -3692,7 +4029,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           onClick={() => expandable && setOpen((v) => !v)}
           disabled={!expandable}
           className={cn(
-            "relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
+            "relative flex min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 text-left",
             expandable && "cursor-pointer hover:bg-muted/40"
           )}
         >
@@ -3708,40 +4045,54 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               }}
             />
           )}
-          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {isRunning ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-          ) : isError ? (
-            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
-          ) : (
-            <Check className="h-3.5 w-3.5 shrink-0 text-success" />
-          )}
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate font-mono text-label-12 font-medium text-foreground">
-              {parsed.name}
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {isRunning ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            ) : isPending ? (
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />
+            ) : isError ? (
+              <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            ) : (
+              <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+            )}
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground">
+                {parsed.name}
+              </span>
+              {parsed.server && (
+                <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
+                  <Server className="h-3 w-3" />
+                  {parsed.server}
+                </span>
+              )}
+              {goal && (
+                <>
+                  <span className="shrink-0 text-label-12 text-muted-foreground/50">
+                    ·
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-label-12 text-muted-foreground">
+                    {goal}
+                  </span>
+                </>
+              )}
             </span>
-            {parsed.server && (
-              <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
-                <Server className="h-3 w-3" />
-                {parsed.server}
+            {typeof call.durationMs === "number" && call.durationMs > 0 && (
+              <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
+                {call.durationMs >= 1000
+                  ? `${(call.durationMs / 1000).toFixed(1)}s`
+                  : `${call.durationMs}ms`}
               </span>
             )}
+            {expandable && (
+              <ChevronRight
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+                  open && "rotate-90"
+                )}
+              />
+            )}
           </span>
-          {typeof call.durationMs === "number" && call.durationMs > 0 && (
-            <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
-              {call.durationMs >= 1000
-                ? `${(call.durationMs / 1000).toFixed(1)}s`
-                : `${call.durationMs}ms`}
-            </span>
-          )}
-          {expandable && (
-            <ChevronRight
-              className={cn(
-                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-                open && "rotate-90"
-              )}
-            />
-          )}
         </button>
         {artifact && (
           <button

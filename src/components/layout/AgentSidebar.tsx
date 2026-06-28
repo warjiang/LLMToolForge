@@ -22,7 +22,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  Bot,
   Check,
   ChevronRight,
   Folder,
@@ -40,6 +39,13 @@ import { useTranslation } from "react-i18next";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { FormModeToggle } from "./FormModeToggle";
 import { useChatStore, useAgentDefStore } from "@/store";
 import { useSidebarStore } from "@/store/sidebar";
@@ -47,7 +53,12 @@ import { useSessionGroupStore } from "@/store/sessionGroups";
 import { useThemeStore } from "@/store/theme";
 import { useLocaleStore } from "@/store/locale";
 import { cn, formatDateTime } from "@/lib/utils";
-import { resolveAgentLabel } from "@/lib/agent/builtinAgents";
+import {
+  DATA_AGENT_ID,
+  DIRECT_AGENT_VALUE,
+  RESEARCH_AGENT_ID,
+  resolveAgentLabel,
+} from "@/lib/agent/builtinAgents";
 import { openSessionWorkspace } from "@/lib/agent/workspace";
 import { chatRepo } from "@/data/chatRepository";
 import { ResizeHandle } from "@/components/common/ResizeHandle";
@@ -57,6 +68,12 @@ import type { ChatSession } from "@/types/chat";
 const COLLAPSED = 64;
 
 const UNGROUPED = "ungrouped";
+
+const agentValueFromId = (agentId?: string | null) =>
+  agentId ?? DIRECT_AGENT_VALUE;
+
+const agentIdFromValue = (value: string) =>
+  value === DIRECT_AGENT_VALUE ? null : value;
 
 function DroppableZone({
   id,
@@ -119,6 +136,7 @@ export function AgentSidebar() {
   const sessions = useChatStore((s) => s.sessions);
   const agentDefs = useAgentDefStore((s) => s.items);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const loadingSessions = useChatStore((s) => s.loading);
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
   const renameSession = useChatStore((s) => s.renameSession);
@@ -156,11 +174,30 @@ export function AgentSidebar() {
     return m;
   }, [sessions]);
 
+  const activeSession = activeSessionId
+    ? sessionById.get(activeSessionId) ?? null
+    : null;
+  const [agentFilterValue, setAgentFilterValue] = useState(
+    () => activeSession?.agentId ?? DIRECT_AGENT_VALUE
+  );
+  const activeAgentLabel =
+    resolveAgentLabel(agentIdFromValue(agentFilterValue), agentDefs) ??
+    t("default_agent");
+  const visibleSessions = useMemo(
+    () =>
+      sessions.filter(
+        (session) => agentValueFromId(session.agentId) === agentFilterValue
+      ),
+    [agentFilterValue, sessions]
+  );
+  const agentFilterTouchedRef = useRef(false);
+  const ensureSessionForAgentRef = useRef<string | null>(null);
+
   // Build per-container ordered session-id lists from store state.
   const baseContainers = useMemo(() => {
     const orderIndex = new Map<string, number>();
     order.forEach((id, i) => orderIndex.set(id, i));
-    const sorted = [...sessions].sort(
+    const sorted = [...visibleSessions].sort(
       (a, b) =>
         (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)
     );
@@ -172,7 +209,7 @@ export function AgentSidebar() {
       else result[UNGROUPED].push(s.id);
     }
     return result;
-  }, [sessions, groups, assignments, order]);
+  }, [visibleSessions, groups, assignments, order]);
 
   // Live working copy during a drag; resynced from store when not dragging.
   const [containers, setContainers] =
@@ -189,6 +226,55 @@ export function AgentSidebar() {
 
   const pendingDelete = sessions.find((s) => s.id === deleteSessionId);
   const canDeleteSession = sessions.length > 1;
+
+  const handleAgentChange = (value: string) => {
+    agentFilterTouchedRef.current = true;
+    setAgentFilterValue(value);
+  };
+
+  useEffect(() => {
+    if (loadingSessions || sessions.length === 0) return;
+    if (
+      activeSession &&
+      !agentFilterTouchedRef.current &&
+      agentValueFromId(activeSession.agentId) !== agentFilterValue
+    ) {
+      setAgentFilterValue(agentValueFromId(activeSession.agentId));
+      return;
+    }
+    if (
+      activeSession &&
+      agentValueFromId(activeSession.agentId) === agentFilterValue
+    ) {
+      if (ensureSessionForAgentRef.current === agentFilterValue) {
+        ensureSessionForAgentRef.current = null;
+      }
+      return;
+    }
+
+    const nextSession = visibleSessions[0];
+    if (nextSession) {
+      void selectSession(nextSession.id);
+      return;
+    }
+
+    if (ensureSessionForAgentRef.current === agentFilterValue) return;
+    ensureSessionForAgentRef.current = agentFilterValue;
+    void newSession(agentIdFromValue(agentFilterValue)).finally(() => {
+      if (ensureSessionForAgentRef.current === agentFilterValue) {
+        ensureSessionForAgentRef.current = null;
+      }
+    });
+  }, [
+    activeSession?.agentId,
+    activeSession?.id,
+    agentFilterValue,
+    loadingSessions,
+    newSession,
+    selectSession,
+    sessions.length,
+    visibleSessions,
+  ]);
 
   const startRename = (id: string, title: string) => {
     setRenamingId(id);
@@ -244,7 +330,8 @@ export function AgentSidebar() {
   };
 
   const buildAssignments = (state: Record<string, string[]>) => {
-    const next: Record<string, string> = {};
+    const next: Record<string, string> = { ...assignments };
+    for (const session of visibleSessions) delete next[session.id];
     for (const key of Object.keys(state)) {
       if (key === UNGROUPED) continue;
       for (const sid of state[key]) next[sid] = key;
@@ -252,10 +339,18 @@ export function AgentSidebar() {
     return next;
   };
   const buildOrder = (state: Record<string, string[]>) => {
+    const visibleSet = new Set(visibleSessions.map((session) => session.id));
     const next: string[] = [];
     for (const g of groups) if (state[g.id]) next.push(...state[g.id]);
     next.push(...(state[UNGROUPED] ?? []));
-    return next;
+    const hiddenOrdered = order.filter((id) => !visibleSet.has(id));
+    const hiddenNew = sessions
+      .filter(
+        (session) =>
+          !visibleSet.has(session.id) && !hiddenOrdered.includes(session.id)
+      )
+      .map((session) => session.id);
+    return [...next, ...hiddenOrdered, ...hiddenNew];
   };
 
   const handleDragStart = (e: DragStartEvent) => {
@@ -335,7 +430,6 @@ export function AgentSidebar() {
   const renderSession = (session: ChatSession) => {
     const active = activeSessionId === session.id;
     const renaming = renamingId === session.id;
-    const agentLabel = resolveAgentLabel(session.agentId, agentDefs);
     return (
       <DraggableSession key={session.id} id={session.id} disabled={renaming}>
         {renaming ? (
@@ -373,32 +467,26 @@ export function AgentSidebar() {
           <>
             <button
               className={cn(
-                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-24 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
+                "block w-full rounded-sm px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
                 active && "bg-muted ring-1 ring-inset ring-border"
               )}
               onClick={() => selectSession(session.id)}
             >
-              <span className="truncate text-label-13 font-medium">
+              <span className="block truncate pr-[5.75rem] text-label-13 font-medium leading-5">
                 {session.title}
               </span>
-              <span className="flex items-center gap-1.5 whitespace-nowrap text-label-12 tabular-nums text-muted-foreground">
-                <span>{formatDateTime(session.updatedAt)}</span>
-                {agentLabel && (
-                  <span className="inline-flex max-w-[8rem] items-center gap-1 truncate rounded-sm bg-accent/10 px-1.5 py-px font-medium text-accent">
-                    <Bot className="h-3 w-3 shrink-0" />
-                    <span className="truncate">{agentLabel}</span>
-                  </span>
-                )}
+              <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-label-12 tabular-nums text-muted-foreground">
+                <span className="shrink-0">{formatDateTime(session.updatedAt)}</span>
               </span>
             </button>
             <div
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-1.5 top-1.5 flex items-center rounded-md border border-border/70 bg-popover/95 p-0.5 text-popover-foreground opacity-0 shadow-geist-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 title={t("rename_session")}
                 onClick={() => startRename(session.id, session.title)}
               >
@@ -407,7 +495,7 @@ export function AgentSidebar() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 title={t("open_workspace_folder")}
                 onClick={() => openWorkspaceFolder(session)}
               >
@@ -417,7 +505,7 @@ export function AgentSidebar() {
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
                   title={t("delete_session")}
                   onClick={() => setDeleteSessionId(session.id)}
                 >
@@ -450,22 +538,43 @@ export function AgentSidebar() {
         )}
       >
         {!collapsed && (
-          <div className="flex min-w-0 items-center gap-2">
-            <img
-              src="/icons/logo.png"
-              alt=""
-              className="h-8 w-8 shrink-0 rounded-md object-contain"
-            />
-            <span className="truncate text-label-13 font-medium text-foreground">
-              {t("default_agent")}
-            </span>
-          </div>
+          <Select
+            value={agentFilterValue}
+            onValueChange={handleAgentChange}
+            disabled={loadingSessions}
+          >
+            <SelectTrigger
+              className="h-9 min-w-0 flex-1 gap-2 border-transparent bg-transparent px-1.5 text-label-13 font-medium shadow-none hover:bg-secondary/60"
+              title={activeAgentLabel}
+            >
+              <img
+                src="/icons/logo.png"
+                alt=""
+                className="h-7 w-7 shrink-0 rounded-md object-contain"
+              />
+              <span className="min-w-0 flex-1 truncate text-left">
+                <SelectValue placeholder={activeAgentLabel} />
+              </span>
+            </SelectTrigger>
+            <SelectContent align="start">
+              <SelectItem value={DIRECT_AGENT_VALUE}>
+                {t("default_agent")}
+              </SelectItem>
+              <SelectItem value={DATA_AGENT_ID}>DataAgent</SelectItem>
+              <SelectItem value={RESEARCH_AGENT_ID}>ResearchAgent</SelectItem>
+              {agentDefs.map((def) => (
+                <SelectItem key={def.id} value={def.id}>
+                  {def.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
         <div className="flex items-center gap-0.5">
           <Button
             size="icon-sm"
             variant="ghost"
-            onClick={() => newSession()}
+            onClick={() => newSession(agentIdFromValue(agentFilterValue))}
             title={t("new_session")}
             aria-label={t("new_session")}
           >
@@ -477,7 +586,7 @@ export function AgentSidebar() {
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {collapsed ? (
           <div className="flex flex-col gap-1">
-            {sessions.map((session) => {
+            {visibleSessions.map((session) => {
               const active = activeSessionId === session.id;
               return (
                 <button

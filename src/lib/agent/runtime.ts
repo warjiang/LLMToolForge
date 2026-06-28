@@ -20,6 +20,8 @@ import { buildPiModel } from "./model";
 import { createUnifiedRuntime } from "./provider";
 import { resolveAgent } from "./agentDefinition";
 import { ensureGatewayFetch } from "./gatewayFetch";
+import type { CheckpointRequest, RequestCheckpoint } from "./tools/internal";
+import { sanitizeLeakedToolCallText } from "./leakedToolCallText";
 
 export class GatewayUnavailableError extends Error {
   constructor(message: string) {
@@ -74,6 +76,12 @@ export interface AgentRuntime {
   mcpPending: string[];
 }
 
+export interface AgentRuntimeOptions {
+  workspacePath?: string;
+  requestCheckpoint?: RequestCheckpoint;
+  autoCheckpoint?: boolean;
+}
+
 function gatewayBaseUrl(port: number): string {
   return `http://127.0.0.1:${port}/v1`;
 }
@@ -81,10 +89,11 @@ function gatewayBaseUrl(port: number): string {
 /** Extract plain text from an assistant message's content blocks. */
 function assistantText(message: AgentMessage): string {
   if (message.role !== "assistant") return "";
-  return message.content
+  const text = message.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)
     .join("");
+  return sanitizeLeakedToolCallText(text);
 }
 
 function resultToText(result: AgentToolResult<unknown> | undefined): string {
@@ -94,6 +103,77 @@ function resultToText(result: AgentToolResult<unknown> | undefined): string {
     .join("\n");
 }
 
+function previewValue(value: unknown, max = 1200): string {
+  let text: string;
+  try {
+    text =
+      typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
+  } catch {
+    text = String(value);
+  }
+  return text.length > max ? `${text.slice(0, max)}…` : text;
+}
+
+function protectedResearchCommand(command: string): boolean {
+  const normalized = command.toLowerCase();
+  if (/\bgit\s+(commit|push)\b/.test(normalized)) return true;
+  if (/\b(notion|publish)\b/.test(normalized)) return true;
+  if (
+    /\b(research_harness|make)\b/.test(normalized) &&
+    /\b(collect|collection|import|ingest|normalize|audit|analy[sz]e|analysis|publish|commit)\b/.test(
+      normalized
+    )
+  ) {
+    return true;
+  }
+  return false;
+}
+
+function autoCheckpointRequest(
+  toolCallId: string,
+  toolName: string,
+  args: unknown
+): CheckpointRequest | null {
+  if (toolName === "checkpoint") return null;
+  if (toolName === "write" || toolName === "edit") {
+    return {
+      toolCallId,
+      title: `Approve ${toolName}`,
+      summary:
+        "ResearchAgent is about to modify files without first calling the checkpoint tool.",
+      proposedAction: `${toolName} ${previewValue(args)}`,
+      risk: "This may change research plans, approvals, data, or analysis artifacts.",
+    };
+  }
+  if (toolName === "data_chart_html" || toolName === "data_report_html") {
+    return {
+      toolCallId,
+      title: `Approve ${toolName}`,
+      summary:
+        "ResearchAgent is about to generate a research artifact without first calling the checkpoint tool.",
+      proposedAction: `${toolName} ${previewValue(args)}`,
+      risk: "Generated artifacts can be mistaken for reviewed analysis if they are produced before approval.",
+    };
+  }
+  if (toolName === "bash") {
+    const command =
+      args && typeof args === "object" && "command" in args
+        ? String((args as { command?: unknown }).command ?? "")
+        : "";
+    if (!protectedResearchCommand(command)) return null;
+    return {
+      toolCallId,
+      title: "Approve research command",
+      summary:
+        "ResearchAgent is about to run a protected research command without first calling the checkpoint tool.",
+      proposedAction: command,
+      risk: "This may collect, import, normalize, audit, analyze, publish, or commit research data.",
+      artifacts: [command],
+    };
+  }
+  return null;
+}
+
 /**
  * Create a runtime for `def`. Throws `GatewayUnavailableError` /
  * `ModelUnavailableError` when prerequisites are missing.
@@ -101,7 +181,7 @@ function resultToText(result: AgentToolResult<unknown> | undefined): string {
 export async function createAgentRuntime(
   def: AgentDefinition,
   callbacks: AgentRuntimeCallbacks,
-  options: { workspacePath?: string } = {}
+  options: AgentRuntimeOptions = {}
 ): Promise<AgentRuntime> {
   let unified = useUnifiedStore.getState();
   if (!unified.supported) {
@@ -144,6 +224,7 @@ export async function createAgentRuntime(
     skills: useSkillStore.getState().items,
     mcpServers: useMcpStore.getState().items,
     workspacePath: options.workspacePath,
+    requestCheckpoint: options.requestCheckpoint,
   });
 
   console.debug("[agent] runtime built", {
@@ -165,6 +246,25 @@ export async function createAgentRuntime(
       tools: resolved.tools,
     },
     streamFn,
+    beforeToolCall: async ({ toolCall, args }, signal) => {
+      if (!options.autoCheckpoint) return undefined;
+      const request = autoCheckpointRequest(toolCall.id, toolCall.name, args);
+      if (!request) return undefined;
+      if (!options.requestCheckpoint) {
+        return {
+          block: true,
+          reason: "Checkpoint approval UI is not available",
+        };
+      }
+      const decision = await options.requestCheckpoint(request, signal);
+      if (decision.approved) return undefined;
+      return {
+        block: true,
+        reason: decision.note
+          ? `Human rejected checkpoint: ${decision.note}`
+          : "Human rejected checkpoint",
+      };
+    },
   });
 
   agent.subscribe(async (event: AgentEvent) => {

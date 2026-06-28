@@ -30,11 +30,22 @@ function defineTool<P extends TSchema>(def: {
     params: Static<P>,
     signal?: AbortSignal
   ) => Promise<AgentToolResult<unknown>>;
+  executionMode?: AgentTool["executionMode"];
 }): AgentTool {
   return def as unknown as AgentTool;
 }
 
+function goalParam(): TSchema {
+  return Type.Optional(
+    Type.String({
+      description:
+        "Concise user-visible goal for this tool call. Explain why this step is needed, not just what the tool is.",
+    })
+  );
+}
+
 export const INTERNAL_TOOL_IDS: InternalToolId[] = [
+  "checkpoint",
   "bash",
   "read",
   "write",
@@ -50,7 +61,28 @@ export interface InternalToolDeps {
   sandboxMode: SandboxMode;
   /** Absolute execution root. Empty means the backend uses its managed sandbox dir. */
   workspaceRoot: string;
+  requestCheckpoint?: RequestCheckpoint;
 }
+
+export interface CheckpointRequest {
+  toolCallId: string;
+  title: string;
+  summary: string;
+  proposedAction: string;
+  risk?: string;
+  artifacts?: string[];
+}
+
+export interface CheckpointDecision {
+  approved: boolean;
+  note?: string;
+  decidedAt: string;
+}
+
+export type RequestCheckpoint = (
+  request: CheckpointRequest,
+  signal?: AbortSignal
+) => Promise<CheckpointDecision>;
 
 interface SandboxRunResponse {
   stdout: string;
@@ -61,6 +93,63 @@ interface SandboxRunResponse {
   sandboxBackend: string;
 }
 
+function checkpointTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "checkpoint",
+    label: "Checkpoint",
+    description:
+      "Pause the agent and request explicit human approval before a protected action. " +
+      "Use before collection, import, normalize, audit, analyze, publish, or commit steps.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      title: Type.String({
+        description: "Short approval title shown to the human.",
+      }),
+      summary: Type.String({
+        description: "What has been prepared and why approval is needed.",
+      }),
+      proposedAction: Type.String({
+        description: "The exact action the agent wants to perform next.",
+      }),
+      risk: Type.Optional(
+        Type.String({
+          description: "Main risk or consequence if the action proceeds.",
+        })
+      ),
+      artifacts: Type.Optional(
+        Type.Array(
+          Type.String({
+            description: "Relevant files, commands, channels, or outputs.",
+          })
+        )
+      ),
+    }),
+    executionMode: "sequential",
+    execute: async (toolCallId, params, signal) => {
+      if (!deps.requestCheckpoint) {
+        throw new Error("Checkpoint approval UI is not available");
+      }
+      const decision = await deps.requestCheckpoint(
+        {
+          toolCallId,
+          title: params.title,
+          summary: params.summary,
+          proposedAction: params.proposedAction,
+          risk: params.risk,
+          artifacts: params.artifacts,
+        },
+        signal
+      );
+      return textResult(
+        decision.approved
+          ? `Checkpoint approved${decision.note ? `: ${decision.note}` : ""}`
+          : `Checkpoint rejected${decision.note ? `: ${decision.note}` : ""}`,
+        decision
+      );
+    },
+  });
+}
+
 function bashTool(deps: InternalToolDeps): AgentTool {
   return defineTool({
     name: "bash",
@@ -69,6 +158,7 @@ function bashTool(deps: InternalToolDeps): AgentTool {
       "Run a shell command via bash inside the sandbox. Use for builds, git, " +
       "and any task not covered by the dedicated file tools.",
     parameters: Type.Object({
+      goal: goalParam(),
       command: Type.String({ description: "The shell command to execute." }),
       timeoutMs: Type.Optional(
         Type.Number({ description: "Timeout in ms (1000-120000)." })
@@ -108,6 +198,7 @@ function readTool(deps: InternalToolDeps): AgentTool {
     label: "Read file",
     description: "Read a UTF-8 text file. Optionally start at a 1-based line offset.",
     parameters: Type.Object({
+      goal: goalParam(),
       path: Type.String({
         description: "File path (absolute or relative to the execution root).",
       }),
@@ -143,6 +234,7 @@ function writeTool(deps: InternalToolDeps): AgentTool {
       "Create or overwrite a text file. Denied in read-only sandbox; in " +
       "workspace-write the path must stay inside the execution root or temp.",
     parameters: Type.Object({
+      goal: goalParam(),
       path: Type.String({
         description: "File path (absolute or relative to the execution root).",
       }),
@@ -175,6 +267,7 @@ function editTool(deps: InternalToolDeps): AgentTool {
       "Replace an exact string in a file. Fails if oldStr is missing or matches " +
       "more than once (unless replaceAll is set).",
     parameters: Type.Object({
+      goal: goalParam(),
       path: Type.String({
         description: "File path (absolute or relative to the execution root).",
       }),
@@ -216,6 +309,7 @@ function lsTool(deps: InternalToolDeps): AgentTool {
     label: "List directory",
     description: "List the entries of a directory.",
     parameters: Type.Object({
+      goal: goalParam(),
       path: Type.Optional(
         Type.String({
           description: "Directory path. Defaults to the current execution root.",
@@ -305,6 +399,7 @@ function grepTool(deps: InternalToolDeps): AgentTool {
     description:
       "Search file contents with a regular expression, recursively under a path.",
     parameters: Type.Object({
+      goal: goalParam(),
       pattern: Type.String({ description: "Regular expression to search for." }),
       path: Type.Optional(
         Type.String({
@@ -343,6 +438,7 @@ function duckDbQueryTool(deps: InternalToolDeps): AgentTool {
       "Run a read-only DuckDB SELECT/WITH query over local CSV, TSV, JSON, JSONL, or Parquet files. " +
       "Provide sources with aliases, then query those aliases.",
     parameters: Type.Object({
+      goal: goalParam(),
       sources: Type.Array(dataSourceSchema, {
         description: "Local data sources to register as DuckDB views.",
       }),
@@ -386,6 +482,7 @@ function dataChartHtmlTool(deps: InternalToolDeps): AgentTool {
     description:
       "Render an interactive ECharts chart as a small multi-file web app from a DuckDB query over local data files. The app is served locally and opens automatically in the built-in browser preview.",
     parameters: Type.Object({
+      goal: goalParam(),
       sources: Type.Array(dataSourceSchema, {
         description: "Local data sources to register as DuckDB views.",
       }),
@@ -436,6 +533,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
     description:
       "Create an interactive multi-section report web app with text, optional tables, and embedded interactive ECharts charts. Served locally and opened automatically in the built-in browser preview.",
     parameters: Type.Object({
+      goal: goalParam(),
       title: Type.String({ description: "Report title." }),
       sections: Type.Array(
         Type.Object({
@@ -482,6 +580,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
 }
 
 const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = {
+  checkpoint: checkpointTool,
   bash: bashTool,
   read: readTool,
   write: writeTool,

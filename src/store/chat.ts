@@ -23,7 +23,7 @@ interface ChatState {
   loading: boolean;
   error: string | null;
   init: () => Promise<void>;
-  newSession: () => Promise<void>;
+  newSession: (agentId?: string | null) => Promise<void>;
   selectSession: (id: string) => Promise<void>;
   renameSession: (id: string, title: string) => Promise<void>;
   setSessionAgent: (id: string, agentId: string | null) => Promise<void>;
@@ -122,8 +122,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  newSession: async () => {
-    const created = await chatRepo.createSession();
+  newSession: async (agentId = null) => {
+    const created = await chatRepo.createSession(undefined, agentId);
     set({ sessions: [created.session, ...get().sessions] });
     await loadIntoState(set, created.session.id);
   },
