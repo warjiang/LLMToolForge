@@ -579,7 +579,11 @@ fn kill_gateway_on_port(port: u16) -> bool {
     let mut pids: Vec<u32> = text
         .lines()
         .filter(|l| l.contains("LISTENING") && l.contains(&needle))
-        .filter_map(|l| l.split_whitespace().last().and_then(|p| p.parse::<u32>().ok()))
+        .filter_map(|l| {
+            l.split_whitespace()
+                .last()
+                .and_then(|p| p.parse::<u32>().ok())
+        })
         .collect();
     pids.sort_unstable();
     pids.dedup();
