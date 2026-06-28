@@ -587,7 +587,12 @@ export function AgentSidebar() {
                 {t("default_agent")}
               </SelectItem>
               <SelectItem value={DATA_AGENT_ID}>DataAgent</SelectItem>
-              <SelectItem value={RESEARCH_AGENT_ID}>ResearchAgent</SelectItem>
+              <SelectItem
+                value={RESEARCH_AGENT_ID}
+                description={t("agent_research_selector_desc")}
+              >
+                ResearchAgent
+              </SelectItem>
               {agentDefs.map((def) => (
                 <SelectItem key={def.id} value={def.id}>
                   {def.name}

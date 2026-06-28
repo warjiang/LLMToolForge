@@ -959,6 +959,8 @@ pub fn run() {
             data_tools::duckdb_query,
             data_tools::data_chart_html,
             data_tools::data_report_html,
+            data_tools::artifact::html_artifact_create,
+            data_tools::artifact::html_artifact_block,
             preview::preview_register,
             unified::unified_api_set_config,
             unified::unified_api_start,

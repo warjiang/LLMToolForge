@@ -10,6 +10,8 @@ use duckdb::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Number, Value};
 
+pub mod artifact;
+
 const DEFAULT_QUERY_LIMIT: usize = 200;
 const MAX_QUERY_LIMIT: usize = 5_000;
 const ARTIFACT_DIR: &str = "dataagent-artifacts";
@@ -248,7 +250,7 @@ fn run_query(req: DuckDbQueryRequest, forced_limit: Option<usize>) -> Result<Que
     })
 }
 
-fn validate_mode(mode: &str) -> Result<(), String> {
+pub(super) fn validate_mode(mode: &str) -> Result<(), String> {
     if matches!(mode, "read-only" | "workspace-write" | "danger-full-access") {
         Ok(())
     } else {
@@ -272,7 +274,7 @@ fn normalize_lexical(path: &Path) -> PathBuf {
     out
 }
 
-fn resolve_path(workspace_root: &str, path: &str) -> Result<PathBuf, String> {
+pub(super) fn resolve_path(workspace_root: &str, path: &str) -> Result<PathBuf, String> {
     if path.trim().is_empty() {
         return Err("缺少路径".to_string());
     }
@@ -317,7 +319,7 @@ fn check_source_read(mode: &str, workspace_root: &str, target: &Path) -> Result<
     }
 }
 
-fn check_write(mode: &str, workspace_root: &str, target: &Path) -> Result<(), String> {
+pub(super) fn check_write(mode: &str, workspace_root: &str, target: &Path) -> Result<(), String> {
     match mode {
         "read-only" => Err("只读沙箱：写入 HTML 产物被拒绝".to_string()),
         "workspace-write" => {
@@ -345,7 +347,7 @@ fn check_write(mode: &str, workspace_root: &str, target: &Path) -> Result<(), St
     }
 }
 
-fn resolve_output_dir(
+pub(super) fn resolve_output_dir(
     workspace_root: &str,
     output_path: Option<&str>,
     prefix: &str,
@@ -787,7 +789,7 @@ fn write_app(dir: &Path, title: &str, data: &Value) -> Result<PathBuf, String> {
     Ok(dir.join("index.html"))
 }
 
-fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
+pub(super) fn write_file(path: &Path, bytes: &[u8]) -> Result<(), String> {
     fs::write(path, bytes).map_err(|e| format!("写入文件失败 {}: {e}", path.display()))
 }
 
@@ -1070,14 +1072,14 @@ window.addEventListener("resize", ()=>{
 boot();
 "##;
 
-fn timestamp_ms() -> u128 {
+pub(super) fn timestamp_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis())
         .unwrap_or(0)
 }
 
-fn escape_html(value: &str) -> String {
+pub(super) fn escape_html(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('<', "&lt;")

@@ -267,6 +267,8 @@ export type AgentInternalToolId =
   | "duckdb_query"
   | "data_chart_html"
   | "data_report_html"
+  | "html_artifact_create"
+  | "html_artifact_block"
   | "web_fetch";
 
 export type AgentSandboxMode =
@@ -311,5 +313,7 @@ export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
   "duckdb_query",
   "data_chart_html",
   "data_report_html",
+  "html_artifact_create",
+  "html_artifact_block",
   "web_fetch",
 ];

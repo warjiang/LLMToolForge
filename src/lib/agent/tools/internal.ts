@@ -56,6 +56,8 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "duckdb_query",
   "data_chart_html",
   "data_report_html",
+  "html_artifact_create",
+  "html_artifact_block",
   "web_fetch",
 ];
 
@@ -560,6 +562,14 @@ interface DataReportHtmlResponse {
   durationMs: number;
 }
 
+interface HtmlArtifactResponse {
+  outputPath: string;
+  outputDir: string;
+  title: string;
+  blockCount: number;
+  durationMs: number;
+}
+
 function grepTool(deps: InternalToolDeps): AgentTool {
   return defineTool({
     name: "grep",
@@ -747,6 +757,109 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
   });
 }
 
+function htmlArtifactCreateTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "html_artifact_create",
+    label: "Create HTML artifact",
+    description:
+      "Scaffold a rich HTML page artifact in the workspace, then build it up incrementally with html_artifact_block (coding-agent style). Creates a page directory that is served locally and opens automatically in the built-in browser preview, which live-reloads on every later block change. Use this — not a single hand-written .html file — for polished, compelling deliverable pages. Blocks accept arbitrary HTML/CSS/JS, so you have full creative control.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      title: Type.String({ description: "Page title (used in <title> and as the artifact name)." }),
+      lang: Type.Optional(
+        Type.String({ description: "Document language code for <html lang>. Defaults to 'zh'." })
+      ),
+      headHtml: Type.Optional(
+        Type.String({
+          description:
+            "Optional raw HTML injected into <head>: global <style>, web fonts, <meta>, etc. Prefer offline/self-contained assets; avoid external CDNs.",
+        })
+      ),
+      useEcharts: Type.Optional(
+        Type.Boolean({
+          description:
+            "When true, includes the bundled offline ECharts runtime (/_vendor/echarts.min.js) so blocks can render charts via echarts.init.",
+        })
+      ),
+      outputPath: Type.Optional(
+        Type.String({
+          description:
+            "Optional output directory. Defaults to dataagent-artifacts/page-*/ in the workspace. Reuse the same path to reset/rebuild a page.",
+        })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<HtmlArtifactResponse>("html_artifact_create", {
+        req: {
+          workspaceRoot: deps.workspaceRoot.trim(),
+          sandboxMode: deps.sandboxMode,
+          title: params.title,
+          lang: params.lang,
+          headHtml: params.headHtml,
+          useEcharts: params.useEcharts,
+          outputPath: params.outputPath,
+        },
+      });
+      return textResult(
+        `Created HTML artifact "${res.title}" at ${res.outputDir}. Add sections with html_artifact_block using outputDir="${res.outputDir}".`,
+        res
+      );
+    },
+  });
+}
+
+function htmlArtifactBlockTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "html_artifact_block",
+    label: "HTML artifact block",
+    description:
+      "Add, replace, reorder, or delete one segment (block) of an HTML artifact created with html_artifact_create. Each block is raw HTML and may include its own <style> and <script> — build the page one compelling section at a time. The preview live-reloads after every call.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      outputDir: Type.String({
+        description: "The outputDir returned by html_artifact_create.",
+      }),
+      id: Type.String({
+        description:
+          "Stable block id. Reusing an id replaces that block in place; a new id appends (or inserts per position).",
+      }),
+      html: Type.Optional(
+        Type.String({
+          description:
+            "Raw HTML for this block (may include <style>/<script>). Omit only when delete=true.",
+        })
+      ),
+      position: Type.Optional(
+        Type.String({
+          description:
+            "Where to place a newly inserted block: 'end' (default), 'start', 'before:<id>', or 'after:<id>'. Ignored when updating an existing block in place.",
+        })
+      ),
+      delete: Type.Optional(
+        Type.Boolean({ description: "When true, remove the block with this id." })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<HtmlArtifactResponse>("html_artifact_block", {
+        req: {
+          workspaceRoot: deps.workspaceRoot.trim(),
+          sandboxMode: deps.sandboxMode,
+          outputDir: params.outputDir,
+          id: params.id,
+          html: params.html,
+          position: params.position,
+          delete: params.delete,
+        },
+      });
+      const verb = params.delete ? "Removed" : "Updated";
+      return textResult(
+        `${verb} block "${params.id}" in "${res.title}" (${res.blockCount} blocks). Preview reloaded.`,
+        res
+      );
+    },
+  });
+}
+
 interface WebFetchLink {
   text: string;
   href: string;
@@ -827,6 +940,8 @@ const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = 
   duckdb_query: duckDbQueryTool,
   data_chart_html: dataChartHtmlTool,
   data_report_html: dataReportHtmlTool,
+  html_artifact_create: htmlArtifactCreateTool,
+  html_artifact_block: htmlArtifactBlockTool,
   web_fetch: webFetchTool,
 };
 
