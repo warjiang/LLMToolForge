@@ -9,7 +9,7 @@ export type MessagePartKind =
   | "tool_result";
 export type PersistedMessageRole = ChatRole | "tool";
 export type MessageStatus = "pending" | "complete" | "error";
-export type ToolCallSource = "mcp" | "skill";
+export type ToolCallSource = "internal" | "mcp" | "skill";
 export type ToolRunStatus = "pending" | "running" | "success" | "error";
 export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 
@@ -36,6 +36,7 @@ export interface ChatSessionSettings {
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
   sandboxMode: SandboxMode;
+  autoApproveCheckpoints: boolean;
   /** Absolute execution root for local tools. Empty = managed temp sandbox. */
   workspacePath: string;
   updatedAt: string;
@@ -147,5 +148,6 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   enabledSkillIds: [],
   enabledMcpServerIds: [],
   sandboxMode: "read-only",
+  autoApproveCheckpoints: false,
   workspacePath: "",
 };

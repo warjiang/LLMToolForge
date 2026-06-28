@@ -6,6 +6,10 @@ export const DIRECT_AGENT_VALUE = "__direct__";
 export const DATA_AGENT_ID = "__builtin_dataagent__";
 /** Display name for the built-in DataAgent. */
 export const DATA_AGENT_NAME = "DataAgent";
+/** Built-in ResearchAgent identifier (not a stored AgentDefinition). */
+export const RESEARCH_AGENT_ID = "__research__";
+/** Display name for the built-in ResearchAgent. */
+export const RESEARCH_AGENT_NAME = "ResearchAgent";
 
 /**
  * Resolve a human-readable label for a session's committed agent id.
@@ -17,5 +21,6 @@ export function resolveAgentLabel(
 ): string | null {
   if (!agentId || agentId === DIRECT_AGENT_VALUE) return null;
   if (agentId === DATA_AGENT_ID) return DATA_AGENT_NAME;
+  if (agentId === RESEARCH_AGENT_ID) return RESEARCH_AGENT_NAME;
   return agentDefs.find((a) => a.id === agentId)?.name ?? null;
 }

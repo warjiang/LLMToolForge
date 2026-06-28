@@ -66,6 +66,7 @@ function defaultSettings(sessionId: string): ChatSessionSettings {
 function normalizeSettings(settings: ChatSessionSettings): ChatSessionSettings {
   return {
     ...settings,
+    autoApproveCheckpoints: settings.autoApproveCheckpoints ?? false,
     workspacePath: settings.workspacePath ?? "",
   };
 }
@@ -137,6 +138,7 @@ const migrations = [
     enabled_skill_ids TEXT NOT NULL DEFAULT '[]',
     enabled_mcp_server_ids TEXT NOT NULL DEFAULT '[]',
     sandbox_mode TEXT NOT NULL DEFAULT 'read-only',
+    auto_approve_checkpoints INTEGER NOT NULL DEFAULT 0,
     workspace_path TEXT NOT NULL DEFAULT '',
     updated_at TEXT NOT NULL
   )`,
@@ -246,6 +248,7 @@ class ChatRepository {
       { table: "messages", column: "reasoning", ddl: "ALTER TABLE messages ADD COLUMN reasoning TEXT" },
       { table: "messages", column: "reasoning_ms", ddl: "ALTER TABLE messages ADD COLUMN reasoning_ms INTEGER" },
       { table: "session_settings", column: "workspace_path", ddl: "ALTER TABLE session_settings ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''" },
+      { table: "session_settings", column: "auto_approve_checkpoints", ddl: "ALTER TABLE session_settings ADD COLUMN auto_approve_checkpoints INTEGER NOT NULL DEFAULT 0" },
       { table: "sessions", column: "agent_id", ddl: "ALTER TABLE sessions ADD COLUMN agent_id TEXT" },
     ];
     for (const { table, column, ddl } of wanted) {
@@ -518,8 +521,9 @@ class ChatRepository {
       `INSERT INTO session_settings (
         session_id, conn_key, model_id, key_idx, wire_format, system,
         temperature, max_tokens, streaming, enabled_skill_ids,
-        enabled_mcp_server_ids, sandbox_mode, workspace_path, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+        enabled_mcp_server_ids, sandbox_mode, auto_approve_checkpoints,
+        workspace_path, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
       ON CONFLICT(session_id) DO UPDATE SET
         conn_key = excluded.conn_key,
         model_id = excluded.model_id,
@@ -532,6 +536,7 @@ class ChatRepository {
         enabled_skill_ids = excluded.enabled_skill_ids,
         enabled_mcp_server_ids = excluded.enabled_mcp_server_ids,
         sandbox_mode = excluded.sandbox_mode,
+        auto_approve_checkpoints = excluded.auto_approve_checkpoints,
         workspace_path = excluded.workspace_path,
         updated_at = excluded.updated_at`,
       [
@@ -547,6 +552,7 @@ class ChatRepository {
         JSON.stringify(settings.enabledSkillIds),
         JSON.stringify(settings.enabledMcpServerIds),
         settings.sandboxMode,
+        settings.autoApproveCheckpoints ? 1 : 0,
         settings.workspacePath,
         settings.updatedAt,
       ]
@@ -1089,6 +1095,7 @@ function rowToSettings(row: Record<string, unknown>): ChatSessionSettings {
     enabledMcpServerIds: parseJson(String(row.enabled_mcp_server_ids ?? "[]"), []),
     sandboxMode:
       (row.sandbox_mode as ChatSessionSettings["sandboxMode"]) ?? "read-only",
+    autoApproveCheckpoints: Number(row.auto_approve_checkpoints ?? 0) === 1,
     workspacePath: String(row.workspace_path ?? ""),
     updatedAt: String(row.updated_at),
   };

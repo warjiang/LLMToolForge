@@ -30,11 +30,13 @@ function defineTool<P extends TSchema>(def: {
     params: Static<P>,
     signal?: AbortSignal
   ) => Promise<AgentToolResult<unknown>>;
+  executionMode?: AgentTool["executionMode"];
 }): AgentTool {
   return def as unknown as AgentTool;
 }
 
 export const INTERNAL_TOOL_IDS: InternalToolId[] = [
+  "checkpoint",
   "bash",
   "read",
   "write",
@@ -50,7 +52,28 @@ export interface InternalToolDeps {
   sandboxMode: SandboxMode;
   /** Absolute execution root. Empty means the backend uses its managed sandbox dir. */
   workspaceRoot: string;
+  requestCheckpoint?: RequestCheckpoint;
 }
+
+export interface CheckpointRequest {
+  toolCallId: string;
+  title: string;
+  summary: string;
+  proposedAction: string;
+  risk?: string;
+  artifacts?: string[];
+}
+
+export interface CheckpointDecision {
+  approved: boolean;
+  note?: string;
+  decidedAt: string;
+}
+
+export type RequestCheckpoint = (
+  request: CheckpointRequest,
+  signal?: AbortSignal
+) => Promise<CheckpointDecision>;
 
 interface SandboxRunResponse {
   stdout: string;
@@ -59,6 +82,62 @@ interface SandboxRunResponse {
   timedOut: boolean;
   durationMs: number;
   sandboxBackend: string;
+}
+
+function checkpointTool(deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "checkpoint",
+    label: "Checkpoint",
+    description:
+      "Pause the agent and request explicit human approval before a protected action. " +
+      "Use before collection, import, normalize, audit, analyze, publish, or commit steps.",
+    parameters: Type.Object({
+      title: Type.String({
+        description: "Short approval title shown to the human.",
+      }),
+      summary: Type.String({
+        description: "What has been prepared and why approval is needed.",
+      }),
+      proposedAction: Type.String({
+        description: "The exact action the agent wants to perform next.",
+      }),
+      risk: Type.Optional(
+        Type.String({
+          description: "Main risk or consequence if the action proceeds.",
+        })
+      ),
+      artifacts: Type.Optional(
+        Type.Array(
+          Type.String({
+            description: "Relevant files, commands, channels, or outputs.",
+          })
+        )
+      ),
+    }),
+    executionMode: "sequential",
+    execute: async (toolCallId, params, signal) => {
+      if (!deps.requestCheckpoint) {
+        throw new Error("Checkpoint approval UI is not available");
+      }
+      const decision = await deps.requestCheckpoint(
+        {
+          toolCallId,
+          title: params.title,
+          summary: params.summary,
+          proposedAction: params.proposedAction,
+          risk: params.risk,
+          artifacts: params.artifacts,
+        },
+        signal
+      );
+      return textResult(
+        decision.approved
+          ? `Checkpoint approved${decision.note ? `: ${decision.note}` : ""}`
+          : `Checkpoint rejected${decision.note ? `: ${decision.note}` : ""}`,
+        decision
+      );
+    },
+  });
 }
 
 function bashTool(deps: InternalToolDeps): AgentTool {
@@ -482,6 +561,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
 }
 
 const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = {
+  checkpoint: checkpointTool,
   bash: bashTool,
   read: readTool,
   write: writeTool,

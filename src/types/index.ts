@@ -256,6 +256,7 @@ export const MCP_TRANSPORTS: { value: McpTransport; label: string }[] = [
 
 /** Built-in internal tools an agent can be granted. */
 export type AgentInternalToolId =
+  | "checkpoint"
   | "bash"
   | "read"
   | "write"
@@ -297,6 +298,7 @@ export interface AgentDefinition extends BaseEntity {
 }
 
 export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
+  "checkpoint",
   "bash",
   "read",
   "write",

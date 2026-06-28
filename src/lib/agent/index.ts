@@ -14,6 +14,7 @@ export {
 export type {
   AgentRuntime,
   AgentRuntimeCallbacks,
+  AgentRuntimeOptions,
   AgentToolStartInfo,
   AgentToolEndInfo,
 } from "./runtime";
@@ -21,6 +22,12 @@ export {
   buildInternalTools,
   INTERNAL_TOOL_IDS,
 } from "./tools/internal";
-export type { InternalToolId, InternalToolDeps } from "./tools/internal";
+export type {
+  CheckpointDecision,
+  CheckpointRequest,
+  InternalToolId,
+  InternalToolDeps,
+  RequestCheckpoint,
+} from "./tools/internal";
 export { buildMcpTools, prewarmMcpServers } from "./tools/mcp";
 export { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";

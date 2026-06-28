@@ -153,3 +153,74 @@ await chat.replaceMessageContent(userId, edited, parts);
 await chat.deleteMessagesFrom(sessionId, userId, false);
 await generateAssistantFromCurrentHistory(userId);
 ```
+
+## Scenario: Agent Checkpoint Tool With In-App Approval
+
+### 1. Scope / Trigger
+- Trigger: internal agent tools can pause a live Pi agent turn for human
+  approval before a protected action.
+
+### 2. Signatures
+- `buildInternalTools(enabled, { sandboxMode, workspaceRoot, requestCheckpoint })`
+- `requestCheckpoint(request, signal): Promise<CheckpointDecision>`
+- Tool request fields: `toolCallId`, `title`, `summary`, `proposedAction`,
+  optional `risk`, optional `artifacts`.
+- Tool decision fields: `approved`, optional `note`, `decidedAt`.
+- Optional session setting: `autoApproveCheckpoints: boolean`, persisted as
+  `session_settings.auto_approve_checkpoints` and defaulting to false.
+
+### 3. Contracts
+- The `checkpoint` tool must create a `tool_calls` record with status `pending`
+  before rendering approval UI.
+- ResearchAgent may synthesize a checkpoint from `beforeToolCall` when a model
+  directly calls protected tools without an explicit `checkpoint` call.
+- Approve resolves the tool with `approved: true`; reject resolves with
+  `approved: false` and aborts the current runtime so later tool calls in the
+  same batch do not run.
+- If `autoApproveCheckpoints` is true, checkpoint requests resolve immediately
+  with `approved: true` and an auto-approval note; no approval card is shown or
+  awaited, and sandbox permissions are not changed.
+- Stop/reset/session rewrite rejects the pending checkpoint and clears the UI.
+- Checkpoint suspension is in-memory only; persisted tool calls are audit
+  records, not resumable promises after app restart.
+
+### 4. Validation & Error Matrix
+- Missing `requestCheckpoint` -> tool error.
+- A second active checkpoint -> tool error.
+- Runtime abort while pending -> tool error and no stale approval card.
+- User rejection -> successful checkpoint result with `approved: false`, then
+  current runtime stops.
+- Direct protected ResearchAgent `bash/write/edit/data_*_html` call -> pending
+  checkpoint before execution.
+- Auto-approval enabled -> no pending card, protected action continues, and the
+  checkpoint tool result records the auto-approval note.
+
+### 5. Good/Base/Bad Cases
+- Good: ResearchAgent asks for approval, user approves, and the same turn
+  continues with the protected command.
+- Good: A model with no visible reasoning directly calls a protected command;
+  runtime pauses before execution and waits for approval.
+- Base: User rejects, the checkpoint result is recorded, and no following tool
+  calls execute in that turn.
+- Bad: Rendering an approval card without a linked pending `tool_calls` record.
+
+### 6. Tests Required
+- Type/build checks must cover checkpoint request/decision types.
+- Manual desktop test should approve, reject, and stop a pending checkpoint.
+- Manual desktop test should enable auto-approval, run a protected ResearchAgent
+  action, and verify the turn continues without a pending approval card.
+- Manual test should verify Direct/DataAgent behavior remains unchanged.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await dangerousResearchStep();
+await checkpoint();
+```
+
+#### Correct
+```typescript
+const decision = await checkpoint({ title, summary, proposedAction });
+if (!decision.approved) return;
+await dangerousResearchStep();
+```
