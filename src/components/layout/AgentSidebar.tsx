@@ -373,18 +373,18 @@ export function AgentSidebar() {
           <>
             <button
               className={cn(
-                "grid w-full gap-1 rounded-sm py-2 pl-3 pr-24 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
+                "block w-full rounded-sm px-3 py-2.5 text-left transition-colors hover:bg-muted/60 focus-visible:bg-muted focus-visible:outline-none",
                 active && "bg-muted ring-1 ring-inset ring-border"
               )}
               onClick={() => selectSession(session.id)}
             >
-              <span className="truncate text-label-13 font-medium">
+              <span className="block truncate pr-[5.75rem] text-label-13 font-medium leading-5">
                 {session.title}
               </span>
-              <span className="flex items-center gap-1.5 whitespace-nowrap text-label-12 tabular-nums text-muted-foreground">
-                <span>{formatDateTime(session.updatedAt)}</span>
+              <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-label-12 tabular-nums text-muted-foreground">
+                <span className="shrink-0">{formatDateTime(session.updatedAt)}</span>
                 {agentLabel && (
-                  <span className="inline-flex max-w-[8rem] items-center gap-1 truncate rounded-sm bg-accent/10 px-1.5 py-px font-medium text-accent">
+                  <span className="inline-flex min-w-0 max-w-full items-center gap-1 rounded-sm bg-accent/10 px-1.5 py-px font-medium text-accent">
                     <Bot className="h-3 w-3 shrink-0" />
                     <span className="truncate">{agentLabel}</span>
                   </span>
@@ -393,12 +393,12 @@ export function AgentSidebar() {
             </button>
             <div
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-1.5 top-1.5 flex items-center rounded-md border border-border/70 bg-popover/95 p-0.5 text-popover-foreground opacity-0 shadow-geist-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 title={t("rename_session")}
                 onClick={() => startRename(session.id, session.title)}
               >
@@ -407,7 +407,7 @@ export function AgentSidebar() {
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-7 w-7"
+                className="h-6 w-6"
                 title={t("open_workspace_folder")}
                 onClick={() => openWorkspaceFolder(session)}
               >
@@ -417,7 +417,7 @@ export function AgentSidebar() {
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  className="h-7 w-7 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
                   title={t("delete_session")}
                   onClick={() => setDeleteSessionId(session.id)}
                 >

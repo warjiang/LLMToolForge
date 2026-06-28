@@ -2483,112 +2483,118 @@ export function AgentChatView() {
                   }
                 }}
               />
-              <div className="flex flex-wrap items-center gap-x-1 gap-y-1.5 px-2 pb-2 pt-1">
-                <Button
-                  size="icon-sm"
-                  variant="ghost"
-                  disabled={!settings}
-                  title={t("agent_add_attachment")}
-                  onClick={openAttachmentPicker}
-                >
-                  <Paperclip className="h-4 w-4" />
-                </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-2.5 pb-2 pt-2">
+                <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="shrink-0"
+                    disabled={!settings}
+                    title={t("agent_add_attachment")}
+                    onClick={openAttachmentPicker}
+                  >
+                    <Paperclip className="h-4 w-4" />
+                  </Button>
 
-                <div className="w-[176px] shrink-0">
-                  <ComposerModelCascade
-                    options={options}
-                    currentConn={currentConn}
-                    selectedModel={selectedModel}
-                    modelsLoading={modelsLoading}
-                    disabled={!settings || options.length === 0}
-                    modelsForOption={modelsForOption}
-                    onRefresh={(connKey) => fetchModels(connKey)}
-                    onSelect={(connKey, modelId) =>
-                      updateSettings({ connKey, modelId })
-                    }
-                  />
+                  <div className="min-w-[164px] max-w-[260px] flex-[1_1_176px]">
+                    <ComposerModelCascade
+                      options={options}
+                      currentConn={currentConn}
+                      selectedModel={selectedModel}
+                      modelsLoading={modelsLoading}
+                      disabled={!settings || options.length === 0}
+                      modelsForOption={modelsForOption}
+                      onRefresh={(connKey) => fetchModels(connKey)}
+                      onSelect={(connKey, modelId) =>
+                        updateSettings({ connKey, modelId })
+                      }
+                    />
+                  </div>
+
+                  {settings && (
+                    <SandboxModeSelect
+                      value={settings.sandboxMode}
+                      onChange={(sandboxMode) => updateSettings({ sandboxMode })}
+                      triggerClassName="h-7 w-[142px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                      title={t("agent_current_sandbox")}
+                      showIcon
+                    />
+                  )}
                 </div>
 
-                {settings && (
-                  <SandboxModeSelect
-                    value={settings.sandboxMode}
-                    onChange={(sandboxMode) => updateSettings({ sandboxMode })}
-                    triggerClassName="h-7 w-[140px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
-                    title={t("agent_current_sandbox")}
-                    showIcon
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                  <ComposerToolMenu
+                    icon={Boxes}
+                    label="Skills"
+                    empty={t("agent_no_skills")}
+                    items={skills.items}
+                    activeIds={settings?.enabledSkillIds ?? []}
+                    onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
                   />
-                )}
+                  <ComposerToolMenu
+                    icon={Server}
+                    label="MCP"
+                    empty={t("agent_no_mcp")}
+                    items={mcp.items}
+                    activeIds={settings?.enabledMcpServerIds ?? []}
+                    onChange={(enabledMcpServerIds) =>
+                      updateSettings({ enabledMcpServerIds })
+                    }
+                  />
 
-                <ComposerToolMenu
-                  icon={Boxes}
-                  label="Skills"
-                  empty={t("agent_no_skills")}
-                  items={skills.items}
-                  activeIds={settings?.enabledSkillIds ?? []}
-                  onChange={(enabledSkillIds) => updateSettings({ enabledSkillIds })}
-                />
-                <ComposerToolMenu
-                  icon={Server}
-                  label="MCP"
-                  empty={t("agent_no_mcp")}
-                  items={mcp.items}
-                  activeIds={settings?.enabledMcpServerIds ?? []}
-                  onChange={(enabledMcpServerIds) =>
-                    updateSettings({ enabledMcpServerIds })
-                  }
-                />
-
-                {SHOW_AGENT_PICKER && (
-                  <>
-                    <Select
-                      value={selectedAgentId ?? DIRECT_AGENT_VALUE}
-                      onValueChange={handleAgentChange}
-                      disabled={agentLocked}
-                    >
-                      <SelectTrigger
-                        className="h-7 w-[138px] gap-1.5 text-label-12"
-                        title={agentLocked ? t("agent_locked_hint") : undefined}
+                  {SHOW_AGENT_PICKER && (
+                    <>
+                      <Select
+                        value={selectedAgentId ?? DIRECT_AGENT_VALUE}
+                        onValueChange={handleAgentChange}
+                        disabled={agentLocked}
                       >
-                        <Bot className="h-3.5 w-3.5 shrink-0" />
-                        <SelectValue />
-                        {agentLocked && (
-                          <Lock className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
-                        )}
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value={DIRECT_AGENT_VALUE}>
-                          {t("agent_mode_direct")}
-                        </SelectItem>
-                        <SelectItem value={DATA_AGENT_ID}>
-                          DataAgent
-                        </SelectItem>
-                        <SelectItem value={RESEARCH_AGENT_ID}>
-                          ResearchAgent
-                        </SelectItem>
-                        {agentDefs.items.map((def) => (
-                          <SelectItem key={def.id} value={def.id}>
-                            {def.name}
+                        <SelectTrigger
+                          className="h-7 w-[164px] min-w-0 gap-1.5 text-label-12"
+                          title={agentLocked ? t("agent_locked_hint") : undefined}
+                        >
+                          <Bot className="h-3.5 w-3.5 shrink-0" />
+                          <span className="min-w-0 flex-1 truncate text-left">
+                            <SelectValue />
+                          </span>
+                          {agentLocked && (
+                            <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value={DIRECT_AGENT_VALUE}>
+                            {t("agent_mode_direct")}
                           </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      size="icon-sm"
-                      variant="ghost"
-                      title={t("agents_manage_title")}
-                      onClick={() => setAgentsManagerOpen(true)}
-                    >
-                      <Settings2 className="h-4 w-4" />
-                    </Button>
-                  </>
-                )}
+                          <SelectItem value={DATA_AGENT_ID}>
+                            DataAgent
+                          </SelectItem>
+                          <SelectItem value={RESEARCH_AGENT_ID}>
+                            ResearchAgent
+                          </SelectItem>
+                          {agentDefs.items.map((def) => (
+                            <SelectItem key={def.id} value={def.id}>
+                              {def.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Button
+                        size="icon-sm"
+                        variant="ghost"
+                        className="shrink-0"
+                        title={t("agents_manage_title")}
+                        onClick={() => setAgentsManagerOpen(true)}
+                      >
+                        <Settings2 className="h-4 w-4" />
+                      </Button>
+                    </>
+                  )}
 
-                <div className="ml-auto pl-1">
                   {sending ? (
                     <Button
                       size="icon"
                       variant="secondary"
-                      className="h-8 w-8 rounded-full"
+                      className="h-8 w-8 shrink-0 rounded-full"
                       onClick={stop}
                       title={t("agent_stop")}
                     >
@@ -2598,7 +2604,7 @@ export function AgentChatView() {
                     <Button
                       size="icon"
                       variant="accent"
-                      className="h-8 w-8 rounded-full shadow-geist-md"
+                      className="h-8 w-8 shrink-0 rounded-full shadow-geist-md"
                       onClick={send}
                       disabled={
                         (!selectedModel && !selectedAgent) ||
