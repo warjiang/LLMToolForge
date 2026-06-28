@@ -22,8 +22,7 @@ const MAX_TIMEOUT_MS: u64 = 60_000;
 const DEFAULT_MAX_CHARS: usize = 40_000;
 const MAX_LINKS: usize = 200;
 /// A modern desktop Chrome UA; many sites block the default reqwest agent.
-const USER_AGENT: &str =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
+const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 \
      (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
 
 #[derive(Debug, Deserialize)]
@@ -274,7 +273,10 @@ async fn fetch_http(req: &WebFetchRequest) -> Result<WebFetchResponse, String> {
 
     let resp = client
         .get(url.clone())
-        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+        .header(
+            "Accept",
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        )
         .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
         .send()
         .await
