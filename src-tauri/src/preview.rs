@@ -14,7 +14,7 @@ use std::collections::hash_map::DefaultHasher;
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -34,6 +34,30 @@ pub struct PreviewInner {
 /// Tauri-managed handle to the preview server state.
 #[derive(Default, Clone)]
 pub struct PreviewState(pub Arc<Mutex<PreviewInner>>);
+
+impl PreviewState {
+    /// The bound localhost port, if the server has started.
+    pub fn port(&self) -> Option<u16> {
+        self.0.lock().unwrap().port
+    }
+}
+
+/// Snapshots POSTed back by the render-mode webview, keyed by an opaque token.
+static SINK: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
+fn sink() -> &'static Mutex<HashMap<String, String>> {
+    SINK.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Store a snapshot body delivered by the render-mode webview.
+pub fn put_sink(token: String, body: String) {
+    sink().lock().unwrap().insert(token, body);
+}
+
+/// Remove and return a previously delivered snapshot body, if present.
+pub fn take_sink(token: &str) -> Option<String> {
+    sink().lock().unwrap().remove(token)
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -122,26 +146,62 @@ async fn handle_conn(
     state: Arc<Mutex<PreviewInner>>,
 ) -> std::io::Result<()> {
     let mut buf = Vec::with_capacity(2048);
-    let mut tmp = [0u8; 2048];
-    loop {
+    let mut tmp = [0u8; 4096];
+    // Read at least the headers.
+    let header_end = loop {
         let n = stream.read(&mut tmp).await?;
         if n == 0 {
-            break;
+            break None;
         }
         buf.extend_from_slice(&tmp[..n]);
-        if buf.windows(4).any(|w| w == b"\r\n\r\n") || buf.len() > 32 * 1024 {
-            break;
+        if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break Some(pos + 4);
+        }
+        if buf.len() > 1024 * 1024 {
+            break Some(buf.len());
+        }
+    };
+    let header_end = header_end.unwrap_or(buf.len());
+
+    let head = String::from_utf8_lossy(&buf[..header_end.min(buf.len())]).to_string();
+    let mut lines = head.lines();
+    let request_line = lines.next().unwrap_or("");
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next().unwrap_or("GET").to_string();
+    let raw_path = parts.next().unwrap_or("/").to_string();
+
+    // POST sink: render-mode webview delivers the page snapshot here.
+    if method.eq_ignore_ascii_case("POST") {
+        let path = raw_path.split(['?', '#']).next().unwrap_or("/");
+        if let Some(token) = path.trim_start_matches('/').strip_prefix("__webfetch/") {
+            let content_length = head
+                .lines()
+                .find_map(|l| {
+                    let l = l.to_ascii_lowercase();
+                    l.strip_prefix("content-length:")
+                        .map(|v| v.trim().parse::<usize>().unwrap_or(0))
+                })
+                .unwrap_or(0);
+            let mut body = buf[header_end.min(buf.len())..].to_vec();
+            while body.len() < content_length {
+                let n = stream.read(&mut tmp).await?;
+                if n == 0 {
+                    break;
+                }
+                body.extend_from_slice(&tmp[..n]);
+            }
+            put_sink(
+                token.to_string(),
+                String::from_utf8_lossy(&body).to_string(),
+            );
+            let resp = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\nok";
+            stream.write_all(resp.as_bytes()).await?;
+            stream.flush().await?;
+            return Ok(());
         }
     }
 
-    let request_line = String::from_utf8_lossy(&buf);
-    let raw_path = request_line
-        .lines()
-        .next()
-        .and_then(|line| line.split_whitespace().nth(1))
-        .unwrap_or("/");
-
-    let (status, ctype, body) = route(raw_path, &state);
+    let (status, ctype, body) = route(&raw_path, &state);
     let header = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
         len = body.len()

@@ -46,6 +46,7 @@ function goalParam(): TSchema {
 
 export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "checkpoint",
+  "ask_human",
   "bash",
   "read",
   "write",
@@ -55,6 +56,7 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "duckdb_query",
   "data_chart_html",
   "data_report_html",
+  "web_fetch",
 ];
 
 export interface InternalToolDeps {
@@ -62,6 +64,7 @@ export interface InternalToolDeps {
   /** Absolute execution root. Empty means the backend uses its managed sandbox dir. */
   workspaceRoot: string;
   requestCheckpoint?: RequestCheckpoint;
+  requestAsk?: RequestAsk;
 }
 
 export interface CheckpointRequest {
@@ -83,6 +86,51 @@ export type RequestCheckpoint = (
   request: CheckpointRequest,
   signal?: AbortSignal
 ) => Promise<CheckpointDecision>;
+
+/** The interaction shape an `ask_human` request renders. */
+export type AskHumanKind = "confirm" | "select" | "form";
+
+/** A single question inside a `form`-kind ask_human request. */
+export interface AskHumanField {
+  id: string;
+  label: string;
+  type: "text" | "select" | "confirm";
+  options?: string[];
+  placeholder?: string;
+}
+
+export interface AskHumanRequest {
+  toolCallId: string;
+  kind: AskHumanKind;
+  title: string;
+  /** Question / context shown to the user. */
+  message?: string;
+  /** confirm: button labels. */
+  confirmLabel?: string;
+  cancelLabel?: string;
+  /** select: the single-choice options. */
+  options?: string[];
+  /** form: the combined questions. */
+  fields?: AskHumanField[];
+}
+
+export interface AskHumanResponse {
+  kind: AskHumanKind;
+  /** True when the user dismissed without answering (agent should adapt/stop). */
+  cancelled: boolean;
+  /** confirm: whether the user confirmed (vs. chose cancel). */
+  confirmed?: boolean;
+  /** select: the chosen option. */
+  selected?: string;
+  /** form: answers keyed by field id. */
+  answers?: Record<string, string>;
+  decidedAt: string;
+}
+
+export type RequestAsk = (
+  request: AskHumanRequest,
+  signal?: AbortSignal
+) => Promise<AskHumanResponse>;
 
 interface SandboxRunResponse {
   stdout: string;
@@ -146,6 +194,126 @@ function checkpointTool(deps: InternalToolDeps): AgentTool {
           : `Checkpoint rejected${decision.note ? `: ${decision.note}` : ""}`,
         decision
       );
+    },
+  });
+}
+
+function askHumanTool(deps: InternalToolDeps): AgentTool {
+  const fieldSchema = Type.Object({
+    id: Type.String({
+      description: "Stable field id; becomes the key in the returned answers.",
+    }),
+    label: Type.String({ description: "Question text shown to the user." }),
+    type: Type.Union(
+      [Type.Literal("text"), Type.Literal("select"), Type.Literal("confirm")],
+      {
+        description:
+          "Input type: 'text' free text, 'select' single choice, 'confirm' yes/no.",
+      }
+    ),
+    options: Type.Optional(
+      Type.Array(Type.String(), {
+        description: "Choices for a 'select' field (required when type=select).",
+      })
+    ),
+    placeholder: Type.Optional(
+      Type.String({ description: "Placeholder hint for a 'text' field." })
+    ),
+  });
+  return defineTool({
+    name: "ask_human",
+    label: "Ask human",
+    description:
+      "Ask the user for input mid-run and wait for a structured answer. " +
+      "kind='confirm' shows a confirm/cancel prompt; kind='select' shows a " +
+      "single-choice list (provide options); kind='form' shows several " +
+      "questions at once (provide fields). Use it to resolve scope, pick a " +
+      "direction, or gather missing parameters instead of guessing.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      kind: Type.Union(
+        [Type.Literal("confirm"), Type.Literal("select"), Type.Literal("form")],
+        {
+          description:
+            "Interaction form: 'confirm' (yes/no), 'select' (pick one of options), or 'form' (multiple questions).",
+        }
+      ),
+      title: Type.String({ description: "Short title for the prompt card." }),
+      message: Type.Optional(
+        Type.String({
+          description:
+            "The question or context shown to the user (used by confirm/select; optional intro for form).",
+        })
+      ),
+      confirmLabel: Type.Optional(
+        Type.String({ description: "Confirm button label (kind=confirm)." })
+      ),
+      cancelLabel: Type.Optional(
+        Type.String({ description: "Cancel button label (kind=confirm)." })
+      ),
+      options: Type.Optional(
+        Type.Array(Type.String(), {
+          description: "Single-choice options (kind=select, need >= 2).",
+        })
+      ),
+      fields: Type.Optional(
+        Type.Array(fieldSchema, {
+          description: "The combined questions to ask (kind=form).",
+        })
+      ),
+    }),
+    executionMode: "sequential",
+    execute: async (toolCallId, params, signal) => {
+      if (!deps.requestAsk) {
+        throw new Error("Human input UI is not available");
+      }
+      if (params.kind === "select") {
+        if (!params.options || params.options.length < 2) {
+          throw new Error("ask_human kind=select requires at least 2 options");
+        }
+      }
+      if (params.kind === "form") {
+        if (!params.fields || params.fields.length === 0) {
+          throw new Error("ask_human kind=form requires at least one field");
+        }
+        for (const f of params.fields) {
+          if (f.type === "select" && (!f.options || f.options.length < 2)) {
+            throw new Error(
+              `ask_human form field "${f.id}" is select but has < 2 options`
+            );
+          }
+        }
+      }
+      const response = await deps.requestAsk(
+        {
+          toolCallId,
+          kind: params.kind,
+          title: params.title,
+          message: params.message,
+          confirmLabel: params.confirmLabel,
+          cancelLabel: params.cancelLabel,
+          options: params.options,
+          fields: params.fields,
+        },
+        signal
+      );
+
+      let text: string;
+      if (response.cancelled) {
+        text = "User dismissed the prompt without answering.";
+      } else if (response.kind === "confirm") {
+        text = response.confirmed
+          ? "User confirmed."
+          : "User chose cancel (declined).";
+      } else if (response.kind === "select") {
+        text = `User selected: ${response.selected ?? "(none)"}`;
+      } else {
+        const lines = Object.entries(response.answers ?? {}).map(
+          ([k, v]) => `- ${k}: ${v}`
+        );
+        text = `User answers:\n${lines.join("\n") || "(none)"}`;
+      }
+      return textResult(text, response);
     },
   });
 }
@@ -538,7 +706,7 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
       sections: Type.Array(
         Type.Object({
           heading: Type.String({ description: "Section heading." }),
-          text: Type.Optional(Type.String({ description: "Section narrative text." })),
+          text: Type.Optional(Type.String({ description: "Section narrative text. Supports lightweight inline formatting via a safe subset of HTML tags (b, strong, i, em, br, ul, ol, li, p, code); plain newlines also become line breaks. Do not use other tags or attributes - they render as plain text." })),
           chartPath: Type.Optional(
             Type.String({
               description:
@@ -579,8 +747,77 @@ function dataReportHtmlTool(deps: InternalToolDeps): AgentTool {
   });
 }
 
+interface WebFetchLink {
+  text: string;
+  href: string;
+}
+
+interface WebFetchResponse {
+  url: string;
+  finalUrl: string;
+  status: number;
+  title: string;
+  text: string;
+  links: WebFetchLink[];
+  truncated: boolean;
+  mode: string;
+}
+
+function webFetchTool(_deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "web_fetch",
+    label: "Fetch web page",
+    description:
+      "Fetch a public web page and return its readable text plus links. Use this to read the actual content of a search result, article, thread, or review page. Headless HTTP by default (no proxy or login). Set render=true for JavaScript-rendered or login-walled pages (e.g. zhihu, xiaohongshu, wechat): it loads the URL in the in-app browser using your real logged-in session, then extracts the rendered content. Render is slower; prefer the default unless the plain fetch returns a login wall or empty content.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      url: Type.String({
+        description: "Absolute URL to fetch (https:// assumed if no scheme).",
+      }),
+      render: Type.Optional(
+        Type.Boolean({
+          description:
+            "Load via the in-app browser (real login session, runs page JS) instead of a headless HTTP GET. Use for login-walled or JS-rendered pages. Falls back to HTTP automatically on failure.",
+        })
+      ),
+      maxChars: Type.Optional(
+        Type.Number({
+          description: "Max characters of page text to return (default 40000).",
+        })
+      ),
+      timeoutMs: Type.Optional(
+        Type.Number({ description: "Request timeout in milliseconds." })
+      ),
+    }),
+    execute: async (_id, params) => {
+      const res = await invoke<WebFetchResponse>("web_fetch", {
+        req: {
+          url: params.url,
+          render: params.render ?? false,
+          maxChars: params.maxChars,
+          timeoutMs: params.timeoutMs,
+        },
+      });
+      const header =
+        `# ${res.title || "(untitled)"}\n` +
+        `URL: ${res.finalUrl} (HTTP ${res.status}, mode=${res.mode})\n`;
+      const linkLines =
+        res.links.length > 0
+          ? "\n\nLinks:\n" +
+            res.links
+              .slice(0, 40)
+              .map((l) => `- ${l.text || l.href} -> ${l.href}`)
+              .join("\n")
+          : "";
+      const suffix = res.truncated ? "\n…(内容已截断)" : "";
+      return textResult(header + "\n" + res.text + suffix + linkLines, res);
+    },
+  });
+}
+
 const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = {
   checkpoint: checkpointTool,
+  ask_human: askHumanTool,
   bash: bashTool,
   read: readTool,
   write: writeTool,
@@ -590,6 +827,7 @@ const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = 
   duckdb_query: duckDbQueryTool,
   data_chart_html: dataChartHtmlTool,
   data_report_html: dataReportHtmlTool,
+  web_fetch: webFetchTool,
 };
 
 /** Build the selected internal tools. */

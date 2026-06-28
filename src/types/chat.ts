@@ -11,6 +11,8 @@ export type PersistedMessageRole = ChatRole | "tool";
 export type MessageStatus = "pending" | "complete" | "error";
 export type ToolCallSource = "internal" | "mcp" | "skill";
 export type ToolRunStatus = "pending" | "running" | "success" | "error";
+/** Transient (in-memory) lifecycle of a session's agent turn. */
+export type SessionRunStatus = "running" | "done" | "error";
 export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
 
 export interface ChatSession {

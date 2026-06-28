@@ -29,6 +29,7 @@ import {
   Lightbulb,
   ListChecks,
   Loader2,
+  MessageCircleQuestion,
   Paperclip,
   Pencil,
   Plus,
@@ -98,6 +99,10 @@ import {
   type AgentRuntimeCallbacks,
   type CheckpointDecision,
   type CheckpointRequest,
+  type AskHumanRequest,
+  type AskHumanResponse,
+  type AskHumanField,
+  type SeedHistoryMessage,
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
@@ -109,8 +114,7 @@ import {
 import { BrowserPreview } from "@/components/agent/BrowserPreview";
 import { ResizeHandle } from "@/components/common/ResizeHandle";
 import {
-  hideBrowser,
-  showBrowser,
+  suppressBrowser,
   browserReload,
   onBrowserLoading,
 } from "@/lib/browser";
@@ -155,6 +159,7 @@ import {
   DATA_AGENT_ID,
   RESEARCH_AGENT_ID,
 } from "@/lib/agent/builtinAgents";
+import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
 interface ConnOption {
@@ -172,6 +177,19 @@ interface ActiveCheckpoint {
   proposedAction: string;
   risk?: string;
   artifacts: string[];
+  requestedAt: string;
+}
+
+interface ActiveAsk {
+  toolCallId: string;
+  toolCallRecordId?: string;
+  kind: AskHumanRequest["kind"];
+  title: string;
+  message?: string;
+  confirmLabel?: string;
+  cancelLabel?: string;
+  options?: string[];
+  fields?: AskHumanField[];
   requestedAt: string;
 }
 
@@ -272,18 +290,29 @@ function buildResearchAgentDef(
   unifiedModelId: string
 ): AgentDefinition {
   const now = new Date().toISOString();
+  // Market research depends on web search, which is provided by MCP servers
+  // (Tavily / AskEcho / AnySearch, etc.). Auto-enable every configured,
+  // non-disabled MCP server so the agent always has its search/extract tools,
+  // even if the session composer didn't explicitly toggle them on.
+  const allMcpServerIds = useMcpStore
+    .getState()
+    .items.filter((s) => s.enabled !== false)
+    .map((s) => s.id);
+  const enabledMcpServerIds = Array.from(
+    new Set([...settings.enabledMcpServerIds, ...allMcpServerIds])
+  );
   return {
     id: RESEARCH_AGENT_ID,
     createdAt: now,
     updatedAt: now,
     name: "ResearchAgent",
     description:
-      "Operate a local research-harness workspace and create evidence-backed HTML research deliverables.",
+      "Autonomously research a market or topic using web search plus the built-in web_fetch reader to collect per-channel evidence, and deliver an evidence-cited HTML report.",
     systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
     modelId: unifiedModelId,
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
-    enabledMcpServerIds: settings.enabledMcpServerIds,
+    enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
@@ -305,6 +334,23 @@ function agentRuntimeSignature(def: AgentDefinition, workspacePath: string): str
     def.temperature,
     def.maxTokens,
   ].join("|");
+}
+
+function seedHistoryFromMessages(
+  messages: PersistedChatMessage[]
+): SeedHistoryMessage[] {
+  const seed: SeedHistoryMessage[] = [];
+  for (const m of messages) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    seed.push({
+      role: m.role,
+      content: m.content ?? "",
+      status: m.status,
+      createdAt: m.createdAt,
+      modelId: m.modelId ?? undefined,
+    });
+  }
+  return seed;
 }
 
 function providerLabel(provider: string): string {
@@ -508,31 +554,50 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
 
 async function openArtifactPreview(
   dir: string,
-  title?: string
+  title?: string,
+  file?: string
 ): Promise<void> {
   try {
     const reg = await registerPreview(dir);
-    if (reg) usePreviewStore.getState().openPreview(reg.url, title);
+    if (reg) {
+      const url = file ? reg.url + encodeURIComponent(file) : reg.url;
+      usePreviewStore.getState().openPreview(url, title);
+    }
   } catch (e) {
     console.error("Failed to open DataAgent preview", e);
   }
 }
 
-/** Output dir + title for a completed data-tool result, if any. */
+/** Output dir (+ optional file/title) for a previewable tool result, if any. */
 function dataArtifact(
   toolName: string | undefined,
   resultJson: unknown
-): { dir: string; title?: string } | null {
-  if (toolName !== "data_chart_html" && toolName !== "data_report_html") {
-    return null;
+): { dir: string; title?: string; file?: string } | null {
+  if (toolName === "data_chart_html" || toolName === "data_report_html") {
+    const details = resultJson as
+      | { outputDir?: string; title?: string }
+      | null
+      | undefined;
+    const dir = details?.outputDir;
+    if (!dir) return null;
+    return { dir, title: details?.title };
   }
-  const details = resultJson as
-    | { outputDir?: string; title?: string }
-    | null
-    | undefined;
-  const dir = details?.outputDir;
-  if (!dir) return null;
-  return { dir, title: details?.title };
+  // Safety net: an HTML file written via the `write` tool is still previewable.
+  if (toolName === "write") {
+    const details = resultJson as { path?: string } | null | undefined;
+    const path = details?.path;
+    if (!path || !/\.html?$/i.test(path)) return null;
+    const sep = path.lastIndexOf("/") >= 0 ? "/" : "\\";
+    const idx = path.lastIndexOf(sep);
+    if (idx <= 0) return null;
+    const dir = path.slice(0, idx);
+    const file = path.slice(idx + 1);
+    // index.html is served at the directory root; name others explicitly.
+    return file.toLowerCase() === "index.html"
+      ? { dir, title: file }
+      : { dir, title: file, file };
+  }
+  return null;
 }
 
 async function maybeOpenPreview(
@@ -541,7 +606,7 @@ async function maybeOpenPreview(
 ): Promise<void> {
   const artifact = dataArtifact(toolName, resultJson);
   if (!artifact) return;
-  await openArtifactPreview(artifact.dir, artifact.title);
+  await openArtifactPreview(artifact.dir, artifact.title, artifact.file);
 }
 
 export function AgentChatView() {
@@ -558,6 +623,7 @@ export function AgentChatView() {
 
   const [previewResizing, setPreviewResizing] = useState(false);
   const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
+  const previewResizeReleaseRef = useRef<(() => void) | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
 
   useEffect(() => {
@@ -593,6 +659,7 @@ export function AgentChatView() {
   const [activeCheckpoint, setActiveCheckpoint] =
     useState<ActiveCheckpoint | null>(null);
   const [checkpointNote, setCheckpointNote] = useState("");
+  const [activeAsk, setActiveAsk] = useState<ActiveAsk | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const stickToBottomRef = useRef(true);
   const userScrollLockRef = useRef(false);
@@ -619,8 +686,15 @@ export function AgentChatView() {
     resolve: (decision: CheckpointDecision) => void;
     reject: (error: Error) => void;
   } | null>(null);
+  const askResolverRef = useRef<{
+    toolCallId: string;
+    resolve: (response: AskHumanResponse) => void;
+    reject: (error: Error) => void;
+  } | null>(null);
   const autoApproveCheckpointsRef = useRef(false);
   const videoPollingRef = useRef<Set<string>>(new Set());
+  const runErroredRef = useRef(false);
+  const runStatusSessionRef = useRef<string | null>(null);
 
   const settings = chat.settings;
   const loaded =
@@ -999,6 +1073,27 @@ export function AgentChatView() {
 
   useEffect(() => () => cancelPendingAutoScroll(), []);
 
+  // Mirror the in-flight agent turn into a store-level, per-session status so
+  // the sidebar can show running / done / error for each conversation.
+  useEffect(() => {
+    const setSessionStatus = useChatStore.getState().setSessionStatus;
+    if (sending) {
+      const sid = chat.activeSessionId;
+      if (sid) {
+        runErroredRef.current = false;
+        runStatusSessionRef.current = sid;
+        setSessionStatus(sid, "running");
+      }
+      return;
+    }
+    const sid = runStatusSessionRef.current;
+    if (sid) {
+      setSessionStatus(sid, runErroredRef.current ? "error" : "done");
+      runStatusSessionRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sending]);
+
   const updateSettings = (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
   ) => {
@@ -1121,6 +1216,85 @@ export function AgentChatView() {
     if (!pending) {
       setActiveCheckpoint(null);
       setCheckpointNote("");
+      return;
+    }
+    pending.reject(new Error(reason));
+  };
+
+  const openAsk = (
+    request: AskHumanRequest,
+    signal?: AbortSignal
+  ): Promise<AskHumanResponse> => {
+    if (askResolverRef.current) {
+      return Promise.reject(new Error(t("agent_ask_already_pending")));
+    }
+    if (signal?.aborted) {
+      return Promise.reject(new Error(t("agent_ask_cancelled")));
+    }
+    return new Promise((resolve, reject) => {
+      let settled = false;
+      let onAbort: () => void;
+      const cleanup = () => {
+        signal?.removeEventListener("abort", onAbort);
+        if (askResolverRef.current?.toolCallId === request.toolCallId) {
+          askResolverRef.current = null;
+        }
+        setActiveAsk((current) =>
+          current?.toolCallId === request.toolCallId ? null : current
+        );
+      };
+      const settleResolve = (response: AskHumanResponse) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        resolve(response);
+      };
+      const settleReject = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      onAbort = () => settleReject(new Error(t("agent_ask_cancelled")));
+      signal?.addEventListener("abort", onAbort, { once: true });
+      askResolverRef.current = {
+        toolCallId: request.toolCallId,
+        resolve: settleResolve,
+        reject: settleReject,
+      };
+      const toolCallRecordId =
+        agentTurnRef.current?.toolRecords.get(request.toolCallId) ?? undefined;
+      if (toolCallRecordId) {
+        void chat.updateToolCall(toolCallRecordId, { status: "pending" });
+      }
+      setActiveAsk({
+        toolCallId: request.toolCallId,
+        toolCallRecordId,
+        kind: request.kind,
+        title: request.title,
+        message: request.message,
+        confirmLabel: request.confirmLabel,
+        cancelLabel: request.cancelLabel,
+        options: request.options,
+        fields: request.fields,
+        requestedAt: new Date().toISOString(),
+      });
+    });
+  };
+
+  const submitActiveAsk = (
+    payload: Omit<AskHumanResponse, "decidedAt">
+  ) => {
+    const ask = activeAsk;
+    const pending = askResolverRef.current;
+    if (!ask || !pending || pending.toolCallId !== ask.toolCallId) return;
+    pending.resolve({ ...payload, decidedAt: new Date().toISOString() });
+  };
+
+  const cancelActiveAsk = (reason = t("agent_ask_cancelled")) => {
+    const pending = askResolverRef.current;
+    if (!pending) {
+      setActiveAsk(null);
       return;
     }
     pending.reject(new Error(reason));
@@ -1522,6 +1696,9 @@ export function AgentChatView() {
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
   const handleGenerationError = async (e: unknown) => {
+    const aborted =
+      e instanceof Error && (e.name === "AbortError" || e.name === "DOMException");
+    if (!aborted) runErroredRef.current = true;
     if (e instanceof GatewayUnavailableError) {
       return setError(e.message || t("agent_gateway_unavailable"));
     }
@@ -1751,6 +1928,7 @@ export function AgentChatView() {
     sessionId: string,
     def: AgentDefinition,
     inputAttachments: ChatAttachment[] = [],
+    seedHistory: PersistedChatMessage[] = [],
   ) => {
     agentTurnRef.current = {
       assistantId: null,
@@ -1815,8 +1993,8 @@ export function AgentChatView() {
       onToolStart: async ({ toolCallId, toolName, args }) => {
         const st = agentTurnRef.current;
         if (!st) return;
-        const checkpointTitle =
-          toolName === "checkpoint" &&
+        const interactiveTitle =
+          (toolName === "checkpoint" || toolName === "ask_human") &&
           args &&
           typeof args === "object" &&
           typeof (args as { title?: unknown }).title === "string"
@@ -1827,15 +2005,18 @@ export function AgentChatView() {
           messageId: st.toolAnchorId ?? st.assistantId ?? undefined,
           source: toolName.startsWith("mcp__")
             ? "mcp"
-            : AGENT_INTERNAL_TOOL_IDS.includes(
-                toolName as (typeof AGENT_INTERNAL_TOOL_IDS)[number]
+            : INTERNAL_TOOL_IDS.includes(
+                toolName as (typeof INTERNAL_TOOL_IDS)[number]
               )
               ? "internal"
               : "skill",
           toolName,
-          title: checkpointTitle ?? toolName,
+          title: interactiveTitle ?? toolName,
           argumentsJson: JSON.stringify(args ?? {}),
-          status: toolName === "checkpoint" ? "pending" : "running",
+          status:
+            toolName === "checkpoint" || toolName === "ask_human"
+              ? "pending"
+              : "running",
           startedAt: new Date().toISOString(),
         });
         st.toolRecords.set(toolCallId, rec.id);
@@ -1894,7 +2075,9 @@ export function AgentChatView() {
       runtime = await createAgentRuntime(def, callbacks, {
         workspacePath,
         requestCheckpoint: openCheckpoint,
+        requestAsk: openAsk,
         autoCheckpoint: def.id === RESEARCH_AGENT_ID,
+        seedHistory: seedHistoryFromMessages(seedHistory),
       });
       agentRuntimeRef.current = runtime;
       agentRuntimeMetaRef.current = { signature, sessionId };
@@ -1918,6 +2101,7 @@ export function AgentChatView() {
     await runtime!.prompt(promptWithAttachmentPaths(content, inputAttachments));
     await runtime!.waitForIdle();
     cancelActiveCheckpoint();
+    cancelActiveAsk();
   };
 
   /**
@@ -1985,6 +2169,7 @@ export function AgentChatView() {
       const pendingAttachments = await saveAttachmentsForExecution(attachments);
       const parts = partsFromInput(content, pendingAttachments);
       const turnAgent = resolveTurnAgent();
+      const priorHistory = useChatStore.getState().messages;
       setInput("");
       setAttachments([]);
       const userMsg = await chat.addMessage({
@@ -1994,7 +2179,13 @@ export function AgentChatView() {
         attachments: pendingAttachments,
       });
       if (turnAgent) {
-        await runAgentTurn(content, userMsg.sessionId, turnAgent, pendingAttachments);
+        await runAgentTurn(
+          content,
+          userMsg.sessionId,
+          turnAgent,
+          pendingAttachments,
+          priorHistory
+        );
       } else {
         await generateAssistantForUser({
           userMsg,
@@ -2013,6 +2204,7 @@ export function AgentChatView() {
 
   const stop = () => {
     cancelActiveCheckpoint();
+    cancelActiveAsk();
     abortRef.current?.abort();
     agentRuntimeRef.current?.abort();
   };
@@ -2025,6 +2217,7 @@ export function AgentChatView() {
    */
   const resetAgentRuntime = () => {
     cancelActiveCheckpoint();
+    cancelActiveAsk();
     agentRuntimeRef.current?.abort();
     agentRuntimeRef.current = null;
     agentRuntimeMetaRef.current = null;
@@ -2053,7 +2246,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          userMsg.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === userMsg.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: userMsgWithAttachments,
@@ -2099,7 +2298,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, latestUser.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          latestUser.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === latestUser.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: latestUserWithAttachments,
@@ -2197,7 +2402,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          userMsg.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === userMsg.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: userMsgWithAttachments,
@@ -2227,8 +2438,8 @@ export function AgentChatView() {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
-      <section className="flex min-h-0 flex-1 flex-col bg-background">
+    <div className="flex h-full min-h-0 w-full overflow-hidden [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="min-w-0">
@@ -2297,7 +2508,12 @@ export function AgentChatView() {
             onTouchCancel={handleMessageTouchEnd}
             className="flex-1 overflow-y-auto px-4 pb-4 pt-6"
           >
-            <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
+            <div
+              className={cn(
+                "mx-auto flex w-full max-w-[1040px] flex-col",
+                (chat.loading || chat.messages.length === 0) && "min-h-full"
+              )}
+            >
               {chat.loading ? (
                 <MessageSkeletons />
               ) : chat.messages.length === 0 ? (
@@ -2384,6 +2600,24 @@ export function AgentChatView() {
                     onAutoApproveChange={updateAutoApproveCheckpoints}
                     onApprove={() => decideActiveCheckpoint(true)}
                     onReject={() => decideActiveCheckpoint(false)}
+                  />
+                </motion.div>
+              )}
+            </AnimatePresence>
+            <AnimatePresence>
+              {activeAsk && (
+                <motion.div
+                  initial={{ opacity: 0, y: 8, height: 0 }}
+                  animate={{ opacity: 1, y: 0, height: "auto" }}
+                  exit={{ opacity: 0, y: 8, height: 0 }}
+                  className="mx-auto w-full max-w-[800px] overflow-hidden"
+                >
+                  <AskHumanPanel
+                    ask={activeAsk}
+                    onSubmit={submitActiveAsk}
+                    onDismiss={() =>
+                      submitActiveAsk({ kind: activeAsk.kind, cancelled: true })
+                    }
                   />
                 </motion.div>
               )}
@@ -2574,12 +2808,13 @@ export function AgentChatView() {
               setPreviewResizing(true);
               // The native webview swallows pointer events; hide it during the
               // drag so the gesture keeps tracking, then restore it after.
-              void hideBrowser();
+              previewResizeReleaseRef.current = suppressBrowser();
             }}
             onDrag={(dx) => preview.setWidth(previewResizeBaseRef.current - dx)}
             onEnd={() => {
               setPreviewResizing(false);
-              void showBrowser();
+              previewResizeReleaseRef.current?.();
+              previewResizeReleaseRef.current = null;
             }}
             onReset={() => preview.setWidth(PREVIEW_DEFAULT_WIDTH)}
             className="hidden md:flex"
@@ -2614,7 +2849,7 @@ export function AgentChatView() {
                 <X className="h-4 w-4" />
               </Button>
             </div>
-            <div className="min-h-0 flex-1 p-3">
+            <div className="min-h-0 flex-1">
               <BrowserPreview
                 navUrl={preview.url}
                 navNonce={preview.nonce}
@@ -3458,7 +3693,7 @@ function CheckpointApprovalPanel({
             <div className="text-label-12 font-medium text-muted-foreground">
               {t("agent_checkpoint_summary")}
             </div>
-            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+            <div className="min-w-0 max-w-full whitespace-pre-wrap text-copy-13 text-foreground [overflow-wrap:anywhere]">
               {checkpoint.summary}
             </div>
           </div>
@@ -3466,7 +3701,7 @@ function CheckpointApprovalPanel({
             <div className="text-label-12 font-medium text-muted-foreground">
               {t("agent_checkpoint_proposed_action")}
             </div>
-            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-sm bg-secondary/60 px-2.5 py-2 font-mono text-label-12 text-foreground [overflow-wrap:anywhere]">
+            <div className="min-w-0 max-w-full whitespace-pre-wrap rounded-sm bg-secondary/60 px-2.5 py-2 font-mono text-label-12 text-foreground [overflow-wrap:anywhere]">
               {checkpoint.proposedAction}
             </div>
           </div>
@@ -3475,7 +3710,7 @@ function CheckpointApprovalPanel({
               <div className="text-label-12 font-medium text-muted-foreground">
                 {t("agent_checkpoint_risk")}
               </div>
-              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+              <div className="min-w-0 max-w-full whitespace-pre-wrap text-copy-13 text-foreground [overflow-wrap:anywhere]">
                 {checkpoint.risk}
               </div>
             </div>
@@ -3485,7 +3720,7 @@ function CheckpointApprovalPanel({
               {checkpoint.artifacts.slice(0, 8).map((artifact) => (
                 <span
                   key={artifact}
-                  className="max-w-full whitespace-pre-wrap break-words rounded-sm border border-border bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]"
+                  className="max-w-full whitespace-pre-wrap rounded-sm border border-border bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]"
                 >
                   {artifact}
                 </span>
@@ -3527,6 +3762,218 @@ function CheckpointApprovalPanel({
           <Check className="h-3.5 w-3.5" />
           {t("agent_checkpoint_approve")}
         </Button>
+      </div>
+    </div>
+  );
+}
+
+function AskHumanPanel({
+  ask,
+  onSubmit,
+  onDismiss,
+}: {
+  ask: ActiveAsk;
+  onSubmit: (payload: Omit<AskHumanResponse, "decidedAt">) => void;
+  onDismiss: () => void;
+}) {
+  const { t } = useTranslation("pages");
+  const [selected, setSelected] = useState<string>("");
+  const [answers, setAnswers] = useState<Record<string, string>>(() => {
+    const init: Record<string, string> = {};
+    for (const f of ask.fields ?? []) {
+      init[f.id] = "";
+    }
+    return init;
+  });
+
+  const setAnswer = (id: string, value: string) =>
+    setAnswers((prev) => ({ ...prev, [id]: value }));
+
+  // Discrete choices (confirm / select) must be answered before submitting a
+  // form; free-text fields stay optional.
+  const formComplete = (ask.fields ?? []).every(
+    (f) => f.type === "text" || (answers[f.id] ?? "") !== ""
+  );
+
+  return (
+    <div className="mb-2 flex max-h-[min(52vh,32rem)] min-h-0 flex-col overflow-hidden rounded-md border border-primary/35 bg-card shadow-geist-md">
+      <div className="flex shrink-0 items-start gap-2 border-b border-border/70 bg-primary/10 px-3 py-2.5">
+        <MessageCircleQuestion className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="truncate text-heading-14 font-medium text-foreground">
+              {ask.title || t("agent_ask_title")}
+            </span>
+            <Badge variant="accent" className="rounded-sm">
+              {t("agent_ask_pending")}
+            </Badge>
+          </div>
+          <p className="mt-1 text-label-12 text-muted-foreground">
+            {t("agent_ask_input_required")}
+          </p>
+        </div>
+      </div>
+      <div className="min-h-0 overflow-x-hidden overflow-y-auto overscroll-contain px-3 py-3">
+        <div className="grid min-w-0 max-w-full gap-3">
+          {ask.message && (
+            <div className="min-w-0 max-w-full whitespace-pre-wrap text-copy-13 text-foreground [overflow-wrap:anywhere]">
+              {ask.message}
+            </div>
+          )}
+
+          {ask.kind === "select" && (
+            <div className="grid min-w-0 gap-1.5">
+              {(ask.options ?? []).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  onClick={() => setSelected(opt)}
+                  className={cn(
+                    "flex min-w-0 items-center gap-2 rounded-sm border px-2.5 py-2 text-left text-copy-13 transition-colors",
+                    selected === opt
+                      ? "border-primary bg-primary/10 text-foreground"
+                      : "border-border bg-secondary/40 text-foreground hover:bg-secondary/70"
+                  )}
+                >
+                  <span
+                    className={cn(
+                      "h-3.5 w-3.5 shrink-0 rounded-full border",
+                      selected === opt
+                        ? "border-primary bg-primary"
+                        : "border-muted-foreground"
+                    )}
+                  />
+                  <span className="min-w-0 [overflow-wrap:anywhere]">{opt}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {ask.kind === "form" && (
+            <div className="grid min-w-0 gap-3">
+              {(ask.fields ?? []).map((field) => (
+                <div key={field.id} className="grid min-w-0 gap-1">
+                  <Label className="text-label-12 font-medium text-foreground">
+                    {field.label}
+                  </Label>
+                  {field.type === "text" && (
+                    <Input
+                      value={answers[field.id] ?? ""}
+                      placeholder={field.placeholder}
+                      onChange={(e) => setAnswer(field.id, e.target.value)}
+                    />
+                  )}
+                  {field.type === "select" && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(field.options ?? []).map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => setAnswer(field.id, opt)}
+                          className={cn(
+                            "rounded-sm border px-2 py-1 text-label-12 transition-colors [overflow-wrap:anywhere]",
+                            answers[field.id] === opt
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border bg-secondary/40 text-foreground hover:bg-secondary/70"
+                          )}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {field.type === "confirm" && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { v: "yes", label: t("agent_ask_yes") },
+                        { v: "no", label: t("agent_ask_no") },
+                      ].map((opt) => (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => setAnswer(field.id, opt.v)}
+                          className={cn(
+                            "rounded-sm border px-3 py-1 text-label-12 transition-colors",
+                            answers[field.id] === opt.v
+                              ? "border-primary bg-primary/10 text-foreground"
+                              : "border-border bg-secondary/40 text-foreground hover:bg-secondary/70"
+                          )}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 justify-end gap-1.5 border-t border-border/70 bg-card px-3 py-2">
+        {ask.kind === "confirm" ? (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8"
+              onClick={() =>
+                onSubmit({ kind: "confirm", cancelled: false, confirmed: false })
+              }
+            >
+              <X className="h-3.5 w-3.5" />
+              {ask.cancelLabel || t("agent_ask_cancel")}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              className="h-8"
+              onClick={() =>
+                onSubmit({ kind: "confirm", cancelled: false, confirmed: true })
+              }
+            >
+              <Check className="h-3.5 w-3.5" />
+              {ask.confirmLabel || t("agent_ask_confirm")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8"
+              onClick={onDismiss}
+            >
+              <X className="h-3.5 w-3.5" />
+              {t("agent_ask_dismiss")}
+            </Button>
+            <Button
+              size="sm"
+              variant="primary"
+              className="h-8"
+              disabled={
+                (ask.kind === "select" && !selected) ||
+                (ask.kind === "form" && !formComplete)
+              }
+              onClick={() =>
+                ask.kind === "select"
+                  ? onSubmit({
+                      kind: "select",
+                      cancelled: false,
+                      selected,
+                    })
+                  : onSubmit({
+                      kind: "form",
+                      cancelled: false,
+                      answers,
+                    })
+              }
+            >
+              <Check className="h-3.5 w-3.5" />
+              {t("agent_ask_submit")}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
@@ -4098,7 +4545,9 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           <button
             type="button"
             title={t("agent_open_in_browser")}
-            onClick={() => void openArtifactPreview(artifact.dir, artifact.title)}
+            onClick={() =>
+              void openArtifactPreview(artifact.dir, artifact.title, artifact.file)
+            }
             className="mr-1.5 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-accent/10 px-1.5 font-medium text-accent transition-colors hover:bg-accent/20"
           >
             <Globe className="h-3.5 w-3.5" />

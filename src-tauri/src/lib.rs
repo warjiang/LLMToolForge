@@ -15,6 +15,8 @@ mod fs_tools;
 mod mcp;
 mod preview;
 mod unified;
+mod web_fetch;
+mod web_fetch_render;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -979,6 +981,7 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_close,
             browser::browser_status,
+            web_fetch::web_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

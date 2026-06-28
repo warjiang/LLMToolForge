@@ -24,9 +24,11 @@ import { CSS } from "@dnd-kit/utilities";
 import {
   Check,
   ChevronRight,
+  CircleAlert,
   Folder,
   FolderOpen,
   FolderPlus,
+  Loader2,
   MessageSquare,
   MessageSquarePlus,
   Moon,
@@ -63,7 +65,7 @@ import { openSessionWorkspace } from "@/lib/agent/workspace";
 import { chatRepo } from "@/data/chatRepository";
 import { ResizeHandle } from "@/components/common/ResizeHandle";
 import { SIDEBAR_DEFAULT_WIDTH } from "@/store/sidebar";
-import type { ChatSession } from "@/types/chat";
+import type { ChatSession, SessionRunStatus } from "@/types/chat";
 
 const COLLAPSED = 64;
 
@@ -127,6 +129,28 @@ function DraggableSession({
   );
 }
 
+function SessionStatusBadge({ status }: { status?: SessionRunStatus }) {
+  const { t } = useTranslation("common");
+  if (!status) return null;
+  if (status === "running") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-1.5 py-px font-medium text-primary">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        {t("session_status_running")}
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-destructive/10 px-1.5 py-px font-medium text-destructive">
+        <CircleAlert className="h-3 w-3" />
+        {t("session_status_error")}
+      </span>
+    );
+  }
+  return null;
+}
+
 export function AgentSidebar() {
   const { t } = useTranslation("common");
   const reduce = useReducedMotion();
@@ -136,6 +160,7 @@ export function AgentSidebar() {
   const sessions = useChatStore((s) => s.sessions);
   const agentDefs = useAgentDefStore((s) => s.items);
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const sessionStatus = useChatStore((s) => s.sessionStatus);
   const loadingSessions = useChatStore((s) => s.loading);
   const newSession = useChatStore((s) => s.newSession);
   const selectSession = useChatStore((s) => s.selectSession);
@@ -472,44 +497,45 @@ export function AgentSidebar() {
               )}
               onClick={() => selectSession(session.id)}
             >
-              <span className="block truncate pr-[5.75rem] text-label-13 font-medium leading-5">
+              <span className="block truncate pr-24 text-label-13 font-medium leading-5">
                 {session.title}
               </span>
-              <span className="mt-0.5 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-1 text-label-12 tabular-nums text-muted-foreground">
+              <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-label-12 tabular-nums text-muted-foreground">
                 <span className="shrink-0">{formatDateTime(session.updatedAt)}</span>
+                <SessionStatusBadge status={sessionStatus[session.id]} />
               </span>
             </button>
             <div
               onPointerDown={(e) => e.stopPropagation()}
-              className="absolute right-1.5 top-1.5 flex items-center rounded-md border border-border/70 bg-popover/95 p-0.5 text-popover-foreground opacity-0 shadow-geist-sm backdrop-blur transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+              className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border/60 bg-popover/95 p-1 text-popover-foreground opacity-0 shadow-geist-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
             >
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-6 w-6"
+                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
                 title={t("rename_session")}
                 onClick={() => startRename(session.id, session.title)}
               >
-                <Pencil className="h-3.5 w-3.5" />
+                <Pencil className="h-4 w-4" />
               </Button>
               <Button
                 size="icon-sm"
                 variant="ghost"
-                className="h-6 w-6"
+                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
                 title={t("open_workspace_folder")}
                 onClick={() => openWorkspaceFolder(session)}
               >
-                <FolderOpen className="h-3.5 w-3.5" />
+                <FolderOpen className="h-4 w-4" />
               </Button>
               {canDeleteSession && (
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  className="h-6 w-6 hover:bg-destructive/10 hover:text-destructive"
+                  className="h-7 w-7 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
                   title={t("delete_session")}
                   onClick={() => setDeleteSessionId(session.id)}
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -588,19 +614,29 @@ export function AgentSidebar() {
           <div className="flex flex-col gap-1">
             {visibleSessions.map((session) => {
               const active = activeSessionId === session.id;
+              const status = sessionStatus[session.id];
               return (
                 <button
                   key={session.id}
                   title={session.title}
                   onClick={() => selectSession(session.id)}
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center self-center rounded-sm transition-colors",
+                    "relative flex h-9 w-9 items-center justify-center self-center rounded-sm transition-colors",
                     active
                       ? "bg-muted text-foreground ring-1 ring-inset ring-border"
                       : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
                   )}
                 >
                   <MessageSquare className="h-4 w-4" />
+                  {(status === "running" || status === "error") && (
+                    <span
+                      className={cn(
+                        "absolute right-1 top-1 h-2 w-2 rounded-full ring-2 ring-card-elevated",
+                        status === "running" && "animate-pulse bg-primary",
+                        status === "error" && "bg-destructive"
+                      )}
+                    />
+                  )}
                 </button>
               );
             })}

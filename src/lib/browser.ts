@@ -87,6 +87,84 @@ export async function hideBrowser(): Promise<void> {
   await invoke<void>("browser_hide");
 }
 
+/**
+ * Native-webview visibility manager.
+ *
+ * The embedded browser is a native child webview that always paints above the
+ * DOM, so CSS `z-index` cannot place modals/overlays in front of it. To keep
+ * dialogs visible we hide the webview whenever a modal overlay is open. The
+ * webview is shown only when ALL of these hold:
+ *   - `previewVisible`: a preview panel currently wants the browser shown.
+ *   - `suppressionCount === 0`: no imperative suppressor (e.g. a panel resize
+ *     drag) is active.
+ *   - no Radix dialog/alert-dialog is mounted in the DOM.
+ *
+ * Overlay state is read directly from the DOM (not a counter) so it is
+ * self-healing: if an overlay unmounts without a matching release, a later DOM
+ * mutation recomputes visibility and restores the webview. Calls to the Rust
+ * side are de-duped so streaming DOM churn does not spam show/hide.
+ */
+let previewVisible = false;
+let suppressionCount = 0;
+let lastApplied: boolean | null = null;
+let overlayObserver: MutationObserver | null = null;
+
+function overlayOpen(): boolean {
+  if (typeof document === "undefined") return false;
+  return document.querySelector('[role="dialog"],[role="alertdialog"]') !== null;
+}
+
+function ensureOverlayObserver(): void {
+  if (
+    overlayObserver ||
+    typeof document === "undefined" ||
+    typeof MutationObserver === "undefined" ||
+    !document.body
+  ) {
+    return;
+  }
+  overlayObserver = new MutationObserver(() => applyBrowserVisibility());
+  overlayObserver.observe(document.body, { childList: true, subtree: true });
+}
+
+function applyBrowserVisibility(): void {
+  const visible = previewVisible && suppressionCount === 0 && !overlayOpen();
+  if (visible === lastApplied) return;
+  lastApplied = visible;
+  if (visible) void showBrowser();
+  else void hideBrowser();
+}
+
+/** Declare whether a preview panel wants the native browser shown. */
+export function setBrowserPreviewVisible(visible: boolean): void {
+  previewVisible = visible;
+  if (visible) {
+    ensureOverlayObserver();
+    // A fresh preview request supersedes any stale imperative suppression
+    // (e.g. a resize drag whose release was missed), so the webview can never
+    // get permanently stuck hidden.
+    suppressionCount = 0;
+  }
+  applyBrowserVisibility();
+}
+
+/**
+ * Suppress the native browser while an imperative gesture (e.g. a panel resize
+ * drag) needs the webview out of the way. Returns a release callback. Dialogs
+ * and other overlays do NOT need this — they are detected from the DOM.
+ */
+export function suppressBrowser(): () => void {
+  suppressionCount += 1;
+  applyBrowserVisibility();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    suppressionCount = Math.max(0, suppressionCount - 1);
+    applyBrowserVisibility();
+  };
+}
+
 export async function closeBrowser(): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("browser_close");
