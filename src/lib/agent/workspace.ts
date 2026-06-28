@@ -26,3 +26,45 @@ export async function resolveSessionWorkspace(
     workspacePath: explicit,
   });
 }
+
+/**
+ * Remove the managed per-session workspace directory
+ * (`~/.llmtoolforge/sessions/<sessionId>`) when deleting a conversation.
+ *
+ * Best-effort and safe by design: the backend only ever deletes the managed
+ * default directory (never an explicit user workspace), and a missing
+ * directory — e.g. for legacy sessions that never created one — is a no-op.
+ * Failures are swallowed so they can never block session deletion.
+ */
+export async function deleteSessionWorkspace(sessionId: string): Promise<void> {
+  if (!isTauri()) return;
+  if (!sessionId.trim()) return;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    await invoke("delete_session_workspace", { sessionId });
+  } catch (e) {
+    console.warn("Failed to delete session workspace", sessionId, e);
+  }
+}
+
+/**
+ * Reveal a session's associated workspace folder in the OS file manager.
+ *
+ * Resolves the effective directory (explicit workspace path when set, else the
+ * managed per-session default), creating it on demand, then opens it natively
+ * via `open` (macOS) / `explorer` (Windows) / `xdg-open` (Linux). Outside the
+ * Tauri runtime there is no folder to reveal, so this is a no-op.
+ */
+export async function openSessionWorkspace(
+  sessionId: string,
+  workspacePath: string
+): Promise<void> {
+  if (!isTauri()) return;
+  const explicit = (workspacePath ?? "").trim();
+  if (!explicit && !sessionId.trim()) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke<string>("open_session_workspace", {
+    sessionId,
+    workspacePath: explicit,
+  });
+}

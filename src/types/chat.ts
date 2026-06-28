@@ -17,6 +17,8 @@ export interface ChatSession {
   id: string;
   title: string;
   archived: boolean;
+  /** Committed agent id once the conversation has started; null = direct chat. */
+  agentId?: string | null;
   createdAt: string;
   updatedAt: string;
 }

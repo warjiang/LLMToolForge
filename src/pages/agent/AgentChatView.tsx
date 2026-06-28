@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ComponentType, ReactNode, TouchEvent, WheelEvent } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
@@ -24,15 +24,18 @@ import {
   FileText,
   FileVideo,
   FolderOpen,
+  Globe,
   Code2,
   Lightbulb,
   ListChecks,
   Loader2,
+  Lock,
   Paperclip,
   Pencil,
   Plus,
   RefreshCcw,
   RotateCcw,
+  RotateCw,
   Send,
   Server,
   Settings2,
@@ -96,6 +99,19 @@ import {
   type AgentRuntimeCallbacks,
 } from "@/lib/agent";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
+import { registerPreview } from "@/lib/preview";
+import {
+  usePreviewStore,
+  PREVIEW_DEFAULT_WIDTH,
+} from "@/store/preview";
+import { BrowserPreview } from "@/components/agent/BrowserPreview";
+import { ResizeHandle } from "@/components/common/ResizeHandle";
+import {
+  hideBrowser,
+  showBrowser,
+  browserReload,
+  onBrowserLoading,
+} from "@/lib/browser";
 import { AgentsManagerDialog } from "./agents/AgentsManagerDialog";
 import { cn, isTauri, uid } from "@/lib/utils";
 import { isLiveRequestSupported } from "@/lib/http";
@@ -134,6 +150,10 @@ import {
   type ApiKey,
   type AgentDefinition,
 } from "@/types";
+import {
+  DIRECT_AGENT_VALUE,
+  DATA_AGENT_ID,
+} from "@/lib/agent/builtinAgents";
 
 interface ConnOption {
   key: string;
@@ -159,9 +179,7 @@ const STREAM_CONTENT_FLUSH_MS = 50;
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
-const DIRECT_AGENT_VALUE = "__direct__";
 const ADHOC_AGENT_ID = "__adhoc__";
-const DATA_AGENT_ID = "__builtin_dataagent__";
 const SHOW_AGENT_PICKER = true;
 const DATA_AGENT_PROMPT = [
   "You are DataAgent, a careful local-data analysis assistant.",
@@ -451,6 +469,44 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
   return lines.join("\n");
 }
 
+async function openArtifactPreview(
+  dir: string,
+  title?: string
+): Promise<void> {
+  try {
+    const reg = await registerPreview(dir);
+    if (reg) usePreviewStore.getState().openPreview(reg.url, title);
+  } catch (e) {
+    console.error("Failed to open DataAgent preview", e);
+  }
+}
+
+/** Output dir + title for a completed data-tool result, if any. */
+function dataArtifact(
+  toolName: string | undefined,
+  resultJson: unknown
+): { dir: string; title?: string } | null {
+  if (toolName !== "data_chart_html" && toolName !== "data_report_html") {
+    return null;
+  }
+  const details = resultJson as
+    | { outputDir?: string; title?: string }
+    | null
+    | undefined;
+  const dir = details?.outputDir;
+  if (!dir) return null;
+  return { dir, title: details?.title };
+}
+
+async function maybeOpenPreview(
+  toolName: string | undefined,
+  resultJson: unknown
+): Promise<void> {
+  const artifact = dataArtifact(toolName, resultJson);
+  if (!artifact) return;
+  await openArtifactPreview(artifact.dir, artifact.title);
+}
+
 export function AgentChatView() {
   const { t } = useTranslation("pages");
   const volc = useVolcCredentialStore();
@@ -461,6 +517,27 @@ export function AgentChatView() {
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
   const debug = useDebugStore((s) => s.debug);
+  const preview = usePreviewStore();
+
+  const [previewResizing, setPreviewResizing] = useState(false);
+  const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
+  const [previewLoading, setPreviewLoading] = useState(false);
+
+  useEffect(() => {
+    if (!preview.open || !isTauri()) return;
+    let active = true;
+    let unsub: (() => void) | undefined;
+    void onBrowserLoading((l) => {
+      if (active) setPreviewLoading(l);
+    }).then((u) => {
+      if (active) unsub = u;
+      else u();
+    });
+    return () => {
+      active = false;
+      unsub?.();
+    };
+  }, [preview.open]);
 
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
@@ -528,6 +605,36 @@ export function AgentChatView() {
       ? (agentDefs.items.find((a) => a.id === selectedAgentId) ?? null)
       : null;
   }, [selectedAgentId, settings, agentDefs.items]);
+
+  // Once a conversation has started, its agent is committed and can't be
+  // switched. Before the first message the picker is freely editable.
+  const agentLocked = chat.messages.length > 0;
+
+  // Restore the committed/pending agent whenever the active session changes.
+  useEffect(() => {
+    const sid = chat.activeSessionId;
+    if (!sid) {
+      setSelectedAgentId(null);
+      return;
+    }
+    const sess = chat.sessions.find((s) => s.id === sid);
+    setSelectedAgentId(sess?.agentId ?? null);
+    // Intentionally keyed on the session id only: user-driven picker changes
+    // are persisted immediately, so we must not clobber them on unrelated
+    // `sessions` updates.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.activeSessionId]);
+
+  const handleAgentChange = useCallback(
+    (value: string) => {
+      if (agentLocked) return;
+      const next = value === DIRECT_AGENT_VALUE ? null : value;
+      setSelectedAgentId(next);
+      const sid = chat.activeSessionId;
+      if (sid) void chat.setSessionAgent(sid, next);
+    },
+    [agentLocked, chat]
+  );
 
   const options = useMemo<ConnOption[]>(() => {
     const volcOpts: ConnOption[] = volc.items.map((c) => ({
@@ -1569,7 +1676,9 @@ export function AgentChatView() {
         if (!st) return;
         const recId = st.toolRecords.get(toolCallId);
         if (!recId) return;
-        const startedRec = chat.toolCalls.find((c) => c.id === recId);
+        const startedRec = useChatStore
+          .getState()
+          .toolCalls.find((c) => c.id === recId);
         const completedAt = new Date().toISOString();
         const durationMs = startedRec
           ? Date.parse(completedAt) - Date.parse(startedRec.startedAt)
@@ -1583,6 +1692,9 @@ export function AgentChatView() {
           error: isError ? resultText : undefined,
         });
         st.toolRecords.delete(toolCallId);
+        if (!isError) {
+          void maybeOpenPreview(startedRec?.toolName, resultJson);
+        }
       },
       onError: async (message) => {
         const st = agentTurnRef.current;
@@ -2187,13 +2299,18 @@ export function AgentChatView() {
                   <>
                     <Select
                       value={selectedAgentId ?? DIRECT_AGENT_VALUE}
-                      onValueChange={(v) =>
-                        setSelectedAgentId(v === DIRECT_AGENT_VALUE ? null : v)
-                      }
+                      onValueChange={handleAgentChange}
+                      disabled={agentLocked}
                     >
-                      <SelectTrigger className="h-7 w-[138px] gap-1.5 text-label-12">
+                      <SelectTrigger
+                        className="h-7 w-[138px] gap-1.5 text-label-12"
+                        title={agentLocked ? t("agent_locked_hint") : undefined}
+                      >
                         <Bot className="h-3.5 w-3.5 shrink-0" />
                         <SelectValue />
+                        {agentLocked && (
+                          <Lock className="ml-auto h-3 w-3 shrink-0 text-muted-foreground" />
+                        )}
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value={DIRECT_AGENT_VALUE}>
@@ -2263,6 +2380,67 @@ export function AgentChatView() {
               onClose={() => setConfigOpen(false)}
             />
           </div>
+        )}
+
+        {preview.open && isTauri() && (
+          <>
+          <ResizeHandle
+            title={t("agent_resize_preview")}
+            onStart={() => {
+              previewResizeBaseRef.current = preview.width;
+              setPreviewResizing(true);
+              // The native webview swallows pointer events; hide it during the
+              // drag so the gesture keeps tracking, then restore it after.
+              void hideBrowser();
+            }}
+            onDrag={(dx) => preview.setWidth(previewResizeBaseRef.current - dx)}
+            onEnd={() => {
+              setPreviewResizing(false);
+              void showBrowser();
+            }}
+            onReset={() => preview.setWidth(PREVIEW_DEFAULT_WIDTH)}
+            className="hidden md:flex"
+          />
+          <div
+            style={{ width: preview.width }}
+            className="hidden h-full shrink-0 flex-col border-l border-border bg-background md:flex"
+          >
+            <div className="flex h-14 shrink-0 items-center gap-1.5 border-b border-border px-4">
+              <Globe className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="min-w-0 flex-1 truncate text-heading-14 text-foreground">
+                {preview.title || t("agent_preview_title")}
+              </span>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => void browserReload()}
+                title={t("browser_reload")}
+              >
+                {previewLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RotateCw className="h-4 w-4" />
+                )}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={preview.closePreview}
+                title={t("browser_close_preview")}
+              >
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="min-h-0 flex-1 p-3">
+              <BrowserPreview
+                navUrl={preview.url}
+                navNonce={preview.nonce}
+                minimalChrome
+                className={cn("h-full", previewResizing && "pointer-events-none")}
+              />
+            </div>
+          </div>
+          </>
         )}
 
         <AgentsManagerDialog
@@ -3352,7 +3530,7 @@ function ReasoningTrace({
 }) {
   const { t } = useTranslation("pages");
   const [userOpen, setUserOpen] = useState<boolean | null>(null);
-  const open = userOpen ?? !!streaming;
+  const open = userOpen ?? true;
   const seconds =
     typeof reasoningMs === "number" && reasoningMs > 0
       ? Math.max(1, Math.round(reasoningMs / 1000))
@@ -3468,11 +3646,38 @@ function TurnRail({
   );
 }
 
+function formatMaybeJson(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return value;
+  }
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
+  const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const [open, setOpen] = useState(false);
   const isRunning = call.status === "running";
   const isError = call.status === "error";
   const parsed = parseToolName(call.toolName || call.title);
+
+  const args = formatMaybeJson(call.argumentsJson || "");
+  const resultRaw =
+    call.resultText && call.resultText.trim().length > 0
+      ? call.resultText
+      : call.resultJson != null
+        ? JSON.stringify(call.resultJson, null, 2)
+        : "";
+  const result = formatMaybeJson(resultRaw);
+  const hasArgs = args.length > 0 && args !== "{}";
+  const hasResult = result.length > 0;
+  const hasError = !!call.error && call.error.trim().length > 0;
+  const expandable = hasArgs || hasResult || hasError;
+  const artifact =
+    !isRunning && !isError ? dataArtifact(call.toolName, call.resultJson) : null;
 
   return (
     <div
@@ -3481,39 +3686,126 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         isRunning && "border-accent/25 bg-background"
       )}
     >
-      <div className="relative flex w-full min-w-0 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left">
-        {isRunning && !reduce && (
-          <motion.span
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/10 to-transparent"
-            animate={{ x: ["-120%", "420%"] }}
-            transition={{
-              duration: 1.25,
-              repeat: Infinity,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          />
-        )}
-        <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-        {isRunning ? (
-          <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-        ) : isError ? (
-          <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
-        ) : (
-          <Check className="h-3.5 w-3.5 shrink-0 text-success" />
-        )}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5">
-          <span className="truncate font-mono text-label-12 font-medium text-foreground">
-            {parsed.name}
+      <div className="relative flex w-full min-w-0 items-center overflow-hidden">
+        <button
+          type="button"
+          onClick={() => expandable && setOpen((v) => !v)}
+          disabled={!expandable}
+          className={cn(
+            "relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
+            expandable && "cursor-pointer hover:bg-muted/40"
+          )}
+        >
+          {isRunning && !reduce && (
+            <motion.span
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-y-0 left-0 w-1/3 bg-gradient-to-r from-transparent via-foreground/10 to-transparent"
+              animate={{ x: ["-120%", "420%"] }}
+              transition={{
+                duration: 1.25,
+                repeat: Infinity,
+                ease: [0.16, 1, 0.3, 1],
+              }}
+            />
+          )}
+          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          {isRunning ? (
+            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+          ) : isError ? (
+            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
+          ) : (
+            <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+          )}
+          <span className="flex min-w-0 flex-1 items-center gap-1.5">
+            <span className="truncate font-mono text-label-12 font-medium text-foreground">
+              {parsed.name}
+            </span>
+            {parsed.server && (
+              <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
+                <Server className="h-3 w-3" />
+                {parsed.server}
+              </span>
+            )}
           </span>
-          {parsed.server && (
-            <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
-              <Server className="h-3 w-3" />
-              {parsed.server}
+          {typeof call.durationMs === "number" && call.durationMs > 0 && (
+            <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
+              {call.durationMs >= 1000
+                ? `${(call.durationMs / 1000).toFixed(1)}s`
+                : `${call.durationMs}ms`}
             </span>
           )}
-        </span>
+          {expandable && (
+            <ChevronRight
+              className={cn(
+                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+                open && "rotate-90"
+              )}
+            />
+          )}
+        </button>
+        {artifact && (
+          <button
+            type="button"
+            title={t("agent_open_in_browser")}
+            onClick={() => void openArtifactPreview(artifact.dir, artifact.title)}
+            className="mr-1.5 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-accent/10 px-1.5 font-medium text-accent transition-colors hover:bg-accent/20"
+          >
+            <Globe className="h-3.5 w-3.5" />
+            <span className="hidden text-label-12 sm:inline">
+              {t("agent_open_in_browser")}
+            </span>
+          </button>
+        )}
       </div>
+      {expandable && open && (
+        <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
+          {hasArgs && (
+            <ToolCallSection label={t("agent_tool_arguments")} body={args} />
+          )}
+          {hasResult ? (
+            <ToolCallSection label={t("agent_tool_result")} body={result} />
+          ) : (
+            !hasError && (
+              <div className="text-label-12 text-muted-foreground">
+                {t("agent_tool_no_result")}
+              </div>
+            )
+          )}
+          {hasError && (
+            <ToolCallSection
+              label={t("agent_tool_error")}
+              body={call.error as string}
+              tone="error"
+            />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ToolCallSection({
+  label,
+  body,
+  tone,
+}: {
+  label: string;
+  body: string;
+  tone?: "error";
+}) {
+  return (
+    <div className="grid min-w-0 gap-1">
+      <div className="text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </div>
+      <pre
+        className={cn(
+          "max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/50 px-2 py-1.5 font-mono text-label-12 leading-relaxed",
+          tone === "error" ? "text-destructive" : "text-foreground"
+        )}
+      >
+        {body}
+      </pre>
     </div>
   );
 }
