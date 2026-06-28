@@ -234,6 +234,79 @@ if (!decision.approved) return;
 await dangerousResearchStep();
 ```
 
+## Scenario: Session Agent Selector Placement
+
+### 1. Scope / Trigger
+- Trigger: built-in and custom agent modes are selected per chat session.
+
+### 2. Signatures
+- Session field: `ChatSession.agentId?: string | null`.
+- Store action: `chatStore.setSessionAgent(sessionId, agentId)`.
+- Built-in values: `null`/`DIRECT_AGENT_VALUE`, `DATA_AGENT_ID`,
+  `RESEARCH_AGENT_ID`.
+
+### 3. Contracts
+- The session agent selector lives in the sidebar header, next to the app logo,
+  and acts as an agent partition filter for the session list.
+- The composer must not render a second agent selector.
+- The session list must not duplicate agent type badges; list rows show title,
+  timestamp, and row actions only.
+- Switching the sidebar selector shows only sessions whose stored `agentId`
+  matches that agent type. Existing conversation `agentId` values are not
+  mutated by the selector.
+- If the selected agent partition has no session, the sidebar creates a new
+  session for that `agentId`. The new-session button also inherits the selected
+  partition's `agentId`.
+- `AgentChatView` should derive the active agent from the active session record
+  so switching partitions updates the runtime through normal session selection.
+- Drag/reorder/group operations in a filtered partition must preserve hidden
+  sessions from other agent partitions in the persisted ordering/assignment
+  stores.
+
+### 4. Validation & Error Matrix
+- Empty partition + selector change -> a new session is created with the
+  selected `agent_id`, then selected.
+- Partition with existing sessions + selector change -> the newest matching
+  session is selected.
+- Existing sessions with `agentId: null` -> sidebar shows the default direct
+  chat label.
+- Reordering filtered sessions -> other agent partitions keep their existing
+  assignments/order instead of being dropped from the store.
+
+### 5. Good/Base/Bad Cases
+- Good: User picks ResearchAgent in the sidebar header and sees only
+  ResearchAgent sessions; composer stays focused on model/tools/sandbox
+  controls.
+- Base: Old DataAgent/ResearchAgent sessions load without row badges but still
+  run with their stored `agentId`.
+- Bad: Showing one agent selector in the sidebar and another in the composer
+  with potentially divergent state.
+- Bad: Treating the sidebar selector as an edit control that rewrites the active
+  conversation's `agentId` after that conversation already exists.
+
+### 6. Tests Required
+- Type/build checks cover selector state flow and removed composer picker.
+- Manual UI test should switch agent partitions, verify each partition shows its
+  own sessions, verify new sessions inherit the current partition, and verify
+  session rows no longer show agent badges.
+
+### 7. Wrong vs Correct
+#### Wrong
+```tsx
+<ComposerToolbar>
+  <AgentSelect />
+</ComposerToolbar>
+<SessionRow badge="ResearchAgent" />
+```
+
+#### Correct
+```tsx
+<SidebarHeader>
+  <AgentPartitionSelect value={agentFilterValue} />
+</SidebarHeader>
+<SessionList sessions={sessions.filter(matchesAgentPartition)} />
+```
+
 ## Scenario: ResearchAgent HTML Deliverables
 
 ### 1. Scope / Trigger

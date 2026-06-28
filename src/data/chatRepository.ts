@@ -294,14 +294,17 @@ class ChatRepository {
     return rows.map(rowToSession);
   }
 
-  async createSession(title = i18n.t("new_session", { ns: "common" })): Promise<SessionBundle> {
+  async createSession(
+    title = i18n.t("new_session", { ns: "common" }),
+    agentId: string | null = null
+  ): Promise<SessionBundle> {
     await this.ensureInit();
     const timestamp = nowIso();
     const session: ChatSession = {
       id: uid("chat"),
       title,
       archived: false,
-      agentId: null,
+      agentId,
       createdAt: timestamp,
       updatedAt: timestamp,
     };
@@ -315,8 +318,14 @@ class ChatRepository {
     }
     const db = await this.db();
     await db.execute(
-      "INSERT INTO sessions (id, title, archived, created_at, updated_at) VALUES ($1, $2, 0, $3, $4)",
-      [session.id, session.title, session.createdAt, session.updatedAt]
+      "INSERT INTO sessions (id, title, archived, agent_id, created_at, updated_at) VALUES ($1, $2, 0, $3, $4, $5)",
+      [
+        session.id,
+        session.title,
+        session.agentId,
+        session.createdAt,
+        session.updatedAt,
+      ]
     );
     await this.upsertSettings(settings);
     return { session, settings, messages: [], toolCalls: [], sandboxRuns: [] };
