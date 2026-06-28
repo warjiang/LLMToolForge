@@ -219,6 +219,7 @@ const DATA_AGENT_PROMPT = [
   "Never query file paths directly in user SQL; register sources with aliases and query the aliases.",
   "Prefer a tight workflow: inspect available files, profile schema/sample rows, write read-only SQL, explain assumptions, then generate charts or reports when useful.",
   "For visual output, use data_chart_html. For deliverable summaries, use data_report_html.",
+  "For a polished, compelling deliverable page, prefer building an HTML artifact incrementally: scaffold it once with html_artifact_create, then add one section at a time with html_artifact_block (each block is raw HTML/CSS/JS; enable useEcharts for charts). The preview live-reloads as you build. Use data_report_html only as a quick, lower-effort fallback.",
   "For every tool call whose schema includes goal, include a concise goal value so the UI timeline explains why the step is running.",
   "If the workspace path is missing or a file is outside the sandbox scope, explain exactly what must be configured.",
 ].join("\n");
@@ -277,6 +278,8 @@ function buildDataAgentDef(
       "duckdb_query",
       "data_chart_html",
       "data_report_html",
+      "html_artifact_create",
+      "html_artifact_block",
     ],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
@@ -576,6 +579,18 @@ function dataArtifact(
   resultJson: unknown
 ): { dir: string; title?: string; file?: string } | null {
   if (toolName === "data_chart_html" || toolName === "data_report_html") {
+    const details = resultJson as
+      | { outputDir?: string; title?: string }
+      | null
+      | undefined;
+    const dir = details?.outputDir;
+    if (!dir) return null;
+    return { dir, title: details?.title };
+  }
+  if (
+    toolName === "html_artifact_create" ||
+    toolName === "html_artifact_block"
+  ) {
     const details = resultJson as
       | { outputDir?: string; title?: string }
       | null
@@ -1015,8 +1030,6 @@ export function AgentChatView() {
     (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
   );
   const isResearchAgent = selectedAgentId === RESEARCH_AGENT_ID;
-  const researchSandboxWarning =
-    isResearchAgent && settings?.sandboxMode !== "workspace-write";
   useEffect(() => {
     autoApproveCheckpointsRef.current =
       isResearchAgent && (settings?.autoApproveCheckpoints ?? false);
@@ -1106,6 +1119,21 @@ export function AgentChatView() {
     if (!settings) return;
     chat.saveSettings(patch);
   };
+
+  // ResearchAgent writes research files into the session workspace, so entering
+  // it (or loading a research session) auto-switches the sandbox to
+  // workspace-write. Keyed on agent/session rather than sandboxMode so a later
+  // manual change within the same session is still respected.
+  useEffect(() => {
+    if (
+      isResearchAgent &&
+      settings &&
+      settings.sandboxMode !== "workspace-write"
+    ) {
+      chat.saveSettings({ sandboxMode: "workspace-write" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isResearchAgent, settings?.sessionId]);
 
   const validateResearchAgent = (): string | null => {
     if (!isResearchAgent) return null;
@@ -2715,12 +2743,6 @@ export function AgentChatView() {
                   >
                     <Plus className="h-5 w-5" />
                   </button>
-                </div>
-              )}
-              {isResearchAgent && researchSandboxWarning && (
-                <div className="mx-3 mt-3 flex items-start gap-2 rounded-md border border-warning/30 bg-warning/10 px-3 py-2 text-label-12 text-warning-foreground/90">
-                  <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>{t("agent_research_workspace_write_hint")}</span>
                 </div>
               )}
               <Textarea
