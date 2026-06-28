@@ -1,0 +1,11 @@
+{
+  "id": "scenario-id",
+  "name": "场景名称",
+  "description": "一句话描述待验证场景",
+  "target_users": [],
+  "validation_targets": [],
+  "hypotheses": [],
+  "channels": [],
+  "keywords": {},
+  "coding": {}
+}

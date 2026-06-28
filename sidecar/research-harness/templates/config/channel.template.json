@@ -1,0 +1,21 @@
+{
+  "id": "channel-id",
+  "name": "渠道名称",
+  "collector": "manual-export-or-api",
+  "validation_targets": [],
+  "keyword_approval": {
+    "status": "draft",
+    "approved_by": "",
+    "approved_at": "",
+    "notes": "Generate channel keywords and get approval before running this collector."
+  },
+  "crawl_plan": {
+    "keywords": [],
+    "search_top_n": 20,
+    "detail_top_n": 10,
+    "comments_top_n": 20,
+    "capture": []
+  },
+  "acceptance": {},
+  "known_gaps": []
+}

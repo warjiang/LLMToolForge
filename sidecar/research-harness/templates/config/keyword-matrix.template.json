@@ -1,0 +1,11 @@
+{
+  "scenario_id": "scenario-id",
+  "approval": {
+    "status": "draft",
+    "approved_by": "",
+    "approved_at": "",
+    "notes": "Do not collect, import, normalize, audit, or analyze until this keyword matrix is approved."
+  },
+  "categories": [],
+  "channel_keywords": {}
+}

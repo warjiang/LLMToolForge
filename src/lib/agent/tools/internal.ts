@@ -16,6 +16,7 @@ import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { SandboxMode } from "@/types/chat";
 import type { AgentInternalToolId } from "@/types";
 import { invoke, textResult } from "./shared";
+import { RESEARCH_TOOL_BUILDERS, RESEARCH_TOOL_IDS } from "./research";
 
 export type InternalToolId = AgentInternalToolId;
 
@@ -55,6 +56,7 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "duckdb_query",
   "data_chart_html",
   "data_report_html",
+  ...RESEARCH_TOOL_IDS,
 ];
 
 export interface InternalToolDeps {
@@ -590,6 +592,7 @@ const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = 
   duckdb_query: duckDbQueryTool,
   data_chart_html: dataChartHtmlTool,
   data_report_html: dataReportHtmlTool,
+  ...RESEARCH_TOOL_BUILDERS,
 };
 
 /** Build the selected internal tools. */

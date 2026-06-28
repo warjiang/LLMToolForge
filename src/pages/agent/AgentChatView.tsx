@@ -98,6 +98,7 @@ import {
   type AgentRuntimeCallbacks,
   type CheckpointDecision,
   type CheckpointRequest,
+  type SeedHistoryMessage,
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
@@ -155,6 +156,7 @@ import {
   DATA_AGENT_ID,
   RESEARCH_AGENT_ID,
 } from "@/lib/agent/builtinAgents";
+import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
 interface ConnOption {
@@ -272,18 +274,33 @@ function buildResearchAgentDef(
   unifiedModelId: string
 ): AgentDefinition {
   const now = new Date().toISOString();
+  // Market research depends on web search, which is provided by MCP servers
+  // (Tavily / AskEcho / AnySearch, etc.). Auto-enable every configured,
+  // non-disabled MCP server so the agent always has its search/extract tools,
+  // even if the session composer didn't explicitly toggle them on.
+  const allMcpServerIds = useMcpStore
+    .getState()
+    .items.filter((s) => s.enabled !== false)
+    .map((s) => s.id);
+  const enabledMcpServerIds = Array.from(
+    new Set([...settings.enabledMcpServerIds, ...allMcpServerIds])
+  );
   return {
     id: RESEARCH_AGENT_ID,
     createdAt: now,
     updatedAt: now,
     name: "ResearchAgent",
     description:
-      "Operate a local research-harness workspace and create evidence-backed HTML research deliverables.",
+      "Autonomously research a market or topic with web search and deliver an evidence-cited HTML report.",
     systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
     modelId: unifiedModelId,
-    enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
+    enabledInternalTools: [
+      ...AGENT_INTERNAL_TOOL_IDS,
+      "research_harness",
+      "research_channel_diagnosis",
+    ],
     enabledSkillIds: settings.enabledSkillIds,
-    enabledMcpServerIds: settings.enabledMcpServerIds,
+    enabledMcpServerIds,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
@@ -305,6 +322,23 @@ function agentRuntimeSignature(def: AgentDefinition, workspacePath: string): str
     def.temperature,
     def.maxTokens,
   ].join("|");
+}
+
+function seedHistoryFromMessages(
+  messages: PersistedChatMessage[]
+): SeedHistoryMessage[] {
+  const seed: SeedHistoryMessage[] = [];
+  for (const m of messages) {
+    if (m.role !== "user" && m.role !== "assistant") continue;
+    seed.push({
+      role: m.role,
+      content: m.content ?? "",
+      status: m.status,
+      createdAt: m.createdAt,
+      modelId: m.modelId ?? undefined,
+    });
+  }
+  return seed;
 }
 
 function providerLabel(provider: string): string {
@@ -621,6 +655,8 @@ export function AgentChatView() {
   } | null>(null);
   const autoApproveCheckpointsRef = useRef(false);
   const videoPollingRef = useRef<Set<string>>(new Set());
+  const runErroredRef = useRef(false);
+  const runStatusSessionRef = useRef<string | null>(null);
 
   const settings = chat.settings;
   const loaded =
@@ -998,6 +1034,27 @@ export function AgentChatView() {
   }, [chat.activeSessionId, chat.messages]);
 
   useEffect(() => () => cancelPendingAutoScroll(), []);
+
+  // Mirror the in-flight agent turn into a store-level, per-session status so
+  // the sidebar can show running / done / error for each conversation.
+  useEffect(() => {
+    const setSessionStatus = useChatStore.getState().setSessionStatus;
+    if (sending) {
+      const sid = chat.activeSessionId;
+      if (sid) {
+        runErroredRef.current = false;
+        runStatusSessionRef.current = sid;
+        setSessionStatus(sid, "running");
+      }
+      return;
+    }
+    const sid = runStatusSessionRef.current;
+    if (sid) {
+      setSessionStatus(sid, runErroredRef.current ? "error" : "done");
+      runStatusSessionRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sending]);
 
   const updateSettings = (
     patch: Partial<Omit<ChatSessionSettings, "sessionId" | "updatedAt">>
@@ -1522,6 +1579,9 @@ export function AgentChatView() {
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
   const handleGenerationError = async (e: unknown) => {
+    const aborted =
+      e instanceof Error && (e.name === "AbortError" || e.name === "DOMException");
+    if (!aborted) runErroredRef.current = true;
     if (e instanceof GatewayUnavailableError) {
       return setError(e.message || t("agent_gateway_unavailable"));
     }
@@ -1751,6 +1811,7 @@ export function AgentChatView() {
     sessionId: string,
     def: AgentDefinition,
     inputAttachments: ChatAttachment[] = [],
+    seedHistory: PersistedChatMessage[] = [],
   ) => {
     agentTurnRef.current = {
       assistantId: null,
@@ -1827,8 +1888,8 @@ export function AgentChatView() {
           messageId: st.toolAnchorId ?? st.assistantId ?? undefined,
           source: toolName.startsWith("mcp__")
             ? "mcp"
-            : AGENT_INTERNAL_TOOL_IDS.includes(
-                toolName as (typeof AGENT_INTERNAL_TOOL_IDS)[number]
+            : INTERNAL_TOOL_IDS.includes(
+                toolName as (typeof INTERNAL_TOOL_IDS)[number]
               )
               ? "internal"
               : "skill",
@@ -1895,6 +1956,7 @@ export function AgentChatView() {
         workspacePath,
         requestCheckpoint: openCheckpoint,
         autoCheckpoint: def.id === RESEARCH_AGENT_ID,
+        seedHistory: seedHistoryFromMessages(seedHistory),
       });
       agentRuntimeRef.current = runtime;
       agentRuntimeMetaRef.current = { signature, sessionId };
@@ -1985,6 +2047,7 @@ export function AgentChatView() {
       const pendingAttachments = await saveAttachmentsForExecution(attachments);
       const parts = partsFromInput(content, pendingAttachments);
       const turnAgent = resolveTurnAgent();
+      const priorHistory = useChatStore.getState().messages;
       setInput("");
       setAttachments([]);
       const userMsg = await chat.addMessage({
@@ -1994,7 +2057,13 @@ export function AgentChatView() {
         attachments: pendingAttachments,
       });
       if (turnAgent) {
-        await runAgentTurn(content, userMsg.sessionId, turnAgent, pendingAttachments);
+        await runAgentTurn(
+          content,
+          userMsg.sessionId,
+          turnAgent,
+          pendingAttachments,
+          priorHistory
+        );
       } else {
         await generateAssistantForUser({
           userMsg,
@@ -2053,7 +2122,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          userMsg.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === userMsg.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: userMsgWithAttachments,
@@ -2099,7 +2174,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, latestUser.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          latestUser.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === latestUser.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: latestUserWithAttachments,
@@ -2197,7 +2278,13 @@ export function AgentChatView() {
       );
       const turnAgent = resolveTurnAgent();
       if (turnAgent) {
-        await runAgentTurn(prompt, userMsg.sessionId, turnAgent, savedAttachments);
+        await runAgentTurn(
+          prompt,
+          userMsg.sessionId,
+          turnAgent,
+          savedAttachments,
+          history.slice(0, history.findIndex((m) => m.id === userMsg.id))
+        );
       } else {
         await generateAssistantForUser({
           userMsg: userMsgWithAttachments,
@@ -2297,7 +2384,12 @@ export function AgentChatView() {
             onTouchCancel={handleMessageTouchEnd}
             className="flex-1 overflow-y-auto px-4 pb-4 pt-6"
           >
-            <div className="mx-auto flex min-h-full w-full max-w-[1040px] flex-col">
+            <div
+              className={cn(
+                "mx-auto flex w-full max-w-[1040px] flex-col",
+                (chat.loading || chat.messages.length === 0) && "min-h-full"
+              )}
+            >
               {chat.loading ? (
                 <MessageSkeletons />
               ) : chat.messages.length === 0 ? (
@@ -3458,7 +3550,7 @@ function CheckpointApprovalPanel({
             <div className="text-label-12 font-medium text-muted-foreground">
               {t("agent_checkpoint_summary")}
             </div>
-            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+            <div className="min-w-0 max-w-full whitespace-pre-wrap text-copy-13 text-foreground [overflow-wrap:anywhere]">
               {checkpoint.summary}
             </div>
           </div>
@@ -3466,7 +3558,7 @@ function CheckpointApprovalPanel({
             <div className="text-label-12 font-medium text-muted-foreground">
               {t("agent_checkpoint_proposed_action")}
             </div>
-            <div className="min-w-0 max-w-full whitespace-pre-wrap break-words rounded-sm bg-secondary/60 px-2.5 py-2 font-mono text-label-12 text-foreground [overflow-wrap:anywhere]">
+            <div className="min-w-0 max-w-full whitespace-pre-wrap rounded-sm bg-secondary/60 px-2.5 py-2 font-mono text-label-12 text-foreground [overflow-wrap:anywhere]">
               {checkpoint.proposedAction}
             </div>
           </div>
@@ -3475,7 +3567,7 @@ function CheckpointApprovalPanel({
               <div className="text-label-12 font-medium text-muted-foreground">
                 {t("agent_checkpoint_risk")}
               </div>
-              <div className="min-w-0 max-w-full whitespace-pre-wrap break-words text-copy-13 text-foreground [overflow-wrap:anywhere]">
+              <div className="min-w-0 max-w-full whitespace-pre-wrap text-copy-13 text-foreground [overflow-wrap:anywhere]">
                 {checkpoint.risk}
               </div>
             </div>
@@ -3485,7 +3577,7 @@ function CheckpointApprovalPanel({
               {checkpoint.artifacts.slice(0, 8).map((artifact) => (
                 <span
                   key={artifact}
-                  className="max-w-full whitespace-pre-wrap break-words rounded-sm border border-border bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]"
+                  className="max-w-full whitespace-pre-wrap rounded-sm border border-border bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]"
                 >
                   {artifact}
                 </span>

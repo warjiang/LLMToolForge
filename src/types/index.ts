@@ -265,7 +265,9 @@ export type AgentInternalToolId =
   | "grep"
   | "duckdb_query"
   | "data_chart_html"
-  | "data_report_html";
+  | "data_report_html"
+  | "research_harness"
+  | "research_channel_diagnosis";
 
 export type AgentSandboxMode =
   | "read-only"

@@ -8,6 +8,7 @@ import type {
   MessagePart,
   PersistedChatMessage,
   SandboxRunRecord,
+  SessionRunStatus,
   ToolCallRecord,
 } from "@/types/chat";
 import { uid } from "@/lib/utils";
@@ -22,6 +23,9 @@ interface ChatState {
   sandboxRuns: SandboxRunRecord[];
   loading: boolean;
   error: string | null;
+  /** Transient per-session agent run status (not persisted). */
+  sessionStatus: Record<string, SessionRunStatus>;
+  setSessionStatus: (id: string, status: SessionRunStatus | null) => void;
   init: () => Promise<void>;
   newSession: (agentId?: string | null) => Promise<void>;
   selectSession: (id: string) => Promise<void>;
@@ -101,6 +105,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sandboxRuns: [],
   loading: false,
   error: null,
+  sessionStatus: {},
+
+  setSessionStatus: (id, status) => {
+    set((state) => {
+      const next = { ...state.sessionStatus };
+      if (status === null) delete next[id];
+      else next[id] = status;
+      return { sessionStatus: next };
+    });
+  },
 
   init: async () => {
     if (get().loading) return;
@@ -152,6 +166,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   deleteSession: async (id) => {
     await chatRepo.deleteSession(id);
+    get().setSessionStatus(id, null);
     // Best-effort cleanup of the managed per-session workspace folder. Never
     // blocks deletion and safely no-ops for legacy sessions without a folder.
     await deleteSessionWorkspace(id);

@@ -76,10 +76,67 @@ export interface AgentRuntime {
   mcpPending: string[];
 }
 
+export interface SeedHistoryMessage {
+  role: "user" | "assistant";
+  content: string;
+  status?: string;
+  createdAt?: string;
+  modelId?: string;
+}
+
 export interface AgentRuntimeOptions {
   workspacePath?: string;
   requestCheckpoint?: RequestCheckpoint;
   autoCheckpoint?: boolean;
+  /**
+   * Prior conversation, oldest-first, used to seed a freshly-created runtime so
+   * the agent retains context across app restarts, session switches, and
+   * edit/retry rebuilds. The current (in-flight) user turn must NOT be included
+   * here — it is delivered via `prompt()`.
+   */
+  seedHistory?: SeedHistoryMessage[];
+}
+
+const ZERO_USAGE = {
+  input: 0,
+  output: 0,
+  cacheRead: 0,
+  cacheWrite: 0,
+  totalTokens: 0,
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+/**
+ * Convert persisted chat history into Pi `AgentMessage`s for seeding a new
+ * runtime transcript. Only completed user/assistant text is carried over;
+ * tool-call/result blocks are intentionally dropped to keep reconstruction
+ * robust while preserving conversational memory.
+ */
+function buildSeedMessages(seed: SeedHistoryMessage[]): AgentMessage[] {
+  const messages: AgentMessage[] = [];
+  for (const m of seed) {
+    const timestamp = m.createdAt ? Date.parse(m.createdAt) || Date.now() : Date.now();
+    if (m.role === "user") {
+      const text = (m.content ?? "").trim();
+      if (!text) continue;
+      messages.push({ role: "user", content: text, timestamp } as AgentMessage);
+    } else if (m.role === "assistant") {
+      if (m.status && m.status !== "complete") continue;
+      const text = sanitizeLeakedToolCallText(m.content ?? "", {}).trim();
+      if (!text) continue;
+      messages.push({
+        role: "assistant",
+        content: [{ type: "text", text }],
+        api: "openai-completion",
+        provider: "unified",
+        model: m.modelId ?? "",
+        usage: ZERO_USAGE,
+        stopReason: "stop",
+        timestamp,
+      } as AgentMessage);
+    }
+  }
+  return messages;
 }
 
 function gatewayBaseUrl(port: number): string {
@@ -129,32 +186,44 @@ function protectedResearchCommand(command: string): boolean {
   return false;
 }
 
+/** Research stage commands that require human approval before running. */
+const PROTECTED_RESEARCH_COMMANDS = new Set([
+  "collect-delta",
+  "ingest",
+  "ingest-delta",
+  "normalize",
+  "audit",
+  "analyze",
+  "approve-delta",
+  "publish-notion",
+]);
+
 function autoCheckpointRequest(
   toolCallId: string,
   toolName: string,
   args: unknown
 ): CheckpointRequest | null {
   if (toolName === "checkpoint") return null;
-  if (toolName === "write" || toolName === "edit") {
+  if (toolName === "research_harness") {
+    const command =
+      args && typeof args === "object" && "command" in args
+        ? String((args as { command?: unknown }).command ?? "")
+        : "";
+    if (!PROTECTED_RESEARCH_COMMANDS.has(command)) return null;
     return {
       toolCallId,
-      title: `Approve ${toolName}`,
+      title: `Approve research: ${command}`,
       summary:
-        "ResearchAgent is about to modify files without first calling the checkpoint tool.",
-      proposedAction: `${toolName} ${previewValue(args)}`,
-      risk: "This may change research plans, approvals, data, or analysis artifacts.",
+        "ResearchAgent is about to run a protected harness stage without first calling the checkpoint tool.",
+      proposedAction: `research_harness ${previewValue(args)}`,
+      risk: "This may collect, import, normalize, audit, analyze, approve, or publish research data.",
+      artifacts: [command],
     };
   }
-  if (toolName === "data_chart_html" || toolName === "data_report_html") {
-    return {
-      toolCallId,
-      title: `Approve ${toolName}`,
-      summary:
-        "ResearchAgent is about to generate a research artifact without first calling the checkpoint tool.",
-      proposedAction: `${toolName} ${previewValue(args)}`,
-      risk: "Generated artifacts can be mistaken for reviewed analysis if they are produced before approval.",
-    };
-  }
+  // Writing local files and generating the local HTML report/charts are part of
+  // the normal autonomous market-research flow (reversible, in-workspace), so
+  // they are intentionally NOT auto-checkpointed. Only genuinely external or
+  // irreversible actions below require approval.
   if (toolName === "bash") {
     const command =
       args && typeof args === "object" && "command" in args
@@ -244,6 +313,7 @@ export async function createAgentRuntime(
       systemPrompt: resolved.systemPrompt,
       model: piModel,
       tools: resolved.tools,
+      messages: buildSeedMessages(options.seedHistory ?? []),
     },
     streamFn,
     beforeToolCall: async ({ toolCall, args }, signal) => {

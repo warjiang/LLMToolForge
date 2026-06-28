@@ -17,6 +17,7 @@ export type {
   AgentRuntimeOptions,
   AgentToolStartInfo,
   AgentToolEndInfo,
+  SeedHistoryMessage,
 } from "./runtime";
 export {
   buildInternalTools,
