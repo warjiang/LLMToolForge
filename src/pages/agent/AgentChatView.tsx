@@ -158,6 +158,7 @@ import {
   DATA_AGENT_ID,
   RESEARCH_AGENT_ID,
 } from "@/lib/agent/builtinAgents";
+import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
 interface ConnOption {
   key: string;
@@ -3666,10 +3667,13 @@ function ChatBubble({
             !generatedVideos.includes(attachment)
         )
       : message.attachments;
-  const visibleContent =
+  const rawVisibleContent =
     message.error && message.content.trim() === message.error.trim()
       ? ""
       : message.content;
+  const visibleContent = sanitizeLeakedToolCallText(rawVisibleContent, {
+    checkpointFallback: t("agent_leaked_checkpoint_tool_call"),
+  });
   const hasToolCalls = !isUser && !!toolCalls && toolCalls.length > 0;
   const hasMessageBubble =
     editing ||

@@ -21,6 +21,7 @@ import { createUnifiedRuntime } from "./provider";
 import { resolveAgent } from "./agentDefinition";
 import { ensureGatewayFetch } from "./gatewayFetch";
 import type { CheckpointRequest, RequestCheckpoint } from "./tools/internal";
+import { sanitizeLeakedToolCallText } from "./leakedToolCallText";
 
 export class GatewayUnavailableError extends Error {
   constructor(message: string) {
@@ -88,10 +89,11 @@ function gatewayBaseUrl(port: number): string {
 /** Extract plain text from an assistant message's content blocks. */
 function assistantText(message: AgentMessage): string {
   if (message.role !== "assistant") return "";
-  return message.content
+  const text = message.content
     .filter((c): c is { type: "text"; text: string } => c.type === "text")
     .map((c) => c.text)
     .join("");
+  return sanitizeLeakedToolCallText(text);
 }
 
 function resultToText(result: AgentToolResult<unknown> | undefined): string {

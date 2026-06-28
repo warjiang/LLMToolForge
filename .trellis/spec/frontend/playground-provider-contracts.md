@@ -183,6 +183,10 @@ await generateAssistantFromCurrentHistory(userId);
 - Stop/reset/session rewrite rejects the pending checkpoint and clears the UI.
 - Checkpoint suspension is in-memory only; persisted tool calls are audit
   records, not resumable promises after app restart.
+- If a model writes pseudo tool syntax such as `<functions.checkpoint ...>` in
+  assistant text instead of issuing a real tool call, the app must not display
+  the raw function-call blob or treat approval as pending. Runtime/UI text
+  sanitization should replace it with a retry notice.
 
 ### 4. Validation & Error Matrix
 - Missing `requestCheckpoint` -> tool error.
@@ -194,6 +198,8 @@ await generateAssistantFromCurrentHistory(userId);
   checkpoint before execution.
 - Auto-approval enabled -> no pending card, protected action continues, and the
   checkpoint tool result records the auto-approval note.
+- Assistant text contains leaked `<functions.checkpoint ...>` -> no approval is
+  considered active; render a retry notice instead of the raw pseudo call.
 
 ### 5. Good/Base/Bad Cases
 - Good: ResearchAgent asks for approval, user approves, and the same turn
@@ -202,7 +208,10 @@ await generateAssistantFromCurrentHistory(userId);
   runtime pauses before execution and waits for approval.
 - Base: User rejects, the checkpoint result is recorded, and no following tool
   calls execute in that turn.
+- Base: Model leaks checkpoint syntax as text; user sees a retry notice, not a
+  giant JSON blob or a fake pending approval claim.
 - Bad: Rendering an approval card without a linked pending `tool_calls` record.
+- Bad: Showing raw `<functions.checkpoint ...>` text in a chat bubble.
 
 ### 6. Tests Required
 - Type/build checks must cover checkpoint request/decision types.

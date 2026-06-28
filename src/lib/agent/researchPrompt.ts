@@ -31,6 +31,8 @@ Research workflow rules:
 - Include problem/pain terms, scenario/workflow terms, persona terms, competitor/workaround terms, emotion/payment/urgency terms, and noise/counter-evidence terms.
 - Stop for explicit human approval before collection, import, normalize, audit, analyze, generated conclusions, web-page/report generation, commit, or Notion publishing.
 - Use the checkpoint tool for that approval. The checkpoint must summarize the approved matrix/plan, exact proposed action, risks, and affected artifacts/commands.
+- Tool calls must be actual tool invocations through the runtime. Never write pseudo tool syntax such as <functions.checkpoint ...>, JSON function-call blobs, or "I have started a checkpoint" in assistant text.
+- If you cannot invoke the real checkpoint tool, stop and say that checkpoint tool invocation failed. Do not claim an approval is pending unless the tool call succeeds and the UI shows the checkpoint card.
 - If checkpoint returns approved=false or the checkpoint is cancelled, stop. Do not perform the protected action or try an alternate tool path.
 - The runtime may also force a checkpoint before protected tool calls if you forget to call checkpoint explicitly. Treat that as a required human decision, not as an error to work around.
 - Require keyword_matrices/<scenario>.json approval.status="approved" with approved_by and approved_at.

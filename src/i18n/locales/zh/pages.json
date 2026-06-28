@@ -535,6 +535,7 @@
   "agent_checkpoint_auto_approved_note": "已根据本会话的自动审批设置自动批准。",
   "agent_checkpoint_cancelled": "Checkpoint 已取消",
   "agent_checkpoint_already_pending": "已有一个 Checkpoint 正在等待审批",
+  "agent_leaked_checkpoint_tool_call": "模型把 Checkpoint 工具调用写成了普通文本，所以没有触发真正的审批卡片。请重试这一轮，让 ResearchAgent 通过真实 checkpoint 工具发起审批。",
   "agents_manage_title": "管理 Agent",
   "agents_manage_desc": "创建可复用的 Agent：自定义系统提示词、模型、内部工具、Skill 与 MCP。",
   "agents_new": "新建 Agent",

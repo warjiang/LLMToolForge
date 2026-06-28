@@ -535,6 +535,7 @@
   "agent_checkpoint_auto_approved_note": "Auto-approved by the session auto-approval setting.",
   "agent_checkpoint_cancelled": "Checkpoint cancelled",
   "agent_checkpoint_already_pending": "Another checkpoint is already waiting for approval",
+  "agent_leaked_checkpoint_tool_call": "The model wrote the Checkpoint tool call as plain text, so no real approval card was opened. Retry this turn so ResearchAgent can request approval through the real checkpoint tool.",
   "agents_manage_title": "Manage Agents",
   "agents_manage_desc": "Create reusable agents with custom system prompts, models, internal tools, skills and MCP.",
   "agents_new": "New Agent",
