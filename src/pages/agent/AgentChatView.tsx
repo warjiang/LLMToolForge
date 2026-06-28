@@ -4106,7 +4106,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           onClick={() => expandable && setOpen((v) => !v)}
           disabled={!expandable}
           className={cn(
-            "relative flex min-w-0 flex-1 flex-col gap-1 overflow-hidden px-2.5 py-1.5 text-left",
+            "relative flex min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 text-left",
             expandable && "cursor-pointer hover:bg-muted/40"
           )}
         >
@@ -4134,7 +4134,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               <Check className="h-3.5 w-3.5 shrink-0 text-success" />
             )}
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="truncate font-mono text-label-12 font-medium text-foreground">
+              <span className="max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground">
                 {parsed.name}
               </span>
               {parsed.server && (
@@ -4142,6 +4142,16 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                   <Server className="h-3 w-3" />
                   {parsed.server}
                 </span>
+              )}
+              {goal && (
+                <>
+                  <span className="shrink-0 text-label-12 text-muted-foreground/50">
+                    ·
+                  </span>
+                  <span className="min-w-0 flex-1 truncate text-label-12 text-muted-foreground">
+                    {goal}
+                  </span>
+                </>
               )}
             </span>
             {typeof call.durationMs === "number" && call.durationMs > 0 && (
@@ -4160,11 +4170,6 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               />
             )}
           </span>
-          {goal && (
-            <span className="line-clamp-2 w-full min-w-0 pl-[3.75rem] text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
-              {goal}
-            </span>
-          )}
         </button>
         {artifact && (
           <button

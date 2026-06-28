@@ -309,8 +309,9 @@ await data_report_html({ title, sections, outputPath });
 - Internal tools ignore `goal` when invoking Tauri commands.
 - ResearchAgent and DataAgent prompts should ask models to fill `goal` whenever
   the tool schema supports it.
-- `ToolCallCard` renders `arguments.goal` below the tool name on the collapsed
-  card and still preserves the original arguments in the expanded details.
+- `ToolCallCard` renders `arguments.goal` inline after the tool name on the
+  collapsed card and still preserves the original arguments in the expanded
+  details.
 - Missing or invalid `goal` is allowed for backward compatibility; old tool-call
   records render unchanged.
 - MCP and skill tools may also display a goal if their serialized arguments
@@ -319,7 +320,7 @@ await data_report_html({ title, sections, outputPath });
 ### 4. Validation & Error Matrix
 - `arguments_json` is invalid JSON -> no goal rendered, card remains usable.
 - `goal` is empty or non-string -> no goal rendered.
-- Very long `goal` -> clamp to two lines and avoid horizontal overflow.
+- Very long `goal` -> truncate on one line and avoid horizontal overflow.
 
 ### 5. Good/Base/Bad Cases
 - Good: `read` call shows "读取 audit.md 以确认是否存在阻断性缺失来源问题".
