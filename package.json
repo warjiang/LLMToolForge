@@ -10,7 +10,9 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "tauri build",
+    "clean": "bash scripts/clean.sh",
+    "clean:all": "bash scripts/clean.sh --all"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
