@@ -224,3 +224,62 @@ const decision = await checkpoint({ title, summary, proposedAction });
 if (!decision.approved) return;
 await dangerousResearchStep();
 ```
+
+## Scenario: ResearchAgent HTML Deliverables
+
+### 1. Scope / Trigger
+- Trigger: `ResearchAgent` needs browser-previewable research pages while
+  keeping the existing DataAgent local HTML artifact pipeline.
+
+### 2. Signatures
+- Internal tools: `data_chart_html`, `data_report_html`.
+- `data_chart_html` response must include `outputDir`, `outputPath`, `title`.
+- `data_report_html` response must include `outputDir`, `outputPath`, `title`.
+- Artifact preview: `dataArtifact(toolName, resultJson)` recognizes those two
+  tool names and opens `outputDir`.
+
+### 3. Contracts
+- `ResearchAgent` uses `data_chart_html` for interactive ECharts charts and
+  `data_report_html` for multi-section report pages.
+- These tools are generated-artifact tools and require checkpoint approval, or
+  auto-approval when the session setting is explicitly enabled.
+- Research pages must be evidence-backed; final conclusions require audit-clean
+  evidence first.
+- Prefer explicit output paths under the session project root, such as
+  `analysis/<scenario>/web-report` or `research-artifacts/<scenario>/report`,
+  rather than relying on the `dataagent-artifacts` default directory.
+- Do not create a separate TypeScript reporting pipeline for ResearchAgent.
+
+### 4. Validation & Error Matrix
+- Sandbox mode blocks writing the requested output path -> tool error.
+- Missing audit-clean evidence for final conclusions -> do not generate a final
+  conclusions page.
+- Direct `data_chart_html` / `data_report_html` call without explicit checkpoint
+  -> ResearchAgent runtime guard synthesizes a checkpoint first.
+
+### 5. Good/Base/Bad Cases
+- Good: After audit approval, ResearchAgent calls `data_report_html` with
+  section text that cites local evidence artifacts and opens the result preview.
+- Base: A planning-only page request first asks for approval before generating a
+  draft HTML artifact.
+- Bad: ResearchAgent writes raw HTML/React files by hand to bypass the built-in
+  artifact tools.
+
+### 6. Tests Required
+- Type/build checks must cover ResearchAgent prompt and tool definitions.
+- Manual desktop test should generate a ResearchAgent HTML report and verify the
+  browser preview opens the artifact.
+- Manual test should verify Direct/DataAgent behavior remains unchanged.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await write({ path: "report.html", content: handcraftedHtml });
+```
+
+#### Correct
+```typescript
+const decision = await checkpoint({ title, summary, proposedAction });
+if (!decision.approved) return;
+await data_report_html({ title, sections, outputPath });
+```

@@ -280,7 +280,7 @@ function buildResearchAgentDef(
     updatedAt: now,
     name: "ResearchAgent",
     description:
-      "Operate a local research-harness workspace through existing agent tools.",
+      "Operate a local research-harness workspace and create evidence-backed HTML research deliverables.",
     systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
     modelId: unifiedModelId,
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],

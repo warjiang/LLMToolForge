@@ -39,6 +39,10 @@ operate the harness through the existing agent tools.
 - Add a ResearchAgent runtime guard so models that skip visible reasoning or do
   not voluntarily call `checkpoint` are still paused before protected shell,
   write/edit, or generated-artifact tool calls.
+- Allow `ResearchAgent` to use the existing DataAgent-style HTML deliverable
+  tools (`data_chart_html` and `data_report_html`) for evidence-backed browser
+  preview pages after checkpoint approval. Do not create a separate TypeScript
+  reporting pipeline.
 - Drafting a keyword matrix or channel crawl plan must not require path setup or
   harness repository detection; repository verification is only required before
   CLI/file operations.
@@ -64,6 +68,9 @@ operate the harness through the existing agent tools.
       enables the per-session auto-approval switch.
 - [ ] `ResearchAgent` also displays an approval checkpoint when a model directly
       calls a protected tool without first calling the `checkpoint` tool.
+- [ ] `ResearchAgent` can generate an evidence-backed HTML report or chart with
+      `data_report_html` / `data_chart_html`, opening it through the existing
+      browser preview artifact flow.
 - [ ] Read-only mode does not silently allow writes; workspace-write mode allows
       session-workspace research file writes.
 

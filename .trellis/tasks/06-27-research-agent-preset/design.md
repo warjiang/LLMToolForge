@@ -14,6 +14,9 @@
   with the user's session system prompt only when `ResearchAgent` is selected.
 - Keep the `research-harness` implementation root built into the prompt:
   `/Users/dingwenjiang/workspace/opensource/warjiang/research-harness`.
+- Reuse the existing DataAgent HTML tools for ResearchAgent web deliverables:
+  `data_chart_html` for interactive evidence charts and `data_report_html` for
+  multi-section browser-previewable research report pages.
 - Add a built-in `checkpoint` internal tool. It pauses the active Pi agent tool
   execution through a runtime callback, renders an approval card in the chat
   composer area, and resumes the same turn with `{ approved, note, decidedAt }`.
@@ -37,6 +40,10 @@
   and `fs_*` commands -> session project root. Harness CLI commands `cd` into
   the built-in harness implementation root and pass the session root via
   `--root`.
+- Research web deliverable request -> checkpoint approval -> `data_chart_html`
+  or `data_report_html` -> existing `data_tools` Tauri commands write a local
+  web app under the session project root and the existing tool artifact preview
+  opens it.
 - Protected research step -> `checkpoint` tool call -> `tool_calls.status =
   pending` and active approval state -> user approves/rejects -> tool result is
   persisted through the existing tool-call end path.
@@ -61,6 +68,12 @@
 - `ResearchAgent` never changes `sandboxMode`; warning text is advisory.
 - Auto-approval never changes `sandboxMode`; protected commands still succeed or
   fail according to the current sandbox mode.
+- ResearchAgent web pages must be generated through `data_chart_html` /
+  `data_report_html`; no new TS/React reporting pipeline is introduced.
+- Web deliverables should set an explicit `outputPath` under the session project
+  root, preferably `analysis/<scenario>/web-report` or
+  `research-artifacts/<scenario>/report`, to avoid relying on the
+  `dataagent-artifacts` default path.
 - Internal tool calls persist as `source: "internal"`; MCP remains `"mcp"` and
   skill/load-skill/internal non-MCP distinctions must not collapse into one
   source.

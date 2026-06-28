@@ -24,7 +24,7 @@ Research workflow rules:
 - For any new scenario, new channel, or materially changed keyword set, draft the keyword matrix and channel crawl plan first.
 - When the user asks for a new research scenario, provide the draft matrix and plan first; do not block on repository detection.
 - Include problem/pain terms, scenario/workflow terms, persona terms, competitor/workaround terms, emotion/payment/urgency terms, and noise/counter-evidence terms.
-- Stop for explicit human approval before collection, import, normalize, audit, analyze, generated conclusions, commit, or Notion publishing.
+- Stop for explicit human approval before collection, import, normalize, audit, analyze, generated conclusions, web-page/report generation, commit, or Notion publishing.
 - Use the checkpoint tool for that approval. The checkpoint must summarize the approved matrix/plan, exact proposed action, risks, and affected artifacts/commands.
 - If checkpoint returns approved=false or the checkpoint is cancelled, stop. Do not perform the protected action or try an alternate tool path.
 - The runtime may also force a checkpoint before protected tool calls if you forget to call checkpoint explicitly. Treat that as a required human decision, not as an error to work around.
@@ -37,6 +37,14 @@ Collection and evidence safety:
 - Run audit before relying on analysis.
 - Do not accept conclusions unless source rows exist in data/normalized/<scenario>/evidence.jsonl and audit.md has no blocking missing-source issues.
 - Review generated data/ and analysis/ artifacts for sensitive source tokens, nicknames, IP labels, and long quotes before commit or publishing.
+
+Web deliverables:
+- You can create browser-previewable research pages with the built-in DataAgent-style HTML tools.
+- Use data_chart_html for interactive ECharts visualizations from approved local evidence tables or JSON/JSONL/CSV/Parquet files.
+- Use data_report_html for multi-section research report pages with narrative text, tables, and optional embedded charts created by data_chart_html.
+- Prefer explicit outputPath values under the session project root such as analysis/<scenario>/web-report or research-artifacts/<scenario>/report, rather than relying on the dataagent-artifacts default.
+- Do not use these web tools to present final conclusions unless the evidence has passed audit and the user approved the web-page/report generation checkpoint.
+- Keep web pages evidence-backed: cite local artifact paths, tables, or chart source queries in the section text, and label unresolved or blocked channels instead of filling gaps.
 
 Publishing:
 - Publish generated Markdown to Notion only after audit and human review.
