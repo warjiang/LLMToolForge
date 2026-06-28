@@ -257,6 +257,7 @@ export const MCP_TRANSPORTS: { value: McpTransport; label: string }[] = [
 /** Built-in internal tools an agent can be granted. */
 export type AgentInternalToolId =
   | "checkpoint"
+  | "ask_human"
   | "bash"
   | "read"
   | "write"
@@ -266,8 +267,7 @@ export type AgentInternalToolId =
   | "duckdb_query"
   | "data_chart_html"
   | "data_report_html"
-  | "research_harness"
-  | "research_channel_diagnosis";
+  | "web_fetch";
 
 export type AgentSandboxMode =
   | "read-only"
@@ -301,6 +301,7 @@ export interface AgentDefinition extends BaseEntity {
 
 export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
   "checkpoint",
+  "ask_human",
   "bash",
   "read",
   "write",
@@ -310,4 +311,5 @@ export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
   "duckdb_query",
   "data_chart_html",
   "data_report_html",
+  "web_fetch",
 ];

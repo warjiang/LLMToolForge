@@ -20,7 +20,11 @@ import { buildPiModel } from "./model";
 import { createUnifiedRuntime } from "./provider";
 import { resolveAgent } from "./agentDefinition";
 import { ensureGatewayFetch } from "./gatewayFetch";
-import type { CheckpointRequest, RequestCheckpoint } from "./tools/internal";
+import type {
+  CheckpointRequest,
+  RequestCheckpoint,
+  RequestAsk,
+} from "./tools/internal";
 import { sanitizeLeakedToolCallText } from "./leakedToolCallText";
 
 export class GatewayUnavailableError extends Error {
@@ -87,6 +91,7 @@ export interface SeedHistoryMessage {
 export interface AgentRuntimeOptions {
   workspacePath?: string;
   requestCheckpoint?: RequestCheckpoint;
+  requestAsk?: RequestAsk;
   autoCheckpoint?: boolean;
   /**
    * Prior conversation, oldest-first, used to seed a freshly-created runtime so
@@ -160,43 +165,12 @@ function resultToText(result: AgentToolResult<unknown> | undefined): string {
     .join("\n");
 }
 
-function previewValue(value: unknown, max = 1200): string {
-  let text: string;
-  try {
-    text =
-      typeof value === "string" ? value : JSON.stringify(value ?? {}, null, 2);
-  } catch {
-    text = String(value);
-  }
-  return text.length > max ? `${text.slice(0, max)}…` : text;
-}
-
 function protectedResearchCommand(command: string): boolean {
   const normalized = command.toLowerCase();
   if (/\bgit\s+(commit|push)\b/.test(normalized)) return true;
   if (/\b(notion|publish)\b/.test(normalized)) return true;
-  if (
-    /\b(research_harness|make)\b/.test(normalized) &&
-    /\b(collect|collection|import|ingest|normalize|audit|analy[sz]e|analysis|publish|commit)\b/.test(
-      normalized
-    )
-  ) {
-    return true;
-  }
   return false;
 }
-
-/** Research stage commands that require human approval before running. */
-const PROTECTED_RESEARCH_COMMANDS = new Set([
-  "collect-delta",
-  "ingest",
-  "ingest-delta",
-  "normalize",
-  "audit",
-  "analyze",
-  "approve-delta",
-  "publish-notion",
-]);
 
 function autoCheckpointRequest(
   toolCallId: string,
@@ -204,22 +178,6 @@ function autoCheckpointRequest(
   args: unknown
 ): CheckpointRequest | null {
   if (toolName === "checkpoint") return null;
-  if (toolName === "research_harness") {
-    const command =
-      args && typeof args === "object" && "command" in args
-        ? String((args as { command?: unknown }).command ?? "")
-        : "";
-    if (!PROTECTED_RESEARCH_COMMANDS.has(command)) return null;
-    return {
-      toolCallId,
-      title: `Approve research: ${command}`,
-      summary:
-        "ResearchAgent is about to run a protected harness stage without first calling the checkpoint tool.",
-      proposedAction: `research_harness ${previewValue(args)}`,
-      risk: "This may collect, import, normalize, audit, analyze, approve, or publish research data.",
-      artifacts: [command],
-    };
-  }
   // Writing local files and generating the local HTML report/charts are part of
   // the normal autonomous market-research flow (reversible, in-workspace), so
   // they are intentionally NOT auto-checkpointed. Only genuinely external or
@@ -294,6 +252,7 @@ export async function createAgentRuntime(
     mcpServers: useMcpStore.getState().items,
     workspacePath: options.workspacePath,
     requestCheckpoint: options.requestCheckpoint,
+    requestAsk: options.requestAsk,
   });
 
   console.debug("[agent] runtime built", {

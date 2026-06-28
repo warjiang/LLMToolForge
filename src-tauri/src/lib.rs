@@ -15,6 +15,8 @@ mod fs_tools;
 mod mcp;
 mod preview;
 mod unified;
+mod web_fetch;
+mod web_fetch_render;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -353,143 +355,6 @@ fn execution_root(workspace_root: &str) -> Result<PathBuf, String> {
         default_sandbox_dir()
     } else {
         Ok(PathBuf::from(workspace_root.trim()))
-    }
-}
-
-/// Resolved location + Python preflight for the vendored research-harness.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ResearchHarnessInfo {
-    /// Absolute path to the harness root (the dir that contains
-    /// `research_harness/`). Empty when not found.
-    root: String,
-    /// Python interpreter chosen for the harness (e.g. `python3`).
-    python: Option<String>,
-    /// Detected `python --version` string, when available.
-    python_version: Option<String>,
-    /// True when both the harness root and a compatible Python were found.
-    ready: bool,
-    /// Human-readable reason the harness is not ready, when `ready` is false.
-    error: Option<String>,
-}
-
-/// True when `dir` looks like a research-harness root.
-fn is_harness_root(dir: &Path) -> bool {
-    dir.join("research_harness").join("__main__.py").is_file()
-        || (dir.join("pyproject.toml").is_file() && dir.join("research_harness").is_dir())
-}
-
-/// Locate the vendored harness root.
-///
-/// Resolution order:
-/// 1. Bundled resource dir (`<resources>/research-harness`) for packaged builds.
-/// 2. Dev checkout relative to the crate (`<crate>/../sidecar/research-harness`).
-/// 3. Walk up from the executable looking for `sidecar/research-harness`.
-fn find_harness_root(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let mut candidates: Vec<PathBuf> = Vec::new();
-
-    if let Ok(resource_dir) = app.path().resource_dir() {
-        candidates.push(resource_dir.join("research-harness"));
-        candidates.push(resource_dir.join("sidecar").join("research-harness"));
-    }
-
-    let crate_dir = Path::new(env!("CARGO_MANIFEST_DIR"));
-    candidates.push(crate_dir.join("../sidecar/research-harness"));
-
-    if let Ok(exe) = std::env::current_exe() {
-        let mut cur = exe.parent().map(Path::to_path_buf);
-        let mut steps = 0;
-        while let Some(dir) = cur {
-            candidates.push(dir.join("sidecar/research-harness"));
-            if steps >= 6 {
-                break;
-            }
-            steps += 1;
-            cur = dir.parent().map(Path::to_path_buf);
-        }
-    }
-
-    candidates
-        .into_iter()
-        .find(|c| is_harness_root(c))
-        .map(|c| c.canonicalize().unwrap_or(c))
-}
-
-/// Detect a Python >= 3.10 interpreter for running the harness.
-/// Returns `(interpreter, version_string)` on success.
-fn detect_python() -> Result<(String, String), String> {
-    for candidate in ["python3", "python"] {
-        let output = Command::new(candidate).arg("--version").output();
-        let Ok(output) = output else { continue };
-        if !output.status.success() {
-            continue;
-        }
-        let mut version = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if version.is_empty() {
-            version = String::from_utf8_lossy(&output.stderr).trim().to_string();
-        }
-        if let Some((major, minor)) = parse_python_version(&version) {
-            if (major, minor) >= (3, 10) {
-                return Ok((candidate.to_string(), version));
-            }
-            return Err(format!(
-                "research-harness 需要 Python >= 3.10，但检测到 {version}"
-            ));
-        }
-    }
-    Err("未找到可用的 python3（research-harness 需要 Python >= 3.10）".to_string())
-}
-
-/// Parse `(major, minor)` out of a `Python X.Y.Z` version banner.
-fn parse_python_version(banner: &str) -> Option<(u32, u32)> {
-    let digits = banner
-        .chars()
-        .skip_while(|c| !c.is_ascii_digit())
-        .take_while(|c| c.is_ascii_digit() || *c == '.')
-        .collect::<String>();
-    let mut parts = digits.split('.');
-    let major = parts.next()?.parse().ok()?;
-    let minor = parts.next().unwrap_or("0").parse().ok()?;
-    Some((major, minor))
-}
-
-/// Resolve the vendored research-harness root and verify the Python runtime.
-///
-/// The ResearchAgent calls this once per run to find where the harness lives
-/// (no hardcoded absolute path) and to surface a clear error when the host is
-/// missing a compatible Python before any pipeline command runs.
-#[tauri::command]
-fn resolve_research_harness_root(app: tauri::AppHandle) -> Result<ResearchHarnessInfo, String> {
-    let root = match find_harness_root(&app) {
-        Some(root) => root,
-        None => {
-            return Ok(ResearchHarnessInfo {
-                root: String::new(),
-                python: None,
-                python_version: None,
-                ready: false,
-                error: Some(
-                    "未找到内置的 research-harness（应位于 sidecar/research-harness）".to_string(),
-                ),
-            });
-        }
-    };
-
-    match detect_python() {
-        Ok((python, version)) => Ok(ResearchHarnessInfo {
-            root: root.display().to_string(),
-            python: Some(python),
-            python_version: Some(version),
-            ready: true,
-            error: None,
-        }),
-        Err(err) => Ok(ResearchHarnessInfo {
-            root: root.display().to_string(),
-            python: None,
-            python_version: None,
-            ready: false,
-            error: Some(err),
-        }),
     }
 }
 
@@ -1080,7 +945,6 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             run_sandboxed_command,
-            resolve_research_harness_root,
             save_chat_attachment,
             ensure_session_workspace,
             delete_session_workspace,
@@ -1117,6 +981,7 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_close,
             browser::browser_status,
+            web_fetch::web_fetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

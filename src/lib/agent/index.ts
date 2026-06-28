@@ -26,9 +26,14 @@ export {
 export type {
   CheckpointDecision,
   CheckpointRequest,
+  AskHumanKind,
+  AskHumanField,
+  AskHumanRequest,
+  AskHumanResponse,
   InternalToolId,
   InternalToolDeps,
   RequestCheckpoint,
+  RequestAsk,
 } from "./tools/internal";
 export { buildMcpTools, prewarmMcpServers } from "./tools/mcp";
 export { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";

@@ -22,6 +22,35 @@ const MAIN_WINDOW: &str = "main";
 const EVENT_NAVIGATED: &str = "browser://navigated";
 const EVENT_LOADING: &str = "browser://loading";
 
+/// Clamp a logical rect to the main window's content area so the embedded
+/// webview can never paint beyond the window edges (which shows up as a black
+/// bleed) even if the frontend briefly reports stale or oversized bounds during
+/// a layout transition.
+fn clamp_to_window(
+    app: &AppHandle,
+    x: f64,
+    y: f64,
+    width: f64,
+    height: f64,
+) -> (f64, f64, f64, f64) {
+    let window = match app.get_window(MAIN_WINDOW) {
+        Some(w) => w,
+        None => return (x, y, width, height),
+    };
+    let (size, scale) = match (window.inner_size(), window.scale_factor()) {
+        (Ok(size), Ok(scale)) => (size, scale),
+        _ => return (x, y, width, height),
+    };
+    let logical = size.to_logical::<f64>(scale);
+    let max_w = logical.width.max(1.0);
+    let max_h = logical.height.max(1.0);
+    let cx = x.clamp(0.0, max_w);
+    let cy = y.clamp(0.0, max_h);
+    let cw = width.max(1.0).min((max_w - cx).max(1.0));
+    let ch = height.max(1.0).min((max_h - cy).max(1.0));
+    (cx, cy, cw, ch)
+}
+
 /// Managed navigation history for the embedded browser.
 pub struct BrowserState(pub Mutex<BrowserInner>);
 
@@ -128,6 +157,7 @@ pub fn browser_open(
     height: f64,
 ) -> Result<(), String> {
     let parsed = normalize_url(&url)?;
+    let (x, y, width, height) = clamp_to_window(&app, x, y, width, height);
 
     if let Some(webview) = app.get_webview(BROWSER_LABEL) {
         webview
@@ -240,6 +270,7 @@ pub fn browser_set_bounds(
     width: f64,
     height: f64,
 ) -> Result<(), String> {
+    let (x, y, width, height) = clamp_to_window(&app, x, y, width, height);
     if let Some(webview) = app.get_webview(BROWSER_LABEL) {
         webview
             .set_position(LogicalPosition::new(x, y))

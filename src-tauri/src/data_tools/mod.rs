@@ -828,6 +828,7 @@ body {
     var(--bg);
   color: var(--ink);
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
 }
 #app { width: min(1080px, calc(100vw - 40px)); margin: 0 auto; padding: 40px 0 64px; }
 .boot { color: var(--muted); padding: 80px 0; text-align: center; }
@@ -850,7 +851,13 @@ h1 { margin: 0; font-size: 30px; line-height: 1.12; letter-spacing: -.01em; font
   box-shadow: var(--shadow);
 }
 .card h2 { margin: 0 0 4px; font-size: 17px; font-weight: 650; letter-spacing: -.01em; }
-.card .section-text { margin: 10px 0 0; color: #3b3f4d; line-height: 1.7; font-size: 14px; }
+.card { min-width: 0; overflow-wrap: anywhere; }
+.card .section-text { margin: 10px 0 0; color: #3b3f4d; line-height: 1.7; font-size: 14px; overflow-wrap: anywhere; word-break: break-word; }
+.card .section-text b, .card .section-text strong { color: #1f2430; font-weight: 650; }
+.card .section-text ul, .card .section-text ol { margin: 8px 0 0; padding-left: 20px; }
+.card .section-text li { margin: 3px 0; }
+.card .section-text p { margin: 8px 0 0; }
+.card .section-text code { background: #f2f3f7; border-radius: 4px; padding: 1px 5px; font-size: 12.5px; }
 .chart-box { width: 100%; height: 440px; }
 .card.is-chart { padding: 14px 14px 10px; }
 .card-label { margin: 0 0 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
@@ -874,6 +881,15 @@ const FONT = '"Inter","Geist",ui-sans-serif,system-ui,-apple-system,"PingFang SC
 const charts = [];
 
 function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m])); }
+// Render section narrative as safe rich text: fully escape first (so scripts,
+// attributes and unknown tags stay inert), then restore ONLY a whitelist of
+// attribute-less inline/list tags. Authors may also use plain newlines.
+function richText(s){
+  let h = esc(s);
+  h = h.replace(/&lt;(\/?)(b|strong|i|em|u|s|br|ul|ol|li|p|code|small|sub|sup|h3|h4)\s*\/?\s*&gt;/gi, "<$1$2>");
+  h = h.replace(/\n/g, "<br>");
+  return h;
+}
 function num(v){ if(typeof v==="number") return isFinite(v)?v:null; const n=parseFloat(v); return isFinite(n)?n:null; }
 function fmt(v){ if(v==null) return ""; if(typeof v==="number") return Number.isInteger(v)?v.toLocaleString():(+v.toFixed(4)).toLocaleString(); return String(v); }
 function uniq(arr){ const out=[]; const seen=new Set(); for(const v of arr){ const k=String(v); if(!seen.has(k)){ seen.add(k); out.push(v);} } return out; }
@@ -1022,7 +1038,7 @@ function renderReport(app, data){
     const card = document.createElement("div");
     card.className = "card";
     let html = `<h2>${esc(s.heading||"")}</h2>`;
-    if (s.text) html += `<p class="section-text">${esc(s.text).replace(/\n/g,"<br>")}</p>`;
+    if (s.text) html += `<div class="section-text">${richText(s.text)}</div>`;
     card.innerHTML = html;
     if (s.table) {
       const wrap = document.createElement("div"); wrap.style.marginTop = "12px";

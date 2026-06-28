@@ -22,12 +22,11 @@ import {
   browserForward,
   browserReload,
   getBrowserStatus,
-  hideBrowser,
   onBrowserLoading,
   onBrowserNavigated,
   openBrowser,
   setBrowserBounds,
-  showBrowser,
+  setBrowserPreviewVisible,
   type BrowserBounds,
 } from "@/lib/browser";
 
@@ -105,10 +104,17 @@ export function BrowserPreview({
       const bounds = readBounds();
       if (!bounds) return;
       setLoading(true);
-      void openBrowser(url, bounds);
+      void openBrowser(url, bounds).then(() => setBrowserPreviewVisible(true));
     },
     [address, readBounds]
   );
+
+  // Keep a stable handle to the latest `go` so the auto-navigate effect below
+  // does not depend on its identity (which changes whenever `address` updates).
+  const goRef = useRef(go);
+  useEffect(() => {
+    goRef.current = go;
+  });
 
   // Subscribe to navigation / loading events and restore an existing session.
   useEffect(() => {
@@ -138,7 +144,7 @@ export function BrowserPreview({
         setCanGoBack(s.canGoBack);
         setCanGoForward(s.canGoForward);
         syncBounds();
-        void showBrowser();
+        setBrowserPreviewVisible(true);
       }
     });
 
@@ -146,36 +152,52 @@ export function BrowserPreview({
       active = false;
       unsubs.forEach((u) => u());
       // Keep the webview alive across mounts, just hide it.
-      void hideBrowser();
+      setBrowserPreviewVisible(false);
     };
   }, [desktop, syncBounds]);
 
-  // Keep the native webview aligned with the host element.
+  // Keep the native webview glued to the host element. A ResizeObserver only
+  // fires on SIZE changes, but layout shifts like collapsing/expanding the app
+  // sidebar move the host's X/Y without resizing it, which would leave the
+  // native webview stranded at its old coordinates (overflowing the panel). A
+  // lightweight rAF loop re-reads the host rect every frame and pushes new
+  // bounds only when they actually change, so the webview tracks any layout or
+  // animated transition exactly.
   useLayoutEffect(() => {
     if (!desktop) return;
-    syncBounds();
-    const el = hostRef.current;
-    const ro = el ? new ResizeObserver(() => syncBounds()) : null;
-    if (el && ro) ro.observe(el);
-    window.addEventListener("resize", syncBounds);
-    document.addEventListener("scroll", syncBounds, true);
-    return () => {
-      ro?.disconnect();
-      window.removeEventListener("resize", syncBounds);
-      document.removeEventListener("scroll", syncBounds, true);
+    let raf = 0;
+    let lastKey = "";
+    const tick = () => {
+      const b = readBounds();
+      if (b) {
+        const key = `${b.x},${b.y},${b.width},${b.height}`;
+        if (key !== lastKey) {
+          lastKey = key;
+          void setBrowserBounds(b);
+        }
+      }
+      raf = requestAnimationFrame(tick);
     };
-  }, [desktop, syncBounds]);
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [desktop, readBounds]);
 
   // Auto-navigate when an external URL is supplied (e.g. DataAgent artifact).
   useEffect(() => {
     if (!desktop || !navUrl) return;
     if (lastNavRef.current === navNonce) return;
-    lastNavRef.current = navNonce;
     setAddress(navUrl);
-    // Defer so the host element has its final bounds before opening.
-    const id = requestAnimationFrame(() => go(navUrl));
+    // Defer so the host element has its final bounds before opening. The dedupe
+    // marker is set inside the rAF (not before) so a StrictMode mount/cleanup/
+    // mount cycle still schedules and runs the navigation exactly once. The
+    // effect intentionally does NOT depend on `go`, so the `setAddress`
+    // re-render cannot cancel this rAF before it fires.
+    const id = requestAnimationFrame(() => {
+      lastNavRef.current = navNonce;
+      goRef.current(navUrl);
+    });
     return () => cancelAnimationFrame(id);
-  }, [desktop, navUrl, navNonce, go]);
+  }, [desktop, navUrl, navNonce]);
 
   if (!desktop) {
     return (
@@ -263,7 +285,12 @@ export function BrowserPreview({
 
       <div
         ref={hostRef}
-        className="relative flex min-h-0 flex-1 items-center justify-center overflow-hidden rounded-md border border-border bg-background-secondary"
+        className={cn(
+          "relative flex min-h-0 flex-1 items-center justify-center overflow-hidden bg-background-secondary",
+          // Standalone browser page keeps a framed look; the in-chat preview
+          // (minimalChrome) sits flush against the panel edges with no margin.
+          !minimalChrome && "rounded-md border border-border"
+        )}
       >
         {!currentUrl && (
           <div className="flex flex-col items-center gap-4 px-6 text-center">
