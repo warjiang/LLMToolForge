@@ -39,6 +39,9 @@ operate the harness through the existing agent tools.
 - Add a ResearchAgent runtime guard so models that skip visible reasoning or do
   not voluntarily call `checkpoint` are still paused before protected shell,
   write/edit, or generated-artifact tool calls.
+- Add a user-visible tool-call `goal` convention so ResearchAgent execution
+  timelines explain the intent of each tool step while preserving existing tool
+  call arguments and results.
 - Allow `ResearchAgent` to use the existing DataAgent-style HTML deliverable
   tools (`data_chart_html` and `data_report_html`) for evidence-backed browser
   preview pages after checkpoint approval. Do not create a separate TypeScript
@@ -71,6 +74,8 @@ operate the harness through the existing agent tools.
 - [ ] `ResearchAgent` can generate an evidence-backed HTML report or chart with
       `data_report_html` / `data_chart_html`, opening it through the existing
       browser preview artifact flow.
+- [ ] ResearchAgent tool cards show a concise generated goal when the tool call
+      arguments include `goal`.
 - [ ] Read-only mode does not silently allow writes; workspace-write mode allows
       session-workspace research file writes.
 

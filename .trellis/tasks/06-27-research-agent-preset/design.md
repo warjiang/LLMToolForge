@@ -27,6 +27,9 @@
 - Add a ResearchAgent-only `beforeToolCall` guard that synthesizes a checkpoint
   when a model directly calls protected tools instead of explicitly calling
   `checkpoint`.
+- Add an optional `goal` parameter to internal tool schemas and render it on
+  collapsed tool cards when present. This is a UI readability field only; tool
+  execution ignores it.
 
 ## Data Flow
 
@@ -53,6 +56,9 @@
 - Direct protected tool call -> Pi `beforeToolCall` -> synthesized checkpoint
   request using the same tool call id -> approval card -> approved continues the
   original tool; rejected blocks/aborts the original tool.
+- Tool call with `arguments.goal` -> `tool_calls.arguments_json` persistence ->
+  collapsed `ToolCallCard` renders the goal below the tool name; expand still
+  shows the original arguments/result payload.
 
 ## Contracts
 
@@ -77,6 +83,8 @@
 - Internal tool calls persist as `source: "internal"`; MCP remains `"mcp"` and
   skill/load-skill/internal non-MCP distinctions must not collapse into one
   source.
+- `goal` is not a separate database column; it lives in `arguments_json` for
+  compatibility with MCP/skill tools that may also emit the same field.
 - The harness remains external. All operations go through shell/file tools.
 - Checkpoint state is in-memory for the active desktop run. Existing `tool_calls`
   records preserve the request/result for audit, but app restart does not resume

@@ -202,6 +202,7 @@ const DATA_AGENT_PROMPT = [
   "Never query file paths directly in user SQL; register sources with aliases and query the aliases.",
   "Prefer a tight workflow: inspect available files, profile schema/sample rows, write read-only SQL, explain assumptions, then generate charts or reports when useful.",
   "For visual output, use data_chart_html. For deliverable summaries, use data_report_html.",
+  "For every tool call whose schema includes goal, include a concise goal value so the UI timeline explains why the step is running.",
   "If the workspace path is missing or a file is outside the sandbox scope, explain exactly what must be configured.",
 ].join("\n");
 
@@ -4043,6 +4044,20 @@ function formatMaybeJson(value: string): string {
   }
 }
 
+function toolCallGoal(argumentsJson: string | undefined): string | null {
+  if (!argumentsJson) return null;
+  try {
+    const parsed = JSON.parse(argumentsJson) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    const goal = (parsed as { goal?: unknown }).goal;
+    return typeof goal === "string" && goal.trim().length > 0
+      ? goal.trim()
+      : null;
+  } catch {
+    return null;
+  }
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
@@ -4064,6 +4079,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const hasResult = result.length > 0;
   const hasError = !!call.error && call.error.trim().length > 0;
   const expandable = hasArgs || hasResult || hasError;
+  const goal = toolCallGoal(call.argumentsJson);
   const artifact =
     call.status === "success" ? dataArtifact(call.toolName, call.resultJson) : null;
 
@@ -4080,7 +4096,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           onClick={() => expandable && setOpen((v) => !v)}
           disabled={!expandable}
           className={cn(
-            "relative flex min-w-0 flex-1 items-center gap-2 overflow-hidden px-2.5 py-1.5 text-left",
+            "relative flex min-w-0 flex-1 flex-col gap-1 overflow-hidden px-2.5 py-1.5 text-left",
             expandable && "cursor-pointer hover:bg-muted/40"
           )}
         >
@@ -4096,41 +4112,48 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               }}
             />
           )}
-          <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-          {isRunning ? (
-            <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
-          ) : isPending ? (
-            <ListChecks className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />
-          ) : isError ? (
-            <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
-          ) : (
-            <Check className="h-3.5 w-3.5 shrink-0 text-success" />
-          )}
-          <span className="flex min-w-0 flex-1 items-center gap-1.5">
-            <span className="truncate font-mono text-label-12 font-medium text-foreground">
-              {parsed.name}
+          <span className="flex w-full min-w-0 items-center gap-2">
+            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            {isRunning ? (
+              <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
+            ) : isPending ? (
+              <ListChecks className="h-3.5 w-3.5 shrink-0 text-warning-foreground" />
+            ) : isError ? (
+              <CircleAlert className="h-3.5 w-3.5 shrink-0 text-destructive" />
+            ) : (
+              <Check className="h-3.5 w-3.5 shrink-0 text-success" />
+            )}
+            <span className="flex min-w-0 flex-1 items-center gap-1.5">
+              <span className="truncate font-mono text-label-12 font-medium text-foreground">
+                {parsed.name}
+              </span>
+              {parsed.server && (
+                <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
+                  <Server className="h-3 w-3" />
+                  {parsed.server}
+                </span>
+              )}
             </span>
-            {parsed.server && (
-              <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
-                <Server className="h-3 w-3" />
-                {parsed.server}
+            {typeof call.durationMs === "number" && call.durationMs > 0 && (
+              <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
+                {call.durationMs >= 1000
+                  ? `${(call.durationMs / 1000).toFixed(1)}s`
+                  : `${call.durationMs}ms`}
               </span>
             )}
+            {expandable && (
+              <ChevronRight
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
+                  open && "rotate-90"
+                )}
+              />
+            )}
           </span>
-          {typeof call.durationMs === "number" && call.durationMs > 0 && (
-            <span className="shrink-0 tabular-nums text-label-12 text-muted-foreground">
-              {call.durationMs >= 1000
-                ? `${(call.durationMs / 1000).toFixed(1)}s`
-                : `${call.durationMs}ms`}
+          {goal && (
+            <span className="line-clamp-2 w-full min-w-0 pl-[3.75rem] text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
+              {goal}
             </span>
-          )}
-          {expandable && (
-            <ChevronRight
-              className={cn(
-                "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform duration-200",
-                open && "rotate-90"
-              )}
-            />
           )}
         </button>
         {artifact && (

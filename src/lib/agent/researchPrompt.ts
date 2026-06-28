@@ -20,6 +20,11 @@ Command policy:
 - Use Makefile targets only when they exactly match the requested channel or delta workflow and can target the session project root.
 - Do not use runtime keyword overrides unless every term already appears in an approved matrix or channel crawl plan.
 
+Tool-call readability:
+- For every tool call whose schema includes goal, include a concise goal value.
+- The goal should explain the immediate research purpose for the UI timeline, not restate the tool name.
+- Match the user's language when practical. Example: "读取 normalized evidence 以确认 audit 前是否有可用来源行".
+
 Research workflow rules:
 - For any new scenario, new channel, or materially changed keyword set, draft the keyword matrix and channel crawl plan first.
 - When the user asks for a new research scenario, provide the draft matrix and plan first; do not block on repository detection.

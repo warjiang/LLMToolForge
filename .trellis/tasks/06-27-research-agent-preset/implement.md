@@ -19,10 +19,12 @@
    when a model directly calls protected shell/write/edit/artifact tools.
 6. Update tool-call source classification to persist internal tool calls as
    `"internal"`.
-7. Ensure ResearchAgent can use `data_chart_html` / `data_report_html` for
+7. Add optional tool-call `goal` parameters and render them on collapsed tool
+   cards so ResearchAgent execution steps are self-describing.
+8. Ensure ResearchAgent can use `data_chart_html` / `data_report_html` for
    evidence-backed browser-previewable pages without a separate reporting
    implementation.
-8. Run `pnpm build` and fix type/build errors.
+9. Run `pnpm build` and fix type/build errors.
 
 ## Validation
 
@@ -41,6 +43,8 @@
     note in the checkpoint result.
   - `ResearchAgent` can create a browser-previewable HTML research report using
     `data_report_html` after checkpoint approval.
+  - ResearchAgent tool calls include concise `goal` arguments and the collapsed
+    tool cards render those goals under the tool name.
   - A model that directly calls a protected ResearchAgent tool without visible
     reasoning still triggers the checkpoint card before execution.
   - `ResearchAgent` uses the built-in harness root at

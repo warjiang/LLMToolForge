@@ -283,3 +283,55 @@ const decision = await checkpoint({ title, summary, proposedAction });
 if (!decision.approved) return;
 await data_report_html({ title, sections, outputPath });
 ```
+
+## Scenario: Tool-Call Goals In Agent Timeline
+
+### 1. Scope / Trigger
+- Trigger: agent tool timelines need a concise human-readable reason for each
+  tool call without changing the persisted tool-call model.
+
+### 2. Signatures
+- Internal tool schemas may include optional `goal: string`.
+- UI helper: `toolCallGoal(argumentsJson?: string): string | null`.
+- Persisted storage remains `tool_calls.arguments_json`.
+
+### 3. Contracts
+- `goal` is a user-visible readability field, not an execution input.
+- Internal tools ignore `goal` when invoking Tauri commands.
+- ResearchAgent and DataAgent prompts should ask models to fill `goal` whenever
+  the tool schema supports it.
+- `ToolCallCard` renders `arguments.goal` below the tool name on the collapsed
+  card and still preserves the original arguments in the expanded details.
+- Missing or invalid `goal` is allowed for backward compatibility; old tool-call
+  records render unchanged.
+- MCP and skill tools may also display a goal if their serialized arguments
+  include a top-level `goal` string.
+
+### 4. Validation & Error Matrix
+- `arguments_json` is invalid JSON -> no goal rendered, card remains usable.
+- `goal` is empty or non-string -> no goal rendered.
+- Very long `goal` -> clamp to two lines and avoid horizontal overflow.
+
+### 5. Good/Base/Bad Cases
+- Good: `read` call shows "读取 audit.md 以确认是否存在阻断性缺失来源问题".
+- Base: older `read` call without `goal` still shows only the tool name.
+- Bad: storing goal in a separate column or using it to change tool execution.
+
+### 6. Tests Required
+- Type/build checks must cover optional schema fields and JSX rendering.
+- Manual desktop test should run a ResearchAgent turn and verify collapsed tool
+  cards show goals for new internal tool calls.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+await chat.recordToolCall({ title: goal, argumentsJson: "{}" });
+```
+
+#### Correct
+```typescript
+await chat.recordToolCall({
+  title: toolName,
+  argumentsJson: JSON.stringify({ goal, ...toolArgs }),
+});
+```
