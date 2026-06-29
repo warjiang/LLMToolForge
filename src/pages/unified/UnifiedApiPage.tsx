@@ -15,7 +15,6 @@ import {
   Activity,
   AlertTriangle,
   Check,
-  ChevronDown,
   Copy,
   KeyRound,
   Loader2,
@@ -34,6 +33,13 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useUnifiedStore } from "@/store/unified";
 import {
   type ExposedModel,
@@ -187,37 +193,6 @@ function Metric({ value, label }: { value: number; label: string }) {
         {value}
       </span>
       <span className="mt-1 text-label-12 text-muted-foreground">{label}</span>
-    </div>
-  );
-}
-
-function NativeSelect({
-  value,
-  onChange,
-  label,
-  children,
-  className,
-}: {
-  value: string;
-  onChange: (value: string) => void;
-  label: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  return (
-    <div className={"relative inline-flex " + (className ?? "")}>
-      <select
-        aria-label={label}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-        className="h-9 w-full appearance-none rounded-sm border border-input bg-background pl-2.5 pr-8 text-copy-13 text-foreground shadow-geist-xs outline-none transition-colors hover:border-muted-foreground/40 focus:border-ring"
-      >
-        {children}
-      </select>
-      <ChevronDown
-        aria-hidden
-        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
-      />
     </div>
   );
 }
@@ -568,32 +543,40 @@ function ExposedModelsCard({
                 className="pl-8"
               />
             </div>
-            <NativeSelect
-              value={providerFilter}
-              onChange={setProviderFilter}
-              label="Provider"
-              className="w-[150px]"
-            >
-              <option value="all">{t("unified_all_providers")}</option>
-              {providerOptions.map((provider) => (
-                <option key={provider} value={provider}>
-                  {provider}
-                </option>
-              ))}
-            </NativeSelect>
-            <NativeSelect
+            <Select value={providerFilter} onValueChange={setProviderFilter}>
+              <SelectTrigger className="w-[150px]" aria-label="Provider">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("unified_all_providers")}</SelectItem>
+                {providerOptions.map((provider) => (
+                  <SelectItem key={provider} value={provider}>
+                    {provider}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
               value={featureFilter}
-              onChange={(value) => setFeatureFilter(value as "all" | ModelFeature)}
-              label={t("unified_feature_col")}
-              className="w-[130px]"
+              onValueChange={(value) =>
+                setFeatureFilter(value as "all" | ModelFeature)
+              }
             >
-              <option value="all">{t("unified_all_features")}</option>
-              {MODEL_FEATURES.map((feature) => (
-                <option key={feature.value} value={feature.value}>
-                  {t(feature.label, { ns: "common" })}
-                </option>
-              ))}
-            </NativeSelect>
+              <SelectTrigger
+                className="w-[130px]"
+                aria-label={t("unified_feature_col")}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t("unified_all_features")}</SelectItem>
+                {MODEL_FEATURES.map((feature) => (
+                  <SelectItem key={feature.value} value={feature.value}>
+                    {t(feature.label, { ns: "common" })}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             {hasFilter && (
               <Button variant="ghost" size="sm" onClick={clearFilters}>
                 <X className="h-4 w-4" />
