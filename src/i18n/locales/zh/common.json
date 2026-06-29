@@ -19,6 +19,8 @@
   "info": "提示",
   "copy": "复制",
   "copied": "已复制",
+  "show_password": "显示",
+  "hide_password": "隐藏",
   "language": "语言",
   "english": "English",
   "chinese": "中文",

@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -162,9 +163,8 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
 
           <div className="grid gap-1.5">
             <Label htmlFor="ak-key">{t("key", { ns: "common" })}</Label>
-            <Input
+            <PasswordInput
               id="ak-key"
-              type="password"
               placeholder="sk-..."
               autoComplete="off"
               value={form.key}

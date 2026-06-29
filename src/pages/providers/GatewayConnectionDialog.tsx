@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { useGatewayStore } from "@/store";
 import type { GatewayConnection, GatewayProvider, ProviderMeta } from "@/types";
@@ -119,9 +120,8 @@ export function GatewayConnectionDialog({
 
           <div className="grid gap-1.5">
             <Label htmlFor="gw-key">API Key</Label>
-            <Input
+            <PasswordInput
               id="gw-key"
-              type="password"
               placeholder="sk-..."
               autoComplete="off"
               value={form.apiKey}

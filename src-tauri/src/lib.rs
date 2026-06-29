@@ -14,6 +14,7 @@ mod data_tools;
 mod fs_tools;
 mod mcp;
 mod preview;
+mod storage;
 mod unified;
 mod web_fetch;
 mod web_fetch_render;
@@ -986,6 +987,14 @@ pub fn run() {
             browser::browser_close,
             browser::browser_status,
             web_fetch::web_fetch,
+            storage::storage_test_connection,
+            storage::storage_put_text,
+            storage::storage_get_text,
+            storage::storage_push_object,
+            storage::storage_pull_object,
+            storage::storage_list_objects,
+            storage::storage_delete_object,
+            storage::storage_generate_salt,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

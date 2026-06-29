@@ -10,6 +10,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -117,9 +118,8 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
 
           <div className="grid gap-1.5">
             <Label htmlFor="vc-sk">SecretAccessKey</Label>
-            <Input
+            <PasswordInput
               id="vc-sk"
-              type="password"
               placeholder="••••••••"
               autoComplete="off"
               value={form.secretKey}
