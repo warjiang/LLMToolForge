@@ -14,6 +14,7 @@ mod data_tools;
 mod fs_tools;
 mod mcp;
 mod preview;
+mod ssh;
 mod storage;
 mod unified;
 mod web_fetch;
@@ -935,10 +936,12 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
         .manage(unified::UnifiedManager::default())
         .manage(mcp::McpSessions::default())
         .manage(browser::BrowserState::default())
         .manage(preview::PreviewState::default())
+        .manage(ssh::SshManager::default())
         .setup(|app| {
             let state = app.state::<preview::PreviewState>();
             if let Err(e) = preview::start(&state) {
@@ -995,6 +998,15 @@ pub fn run() {
             storage::storage_list_objects,
             storage::storage_delete_object,
             storage::storage_generate_salt,
+            ssh::ssh_seal,
+            ssh::ssh_open,
+            ssh::ssh_parse_config,
+            ssh::ssh_vault_export,
+            ssh::ssh_vault_import,
+            ssh::ssh_connect,
+            ssh::ssh_write,
+            ssh::ssh_resize,
+            ssh::ssh_disconnect,
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")

@@ -133,6 +133,70 @@ export interface SkillProjectConfig extends BaseEntity {
   enabled: boolean;
 }
 
+/** How an SSH host authenticates. */
+export type SshAuthMethod = "password" | "key" | "agent";
+
+/**
+ * A managed SSH host. Sensitive fields (`password`, `privateKey`, `passphrase`)
+ * are stored encrypted: before persisting they are replaced with an opaque
+ * `enc:v1:<base64>` envelope sealed by the OS-keychain-backed vault, and only
+ * decrypted at the moment of use (connect / edit). They never touch the store
+ * file in plaintext.
+ */
+export interface SshHost extends BaseEntity {
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  authMethod: SshAuthMethod;
+  /** Encrypted password envelope (when authMethod === "password"). */
+  password?: string;
+  /** Encrypted private key (PEM) envelope (when authMethod === "key"). */
+  privateKey?: string;
+  /** Encrypted private-key passphrase envelope. */
+  passphrase?: string;
+  /** Display-only origin filename of the managed key (e.g. "id_ed25519"). */
+  keyName?: string;
+  /** ssh_config ProxyJump passthrough. */
+  proxyJump?: string;
+  /** ssh_config ForwardAgent passthrough. */
+  forwardAgent?: boolean;
+  /** Recorded host key fingerprint (TOFU), set after first successful connect. */
+  fingerprint?: string;
+  /** Remaining ssh_config options we don't model explicitly. */
+  extraOptions?: Record<string, string>;
+  note?: string;
+  source?: "manual" | "ssh_config";
+}
+
+export const SSH_DEFAULT_PORT = 22;
+
+export const SSH_AUTH_METHODS: { value: SshAuthMethod; label: string }[] = [
+  { value: "password", label: "ssh_auth_password" },
+  { value: "key", label: "ssh_auth_key" },
+  { value: "agent", label: "ssh_auth_agent" },
+];
+
+/**
+ * A candidate host parsed from `~/.ssh/config`, with any referenced
+ * IdentityFile content already read so the key can be fully managed on import.
+ */
+export interface SshConfigCandidate {
+  name: string;
+  hostname: string;
+  port: number;
+  username: string;
+  proxyJump?: string;
+  forwardAgent?: boolean;
+  /** Path of the IdentityFile as written in the config (display only). */
+  identityFile?: string;
+  /** Basename of the IdentityFile (becomes `keyName`). */
+  keyName?: string;
+  /** Plaintext PEM content read from the IdentityFile, if readable. */
+  privateKey?: string;
+  extraOptions?: Record<string, string>;
+}
+
 export type McpTransport = "stdio" | "sse" | "http";
 
 export interface McpServer extends BaseEntity {

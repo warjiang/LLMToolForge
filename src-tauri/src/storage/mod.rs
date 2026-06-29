@@ -7,7 +7,7 @@
 //! frontend (`src/data/sync`).
 
 mod backend;
-mod crypto;
+pub mod crypto;
 mod s3;
 
 use backend::{ObjectMeta, StorageBackend, StorageConfig};

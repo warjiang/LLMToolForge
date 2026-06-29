@@ -7,6 +7,7 @@ import type {
   VolcCredential,
   GatewayConnection,
   AgentDefinition,
+  SshHost,
 } from "@/types";
 
 export const apiKeyRepo = new Repository<ApiKey>("apiKeys", "key");
@@ -29,3 +30,5 @@ export const agentDefinitionRepo = new Repository<AgentDefinition>(
   "agentDefinitions",
   "agent"
 );
+
+export const sshHostRepo = new Repository<SshHost>("sshHosts", "ssh");
