@@ -32,11 +32,11 @@ jobs:
             label: macos-x64
             rust-target: x86_64-apple-darwin
             args: "--target x86_64-apple-darwin"
-          # Linux x64
+          # Linux x64 (skip AppImage: linuxdeploy can't ldd the bun sidecar)
           - os: ubuntu-22.04
             label: linux-x64
             rust-target: ""
-            args: "--verbose"
+            args: "--bundles deb,rpm"
           # Windows x64
           - os: windows-latest
             label: windows-x64
