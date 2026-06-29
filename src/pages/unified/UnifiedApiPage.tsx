@@ -15,6 +15,7 @@ import {
   Activity,
   AlertTriangle,
   Check,
+  ChevronDown,
   Copy,
   KeyRound,
   Loader2,
@@ -204,17 +205,20 @@ function NativeSelect({
   className?: string;
 }) {
   return (
-    <select
-      aria-label={label}
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      className={
-        "h-9 rounded-sm border border-input bg-background px-2.5 text-copy-13 text-foreground shadow-geist-xs outline-none transition-colors hover:border-muted-foreground/40 focus:border-ring " +
-        (className ?? "")
-      }
-    >
-      {children}
-    </select>
+    <div className={"relative inline-flex " + (className ?? "")}>
+      <select
+        aria-label={label}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        className="h-9 w-full appearance-none rounded-sm border border-input bg-background pl-2.5 pr-8 text-copy-13 text-foreground shadow-geist-xs outline-none transition-colors hover:border-muted-foreground/40 focus:border-ring"
+      >
+        {children}
+      </select>
+      <ChevronDown
+        aria-hidden
+        className="pointer-events-none absolute right-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground"
+      />
+    </div>
   );
 }
 
