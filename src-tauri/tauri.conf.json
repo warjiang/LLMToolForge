@@ -30,11 +30,18 @@
   "plugins": {
     "sql": {
       "preload": ["sqlite:llmtoolforge.db"]
+    },
+    "updater": {
+      "endpoints": [
+        "https://github.com/warjiang/LLMToolForge/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEJDOTdGQ0E3RkM4RDQ1M0QKUldROVJZMzhwL3lYdk11Vzg1dGp0TURaNExJbnRVR0pIY2dRbEpSN3FmVVFNV204UTlGdmRSNHQK"
     }
   },
   "bundle": {
     "active": true,
     "targets": "all",
+    "createUpdaterArtifacts": true,
     "externalBin": ["binaries/portkey-gateway"],
     "icon": [
       "icons/32x32.png",
