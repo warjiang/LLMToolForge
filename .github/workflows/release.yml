@@ -36,7 +36,7 @@ jobs:
           - os: ubuntu-22.04
             label: linux-x64
             rust-target: ""
-            args: ""
+            args: "--verbose"
           # Windows x64
           - os: windows-latest
             label: windows-x64
