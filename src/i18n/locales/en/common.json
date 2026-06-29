@@ -19,6 +19,8 @@
   "info": "Info",
   "copy": "Copy",
   "copied": "Copied",
+  "show_password": "Show",
+  "hide_password": "Hide",
   "language": "Language",
   "english": "English",
   "chinese": "中文",

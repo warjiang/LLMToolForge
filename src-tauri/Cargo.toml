@@ -30,3 +30,12 @@ regex = "1"
 scraper = "0.21"
 ego-tree = "0.9"
 duckdb = { version = "1.10504.0", features = ["bundled", "json", "parquet"] }
+# Storage sync: S3 (and S3-compatible) backend + client-side encryption.
+# Use static AK/SK creds (no aws-config) and force a rustls-ring TLS stack so we
+# never pull aws-lc-sys (which would require NASM/cmake on Windows CI).
+aws-sdk-s3 = { version = "1", default-features = false, features = ["rt-tokio", "http-1x"] }
+aws-smithy-http-client = { version = "1", default-features = false, features = ["rustls-ring"] }
+aes-gcm = "0.10"
+argon2 = "0.5"
+rand = "0.8"
+base64 = "0.22"

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { useThemeStore, type Theme } from "@/store/theme";
 import { useLocaleStore, type Language } from "@/store/locale";
 import { useUpdater } from "@/lib/useUpdater";
+import { StorageSyncCard } from "@/pages/settings/StorageSyncCard";
 
 export function SettingsPage() {
   const { t } = useTranslation("pages");
@@ -71,6 +72,8 @@ export function SettingsPage() {
           </div>
         </div>
       </Card>
+
+      <StorageSyncCard />
 
       <Card className="mt-5 p-5">
         <h3 className="text-heading-16">{t("about_title")}</h3>

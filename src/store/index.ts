@@ -23,3 +23,19 @@ export { useDebugStore } from "./debug";
 export { useSessionGroupStore } from "./sessionGroups";
 export { useLocaleStore } from "./locale";
 export { useMarketSettingsStore } from "./marketSettings";
+
+/** Collection stores that mirror synced repositories. */
+const syncedCollectionStores = [
+  useApiKeyStore,
+  useSkillStore,
+  useSkillProjectConfigStore,
+  useMcpStore,
+  useVolcCredentialStore,
+  useGatewayStore,
+  useAgentDefStore,
+];
+
+/** Reload all synced collections from storage (after a sync/restore). */
+export async function reloadSyncedData(): Promise<void> {
+  await Promise.all(syncedCollectionStores.map((s) => s.getState().load()));
+}

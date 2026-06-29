@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { PasswordInput } from "@/components/ui/password-input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -210,9 +211,8 @@ export function SkillMarketDialog({ open, onOpenChange }: Props) {
           {showToken && (
             <div className="mt-2 grid gap-1.5">
               <Label htmlFor="gh-token">{t("skill_market_token_label")}</Label>
-              <Input
+              <PasswordInput
                 id="gh-token"
-                type="password"
                 value={githubToken}
                 placeholder="ghp_..."
                 onChange={(e) => setGithubToken(e.target.value)}

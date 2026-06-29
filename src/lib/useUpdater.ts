@@ -108,6 +108,9 @@ export function useUpdater(options?: { auto?: boolean }) {
 
   useEffect(() => {
     if (!auto || ranAuto.current) return;
+    // Skip the silent startup check in the dev environment (`pnpm tauri:dev`),
+    // where there is no signed bundle to update against.
+    if (import.meta.env.DEV) return;
     ranAuto.current = true;
     void runCheck(false);
   }, [auto, runCheck]);
