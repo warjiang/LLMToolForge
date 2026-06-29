@@ -15,6 +15,26 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      rust: ${{ steps.filter.outputs.rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            rust:
+              - 'src-tauri/**'
+              - 'sidecar/**'
+              - 'Cargo.lock'
+              - '.github/workflows/ci.yml'
+
   frontend:
     name: Frontend (typecheck + build)
     runs-on: ubuntu-22.04
@@ -38,6 +58,8 @@ jobs:
 
   rust:
     name: Rust (fmt + clippy + check)
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
