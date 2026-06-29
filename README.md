@@ -105,19 +105,36 @@ src-tauri/       # Tauri Rust 后端
 | Linux x64 | `ubuntu-22.04` | `.AppImage` / `.deb` / `.rpm` |
 | Windows x64 | `windows-latest` | `.msi` / `.exe (NSIS)` |
 
-发布步骤：
+发布步骤（版本号跟随 tag）：
 
 ```bash
-# 1. 更新版本号（package.json / src-tauri/Cargo.toml / src-tauri/tauri.conf.json）
-# 2. 打 tag 并推送
-git tag v0.1.0
-git push origin v0.1.0
-# 3. Actions 自动构建各平台产物并创建 Release 草稿，确认后手动发布
+# 打 tag 并推送即可，CI 会自动把版本号同步进 package.json / Cargo.toml / tauri.conf.json
+git tag v0.2.0
+git push origin v0.2.0
+# Actions 自动各平台构建、签名、生成 latest.json 并发布 Release（非草稿）
 ```
 
-### 可选签名 / 自动更新
+> 无需手动改版本号：`scripts/set-version.sh <tag>` 会在 CI 里把 `vX.Y.Z` 写入三处版本字段。
 
-以下能力通过仓库 Secrets 开启（未配置时自动跳过）：
+### 自动更新
 
-- **macOS 签名/公证**：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`
+应用内置 Tauri Updater，更新源指向 GitHub Releases 的 `latest.json`：
+`https://github.com/warjiang/LLMToolForge/releases/latest/download/latest.json`
+
+- **启动**：静默检查，有新版弹窗提示版本/更新日志，用户确认后下载安装并自动重启。
+- **设置页**：显示当前版本，提供「检查更新」按钮。
+- 平台支持：macOS / Windows 全量支持，Linux 仅 AppImage。
+
+### 必需 Secrets（自动更新签名）
+
+```bash
+pnpm tauri signer generate -w ~/.tauri/llmtoolforge.key
+# 公钥已写入 tauri.conf.json 的 plugins.updater.pubkey
+```
+
+仓库 Secrets 中配置（缺失则更新产物不签名，客户端无法升级）：
+
 - **Tauri Updater 签名**：`TAURI_SIGNING_PRIVATE_KEY`、`TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+- **macOS 签名/公证（可选）**：`APPLE_CERTIFICATE`、`APPLE_CERTIFICATE_PASSWORD`、`APPLE_SIGNING_IDENTITY`、`APPLE_ID`、`APPLE_PASSWORD`、`APPLE_TEAM_ID`
+
+> 更换公钥需同步更新 `tauri.conf.json`，否则已发布客户端无法验证新包。

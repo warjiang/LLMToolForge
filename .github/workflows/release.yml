@@ -46,6 +46,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Derive version from tag
+        shell: bash
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "Releasing tag $TAG"
+          bash scripts/set-version.sh "$TAG"
+
       - name: Install Linux system dependencies
         if: matrix.os == 'ubuntu-22.04'
         run: |
@@ -116,7 +123,8 @@ jobs:
         with:
           tagName: ${{ github.event.inputs.tag || github.ref_name }}
           releaseName: "LLMToolForge ${{ github.event.inputs.tag || github.ref_name }}"
-          releaseBody: "See the assets below to download and install this version."
-          releaseDraft: true
+          releaseBody: "See the assets below to download and install this version. The desktop app will auto-update from these artifacts."
+          releaseDraft: false
           prerelease: false
+          includeUpdaterJson: true
           args: ${{ matrix.args }}
