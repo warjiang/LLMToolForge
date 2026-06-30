@@ -116,7 +116,17 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
           'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
         fontSize: 13,
         cursorBlink: true,
-        theme: { background: "#0a0a0a", foreground: "#e5e5e5" },
+        // xterm v6 renders a VS Code-style overlay scrollbar whose width is
+        // driven by overviewRuler.width (default 14px and not stylable via CSS).
+        // Pin it slim and recolor the slider through the theme.
+        overviewRuler: { width: 8 },
+        theme: {
+          background: "#0a0a0a",
+          foreground: "#e5e5e5",
+          scrollbarSliderBackground: "rgba(255, 255, 255, 0.18)",
+          scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.32)",
+          scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.42)",
+        },
       });
       const fit = new FitAddon();
       term.loadAddon(fit);
@@ -138,7 +148,12 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
         return;
       }
       term.open(el);
-      fit.fit();
+      // Let the renderer create its viewport/scrollable element and settle the
+      // font metrics for a frame before the first measurement, otherwise the
+      // initial fit can lock in one row too many and clip the bottom line.
+      await new Promise((r) => requestAnimationFrame(() => r(null)));
+      if (disposed) return;
+      refit();
 
       try {
         const config = await buildConnectConfig(
