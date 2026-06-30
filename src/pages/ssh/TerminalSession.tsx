@@ -123,6 +123,9 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
         theme: {
           background: "#0a0a0a",
           foreground: "#e5e5e5",
+          // Remove the 1px light separator xterm draws on the ruler's left edge
+          // when overviewRuler.width is set, by matching it to the background.
+          overviewRulerBorder: "#0a0a0a",
           scrollbarSliderBackground: "rgba(255, 255, 255, 0.18)",
           scrollbarSliderHoverBackground: "rgba(255, 255, 255, 0.32)",
           scrollbarSliderActiveBackground: "rgba(255, 255, 255, 0.42)",
@@ -240,7 +243,7 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
       )}
       <div
         ref={containerRef}
-        className="min-h-0 w-full flex-1 overflow-hidden bg-[#0a0a0a] px-3 py-2"
+        className="min-h-0 w-full flex-1 overflow-hidden bg-[#0a0a0a]"
       />
     </div>
   );
