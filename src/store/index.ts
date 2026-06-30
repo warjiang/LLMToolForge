@@ -25,6 +25,8 @@ export { useDebugStore } from "./debug";
 export { useSessionGroupStore } from "./sessionGroups";
 export { useLocaleStore } from "./locale";
 export { useMarketSettingsStore } from "./marketSettings";
+export { useSshSessionStore } from "./sshSessions";
+export type { TerminalTab } from "./sshSessions";
 
 /** Collection stores that mirror synced repositories. */
 const syncedCollectionStores = [

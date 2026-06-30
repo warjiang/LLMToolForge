@@ -26,12 +26,12 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { useSshHostStore } from "@/store";
+import { useSshHostStore, useSshSessionStore } from "@/store";
 import { isTauri } from "@/lib/utils";
 import type { SshAuthMethod, SshHost } from "@/types";
 import { SshHostDialog } from "./SshHostDialog";
 import { SshImportDialog } from "./SshImportDialog";
-import { SshTerminal } from "./SshTerminal";
+import { SshTerminalWorkspace } from "./SshTerminalWorkspace";
 import { SshVaultDialog } from "./SshVaultDialog";
 
 const AUTH_ICON: Record<SshAuthMethod, typeof KeyRound> = {
@@ -48,7 +48,7 @@ export function SshPage() {
   const [vaultMode, setVaultMode] = useState<"export" | "import" | null>(null);
   const [editing, setEditing] = useState<SshHost | null>(null);
   const [deleting, setDeleting] = useState<SshHost | null>(null);
-  const [connecting, setConnecting] = useState<SshHost | null>(null);
+  const openSession = useSshSessionStore((s) => s.openTab);
   const desktop = isTauri();
 
   useEffect(() => {
@@ -201,7 +201,7 @@ export function SshPage() {
                   <div className="mt-4 flex items-center justify-between gap-2 border-t border-border pt-3">
                     <Button
                       size="sm"
-                      onClick={() => setConnecting(item)}
+                      onClick={() => openSession(item)}
                       disabled={!desktop}
                       aria-label={t("ssh_connect")}
                     >
@@ -234,12 +234,7 @@ export function SshPage() {
         onOpenChange={(o) => !o && setVaultMode(null)}
         mode={vaultMode ?? "export"}
       />
-      <SshTerminal
-        open={!!connecting}
-        onOpenChange={(o) => !o && setConnecting(null)}
-        host={connecting}
-        hosts={items}
-      />
+      <SshTerminalWorkspace hosts={items} />
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
