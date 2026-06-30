@@ -139,6 +139,9 @@ pub async fn ssh_connect(
     let client_config = Arc::new(client::Config {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
+        // Disable Nagle's algorithm so individual keystrokes reach the remote
+        // shell without buffering latency (interactive terminal use).
+        nodelay: true,
         ..Default::default()
     });
 
