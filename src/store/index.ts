@@ -7,6 +7,7 @@ import {
   volcCredentialRepo,
   gatewayConnectionRepo,
   agentDefinitionRepo,
+  sshHostRepo,
 } from "@/data/repositories";
 
 export const useApiKeyStore = createCollectionStore(apiKeyRepo);
@@ -18,6 +19,7 @@ export const useMcpStore = createCollectionStore(mcpRepo);
 export const useVolcCredentialStore = createCollectionStore(volcCredentialRepo);
 export const useGatewayStore = createCollectionStore(gatewayConnectionRepo);
 export const useAgentDefStore = createCollectionStore(agentDefinitionRepo);
+export const useSshHostStore = createCollectionStore(sshHostRepo);
 export { useChatStore } from "./chat";
 export { useDebugStore } from "./debug";
 export { useSessionGroupStore } from "./sessionGroups";
@@ -33,6 +35,7 @@ const syncedCollectionStores = [
   useVolcCredentialStore,
   useGatewayStore,
   useAgentDefStore,
+  useSshHostStore,
 ];
 
 /** Reload all synced collections from storage (after a sync/restore). */

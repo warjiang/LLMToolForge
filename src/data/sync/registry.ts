@@ -7,6 +7,7 @@ import {
   volcCredentialRepo,
   gatewayConnectionRepo,
   agentDefinitionRepo,
+  sshHostRepo,
 } from "../repositories";
 
 /**
@@ -41,4 +42,5 @@ export const syncRegistry: SyncableResource[] = [
     labelKey: "sync_res_agents",
     repo: agentDefinitionRepo,
   },
+  { id: sshHostRepo.storeKey, labelKey: "sync_res_ssh", repo: sshHostRepo },
 ];

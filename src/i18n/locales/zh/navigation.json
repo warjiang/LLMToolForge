@@ -5,11 +5,13 @@
   "unified_api": "Unified API",
   "skills": "Skills",
   "mcp_servers": "MCP Servers",
+  "ssh": "SSH",
   "tools": "实用工具",
   "browser": "浏览器",
   "settings": "设置",
   "add_first_api_key": "添加第一个 API Key",
   "add_first_skill": "创建第一个 Skill",
   "add_first_mcp": "接入 MCP Server",
+  "add_first_ssh": "新增 SSH 主机",
   "open_playground": "打开 Playground"
 }

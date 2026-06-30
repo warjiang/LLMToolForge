@@ -5,11 +5,13 @@
   "unified_api": "Unified API",
   "skills": "Skills",
   "mcp_servers": "MCP Servers",
+  "ssh": "SSH",
   "tools": "Tools",
   "browser": "Browser",
   "settings": "Settings",
   "add_first_api_key": "Add First API Key",
   "add_first_skill": "Create First Skill",
   "add_first_mcp": "Connect MCP Server",
+  "add_first_ssh": "Add SSH Host",
   "open_playground": "Open Playground"
 }
