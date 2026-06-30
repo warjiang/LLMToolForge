@@ -8,12 +8,35 @@ type Json = unknown;
 const isContainer = (v: Json): v is Record<string, Json> | Json[] =>
   v !== null && typeof v === "object";
 
-function Scalar({ value }: { value: Json }) {
+// 检测是否为 Markdown 内容的启发式方法
+const isMarkdownContent = (str: string): boolean => {
+  if (typeof str !== "string" || str.length < 10) return false;
+  // 检查常见的 markdown 标记
+  const markdownPatterns = [
+    /^#+\s/, // 标题
+    /^\*\*.*\*\*/, // 粗体
+    /\[.*\]\(.*\)/, // 链接
+    /^-\s|^\*\s|^\d+\.\s/, // 列表
+    /^```/, // 代码块
+    /\n/m, // 多行
+  ];
+  return markdownPatterns.some(p => p.test(str));
+};
+
+function Scalar({ value, onSelect }: { value: Json; onSelect?: (v: Json) => void }) {
   if (value === null)
     return <span className="text-muted-foreground">null</span>;
   switch (typeof value) {
     case "string":
-      return <span className="text-success">"{value}"</span>;
+      return (
+        <span
+          className="cursor-pointer text-success hover:underline"
+          onClick={() => onSelect?.(value)}
+          title="点击查看详情"
+        >
+          "{value}"
+        </span>
+      );
     case "number":
       return <span className="text-accent">{String(value)}</span>;
     case "boolean":
@@ -31,9 +54,10 @@ interface NodeProps {
   defaultOpen: boolean;
   /** Render a trailing comma after the node. */
   trailingComma?: boolean;
+  onSelectValue?: (value: Json) => void;
 }
 
-function Node({ label, value, depth, defaultOpen, trailingComma }: NodeProps) {
+function Node({ label, value, depth, defaultOpen, trailingComma, onSelectValue }: NodeProps) {
   const [open, setOpen] = useState(defaultOpen);
 
   // Re-sync when an expand-all / collapse-all signal flips defaultOpen.
@@ -50,7 +74,7 @@ function Node({ label, value, depth, defaultOpen, trailingComma }: NodeProps) {
       <div style={{ paddingLeft: depth * 14 }} className="whitespace-pre-wrap">
         {keyLabel}
         {colon}
-        <Scalar value={value} />
+        <Scalar value={value} onSelect={onSelectValue} />
         {trailingComma ? "," : ""}
       </div>
     );
@@ -100,6 +124,7 @@ function Node({ label, value, depth, defaultOpen, trailingComma }: NodeProps) {
               depth={depth + 1}
               defaultOpen={defaultOpen}
               trailingComma={i < entries.length - 1}
+              onSelectValue={onSelectValue}
             />
           ))}
           <div style={{ paddingLeft: depth * 14 }} className="whitespace-pre-wrap">
@@ -118,15 +143,19 @@ interface JsonTreeProps {
   value: Json;
   error?: string | null;
   /** Increment to expand all nodes; pair with `collapseSignal`. */
-  expandSignal: number;
-  collapseSignal: number;
+  expandSignal?: number;
+  collapseSignal?: number;
+  defaultOpen?: boolean;
+  onSelectValue?: (value: Json) => void;
 }
 
 export function JsonTree({
   value,
   error,
-  expandSignal,
-  collapseSignal,
+  expandSignal = 0,
+  collapseSignal = 0,
+  defaultOpen = false,
+  onSelectValue,
 }: JsonTreeProps) {
   const { t } = useTranslation("common");
 
@@ -143,14 +172,14 @@ export function JsonTree({
 
   // Remount the whole tree whenever an expand/collapse signal changes so every
   // node re-initialises its open state from the new defaultOpen.
-  const defaultOpen = expandSignal >= collapseSignal;
+  const computedDefaultOpen = expandSignal >= collapseSignal ? true : defaultOpen;
 
   return (
     <div
       key={`${expandSignal}-${collapseSignal}`}
       className="font-mono text-copy-13 leading-relaxed"
     >
-      <Node value={value} depth={0} defaultOpen={defaultOpen} />
+      <Node value={value} depth={0} defaultOpen={computedDefaultOpen} onSelectValue={onSelectValue} />
     </div>
   );
 }

@@ -1,7 +1,6 @@
 import { Braces, Code2, FileText, Hash, KeyRound, Link2, Type } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
-import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { UrlTool } from "./UrlTool";
 import { JsonTool } from "./JsonTool";
@@ -25,13 +24,13 @@ export function ToolsPage() {
   ];
 
   return (
-    <div>
+    <div className="flex h-full flex-col overflow-hidden">
       <PageHeader
         title={t("tools_title")}
         description={t("tools_description")}
       />
 
-      <Tabs defaultValue="url">
+      <Tabs defaultValue="url" className="flex flex-col flex-1 overflow-hidden">
         <TabsList>
           {tabs.map(({ value, label, icon: Icon }) => (
             <TabsTrigger key={value} value={value}>
@@ -41,13 +40,15 @@ export function ToolsPage() {
           ))}
         </TabsList>
 
-        {tabs.map(({ value, Comp }) => (
-          <TabsContent key={value} value={value}>
-            <Card className="p-5">
-              <Comp />
-            </Card>
-          </TabsContent>
-        ))}
+        <div className="flex-1 overflow-hidden">
+          {tabs.map(({ value, Comp }) => (
+            <TabsContent key={value} value={value} className="h-full overflow-hidden">
+              <div className="h-full overflow-hidden">
+                <Comp />
+              </div>
+            </TabsContent>
+          ))}
+        </div>
       </Tabs>
     </div>
   );
