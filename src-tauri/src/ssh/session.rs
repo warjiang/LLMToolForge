@@ -259,12 +259,9 @@ async fn authenticate_agent(
     session: &mut client::Handle<ClientHandler>,
     config: &SshConnectConfig,
 ) -> Result<(), String> {
-    use russh::keys::agent::client::AgentClient;
     use russh::keys::agent::AgentIdentity;
 
-    let mut agent = AgentClient::connect_env()
-        .await
-        .map_err(|e| format!("ssh-agent unavailable: {e}"))?;
+    let mut agent = connect_agent().await?;
     let identities = agent
         .request_identities()
         .await
@@ -291,6 +288,49 @@ async fn authenticate_agent(
         }
     }
     Err("authentication failed (no agent identity accepted)".into())
+}
+
+type DynamicAgentClient = russh::keys::agent::client::AgentClient<
+    Box<dyn russh::keys::agent::client::AgentStream + Send + Unpin>,
+>;
+
+#[cfg(unix)]
+async fn connect_agent() -> Result<DynamicAgentClient, String> {
+    use russh::keys::agent::client::AgentClient;
+
+    let agent = AgentClient::connect_env()
+        .await
+        .map_err(|e| format!("ssh-agent unavailable: {e}"))?;
+    Ok(agent.dynamic())
+}
+
+#[cfg(windows)]
+async fn connect_agent() -> Result<DynamicAgentClient, String> {
+    use russh::keys::agent::client::AgentClient;
+
+    let mut errors = Vec::new();
+    if let Ok(path) = std::env::var("SSH_AUTH_SOCK") {
+        if !path.trim().is_empty() {
+            match AgentClient::connect_named_pipe(&path).await {
+                Ok(agent) => return Ok(agent.dynamic()),
+                Err(e) => errors.push(format!("SSH_AUTH_SOCK={path}: {e}")),
+            }
+        }
+    }
+
+    let openssh_pipe = r"\\.\pipe\openssh-ssh-agent";
+    match AgentClient::connect_named_pipe(openssh_pipe).await {
+        Ok(agent) => return Ok(agent.dynamic()),
+        Err(e) => errors.push(format!("{openssh_pipe}: {e}")),
+    }
+
+    match AgentClient::connect_pageant().await {
+        Ok(agent) => Ok(agent.dynamic()),
+        Err(e) => {
+            errors.push(format!("Pageant: {e}"));
+            Err(format!("ssh-agent unavailable: {}", errors.join("; ")))
+        }
+    }
 }
 
 #[tauri::command]
