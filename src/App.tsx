@@ -5,6 +5,7 @@ import i18n from "@/i18n/config";
 import { AppLayout } from "@/components/layout/AppLayout";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { useLocaleStore } from "@/store/locale";
+import { useDeviceConfigStore } from "@/store/deviceConfig";
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
@@ -73,10 +74,15 @@ const router = createBrowserRouter([
 export default function App() {
   const language = useLocaleStore((s) => s.language);
   const setLanguage = useLocaleStore((s) => s.setLanguage);
+  const initDeviceConfig = useDeviceConfigStore((s) => s.init);
 
   useEffect(() => {
     i18n.changeLanguage(language);
   }, [language]);
+
+  useEffect(() => {
+    void initDeviceConfig();
+  }, [initDeviceConfig]);
 
   useEffect(() => {
     setLanguage(i18n.language as 'zh' | 'en');
