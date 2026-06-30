@@ -136,6 +136,14 @@ pub async fn ssh_connect(
     config: SshConnectConfig,
     on_event: Channel<SshEvent>,
 ) -> Result<SshConnectResult, String> {
+    eprintln!(
+        "[ssh] connect {}@{}:{} ({} auth) via {} jump(s)",
+        config.username,
+        config.hostname,
+        config.port,
+        config.auth_method,
+        config.jumps.len()
+    );
     let client_config = Arc::new(client::Config {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
