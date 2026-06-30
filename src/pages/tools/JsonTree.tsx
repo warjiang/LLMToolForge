@@ -8,20 +8,6 @@ type Json = unknown;
 const isContainer = (v: Json): v is Record<string, Json> | Json[] =>
   v !== null && typeof v === "object";
 
-// 检测是否为 Markdown 内容的启发式方法
-const isMarkdownContent = (str: string): boolean => {
-  if (typeof str !== "string" || str.length < 10) return false;
-  // 检查常见的 markdown 标记
-  const markdownPatterns = [
-    /^#+\s/, // 标题
-    /^\*\*.*\*\*/, // 粗体
-    /\[.*\]\(.*\)/, // 链接
-    /^-\s|^\*\s|^\d+\.\s/, // 列表
-    /^```/, // 代码块
-    /\n/m, // 多行
-  ];
-  return markdownPatterns.some(p => p.test(str));
-};
 
 function Scalar({ value, onSelect }: { value: Json; onSelect?: (v: Json) => void }) {
   if (value === null)

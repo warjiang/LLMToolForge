@@ -8,7 +8,6 @@ import {
   Trash2,
   Maximize2,
   Minimize,
-  ArrowUp,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -238,47 +237,47 @@ export function JsonTool() {
           <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* 左侧：JSON 树形展示 */}
             <div className="flex-1 min-h-0 overflow-auto rounded-none border-r border-border bg-background-secondary">
-            {parsed.ok && parsed.value ? (
-              <div className="font-mono text-sm p-4">
-                <JsonTree value={parsed.value} defaultOpen={true} onSelectValue={setSelectedValue} />
-              </div>
-            ) : (
-              <div className="flex h-full items-center justify-center p-6">
-                <div className="text-center max-w-sm space-y-4">
-                  <div className="flex justify-center mb-6">
-                    <div className="w-16 h-16 rounded-full bg-muted/40 flex items-center justify-center">
-                      <svg
-                        className="w-8 h-8 text-muted-foreground/60"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                      >
-                        <path
-                          strokeLinecap="round"
-                          strokeLinejoin="round"
-                          strokeWidth={1.5}
-                          d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
-                        />
-                      </svg>
-                    </div>
-                  </div>
-                  <div>
-                    <p className="text-sm font-medium text-foreground mb-1">
-                      {t("tool_json_input")}
-                    </p>
-                    <p className="text-xs text-muted-foreground leading-relaxed">
-                      在上方粘贴或输入 JSON 数据，即可在此查看结构化树形展示
-                    </p>
-                  </div>
-                  {!parsed.ok && parsed.error ? (
-                    <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/30">
-                      <p className="text-xs text-destructive">{parsed.error}</p>
-                    </div>
-                  ) : null}
+              {parsed.ok && parsed.value ? (
+                <div className="font-mono text-sm p-4">
+                  <JsonTree value={parsed.value} defaultOpen={true} onSelectValue={setSelectedValue} />
                 </div>
-              </div>
-            )}
-          </div>
+              ) : (
+                <div className="flex h-full items-center justify-center p-6">
+                  <div className="text-center max-w-sm space-y-4">
+                    <div className="flex justify-center mb-6">
+                      <div className="w-16 h-16 rounded-full bg-muted/40 flex items-center justify-center">
+                        <svg
+                          className="w-8 h-8 text-muted-foreground/60"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={1.5}
+                            d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-foreground mb-1">
+                        {t("tool_json_input")}
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        在上方粘贴或输入 JSON 数据，即可在此查看结构化树形展示
+                      </p>
+                    </div>
+                    {!parsed.ok && parsed.error ? (
+                      <div className="mt-4 p-3 rounded-md bg-destructive/10 border border-destructive/30">
+                        <p className="text-xs text-destructive">{parsed.error}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+            </div>
 
           {/* 拖动分隔符 - 仅在有效 JSON 和选中值时显示 */}
           {parsed.ok && parsed.value && selectedValue && (
