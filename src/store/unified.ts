@@ -91,6 +91,7 @@ interface UnifiedState {
   rebuild: () => Promise<void>;
   setConfig: (patch: Partial<UnifiedApiConfig>) => Promise<void>;
   toggleModel: (id: string, enabled: boolean) => Promise<void>;
+  removeModel: (model: ExposedModel) => Promise<void>;
   start: () => Promise<void>;
   stop: () => Promise<void>;
   refreshStats: () => Promise<void>;
@@ -250,6 +251,51 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
     if (enabled) set0.delete(id);
     else set0.add(id);
     await get().setConfig({ disabledModelIds: [...set0] });
+  },
+
+  removeModel: async (model) => {
+    // Exposed models are derived from each connection's `models` array, so
+    // "deleting a model" means stripping its upstream id from the owning
+    // connection and persisting. The provider-store subscription installed in
+    // hydrateModels then rebuilds the exposed list (and re-pushes routes when
+    // the server is running). We also drop any stale disabled-switch entry.
+    const sep = model.connId.indexOf(":");
+    const kind = model.connId.slice(0, sep);
+    const ownerId = model.connId.slice(sep + 1);
+
+    if (kind === "volc") {
+      const store = useVolcCredentialStore.getState();
+      const cred = store.items.find((c) => c.id === ownerId);
+      if (cred) {
+        await store.edit(ownerId, {
+          models: (cred.models ?? []).filter((m) => m.id !== model.realModel),
+        });
+      }
+    } else if (kind === "gw") {
+      const store = useGatewayStore.getState();
+      const conn = store.items.find((c) => c.id === ownerId);
+      if (conn) {
+        await store.edit(ownerId, {
+          models: (conn.models ?? []).filter((m) => m.id !== model.realModel),
+        });
+      }
+    } else if (kind === "key") {
+      const store = useApiKeyStore.getState();
+      const conn = store.items.find((c) => c.id === ownerId);
+      if (conn) {
+        await store.edit(ownerId, {
+          models: (conn.models ?? []).filter((id) => id !== model.realModel),
+        });
+      }
+    }
+
+    if (get().config.disabledModelIds.includes(model.id)) {
+      await get().setConfig({
+        disabledModelIds: get().config.disabledModelIds.filter(
+          (id) => id !== model.id
+        ),
+      });
+    }
   },
 
   start: async () => {

@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Check,
   Copy,
+  Download,
   KeyRound,
   Loader2,
   Play,
@@ -23,6 +24,8 @@ import {
   Search,
   Sparkles,
   Square,
+  Trash2,
+  Upload,
   X,
 } from "lucide-react";
 import { PageHeader } from "@/components/common/PageHeader";
@@ -33,6 +36,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import {
   Select,
   SelectContent,
@@ -45,6 +49,12 @@ import {
   type ExposedModel,
   type ModelFeature,
 } from "@/lib/unifiedApi";
+import {
+  exportModelConfig,
+  importModelConfig,
+  type ImportSummary,
+} from "@/lib/modelConfigIo";
+import { isTauri } from "@/lib/utils";
 
 const IntegrationGuide = lazy(() =>
   import("./IntegrationGuide").then((m) => ({ default: m.IntegrationGuide }))
@@ -306,10 +316,12 @@ function ModelVirtualTable({
   models,
   disabled,
   onToggle,
+  onDelete,
 }: {
   models: ExposedModel[];
   disabled: Set<string>;
   onToggle: (id: string, enabled: boolean) => void;
+  onDelete: (model: ExposedModel) => void;
 }) {
   const { t } = useTranslation("pages");
   const [scrollTop, setScrollTop] = useState(0);
@@ -372,6 +384,7 @@ function ModelVirtualTable({
               row={row}
               disabled={disabled}
               onToggle={onToggle}
+              onDelete={onDelete}
               copyLabel={t("copy", { ns: "common" })}
             />
           )
@@ -385,14 +398,17 @@ function ModelVirtualRow({
   row,
   disabled,
   onToggle,
+  onDelete,
   copyLabel,
 }: {
   row: Extract<VirtualRow, { kind: "model" }>;
   disabled: Set<string>;
   onToggle: (id: string, enabled: boolean) => void;
+  onDelete: (model: ExposedModel) => void;
   copyLabel: string;
 }) {
   const { t } = useTranslation("common");
+  const { t: tp } = useTranslation("pages");
   const model = row.model;
   const on = !disabled.has(model.id);
   const sameAsId = model.realModel === model.id.split("/").pop();
@@ -439,9 +455,116 @@ function ModelVirtualRow({
           <span className="text-label-12 text-muted-foreground/50">-</span>
         )}
       </div>
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-1.5">
         <Switch checked={on} onCheckedChange={(enabled) => onToggle(model.id, enabled)} />
+        <button
+          type="button"
+          onClick={() => onDelete(model)}
+          className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)]"
+          aria-label={tp("unified_delete_model", { model: model.id })}
+          title={tp("unified_delete_model", { model: model.id })}
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
       </div>
+    </div>
+  );
+}
+
+function ConfigIoButtons() {
+  const { t } = useTranslation("pages");
+  const [busy, setBusy] = useState<"export" | "import" | null>(null);
+  const [status, setStatus] = useState<{
+    kind: "success" | "error";
+    text: string;
+  } | null>(null);
+  const desktop = isTauri();
+
+  const summaryText = (s: ImportSummary): string => {
+    const added = s.apiKeys + s.gatewayConnections + s.volcCredentials;
+    return t("unified_io_import_done", {
+      added,
+      merged: s.mergedModels,
+      skipped: s.skipped,
+    });
+  };
+
+  const handleExport = async () => {
+    setBusy("export");
+    setStatus(null);
+    try {
+      const ok = await exportModelConfig();
+      if (ok) setStatus({ kind: "success", text: t("unified_io_export_done") });
+    } catch (e) {
+      setStatus({
+        kind: "error",
+        text: e instanceof Error ? e.message : String(e),
+      });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleImport = async () => {
+    setBusy("import");
+    setStatus(null);
+    try {
+      const result = await importModelConfig();
+      if (result) setStatus({ kind: "success", text: summaryText(result) });
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const text =
+        raw === "invalid_json"
+          ? t("unified_io_err_invalid_json")
+          : raw === "not_model_config"
+            ? t("unified_io_err_not_config")
+            : raw;
+      setStatus({ kind: "error", text });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {status && (
+        <span
+          className={`hidden max-w-[260px] truncate text-label-12 sm:inline ${
+            status.kind === "success" ? "text-success" : "text-destructive"
+          }`}
+          title={status.text}
+        >
+          {status.text}
+        </span>
+      )}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleExport}
+        disabled={!desktop || busy !== null}
+        title={!desktop ? t("unified_no_desktop") : undefined}
+      >
+        {busy === "export" ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Download className="h-4 w-4" />
+        )}
+        {t("unified_io_export")}
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={handleImport}
+        disabled={!desktop || busy !== null}
+        title={!desktop ? t("unified_no_desktop") : undefined}
+      >
+        {busy === "import" ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Upload className="h-4 w-4" />
+        )}
+        {t("unified_io_import")}
+      </Button>
     </div>
   );
 }
@@ -452,12 +575,14 @@ function ExposedModelsCard({
   hydrated,
   hydrating,
   onToggle,
+  onDelete,
 }: {
   models: ExposedModel[];
   disabled: Set<string>;
   hydrated: boolean;
   hydrating: boolean;
   onToggle: (id: string, enabled: boolean) => void;
+  onDelete: (model: ExposedModel) => void;
 }) {
   const { t } = useTranslation("pages");
   const [query, setQuery] = useState("");
@@ -507,9 +632,12 @@ function ExposedModelsCard({
           <Sparkles className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-heading-16">{t("unified_exposed_models_title")}</h3>
         </div>
-        <p className="hidden text-copy-13 text-muted-foreground sm:block">
-          {t("unified_model_id_format")}
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="hidden text-copy-13 text-muted-foreground lg:block">
+            {t("unified_model_id_format")}
+          </p>
+          <ConfigIoButtons />
+        </div>
       </div>
 
       {!hydrated || hydrating ? (
@@ -604,6 +732,7 @@ function ExposedModelsCard({
               models={filtered}
               disabled={disabled}
               onToggle={onToggle}
+              onDelete={onDelete}
             />
           )}
         </>
@@ -626,11 +755,13 @@ export function UnifiedApiPage() {
   const hydrateModels = useUnifiedStore((s) => s.hydrateModels);
   const setConfig = useUnifiedStore((s) => s.setConfig);
   const toggleModel = useUnifiedStore((s) => s.toggleModel);
+  const removeModel = useUnifiedStore((s) => s.removeModel);
   const start = useUnifiedStore((s) => s.start);
   const stop = useUnifiedStore((s) => s.stop);
 
   const [portInput, setPortInput] = useState(String(config.port));
   const [keyInput, setKeyInput] = useState(config.localKey);
+  const [deleting, setDeleting] = useState<ExposedModel | null>(null);
 
   useEffect(() => {
     void init();
@@ -874,6 +1005,7 @@ export function UnifiedApiPage() {
                     hydrated={modelsHydrated}
                     hydrating={hydratingModels}
                     onToggle={toggleModel}
+                    onDelete={setDeleting}
                   />
                 </div>
               )}
@@ -897,6 +1029,19 @@ export function UnifiedApiPage() {
           </Suspense>
         </TabsContent>
       </Tabs>
+
+      <ConfirmDialog
+        open={deleting !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleting(null);
+        }}
+        title={t("unified_delete_model_title")}
+        description={t("unified_delete_model_desc", { model: deleting?.id ?? "" })}
+        onConfirm={() => {
+          if (deleting) void removeModel(deleting);
+          setDeleting(null);
+        }}
+      />
     </div>
   );
 }
