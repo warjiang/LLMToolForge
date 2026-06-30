@@ -10,6 +10,7 @@ use tauri::Manager;
 use wait_timeout::ChildExt;
 
 mod browser;
+mod config_io;
 mod data_tools;
 mod fs_tools;
 mod mcp;
@@ -990,6 +991,8 @@ pub fn run() {
             browser::browser_close,
             browser::browser_status,
             web_fetch::web_fetch,
+            config_io::model_config_export,
+            config_io::model_config_import,
             storage::storage_test_connection,
             storage::storage_put_text,
             storage::storage_get_text,
