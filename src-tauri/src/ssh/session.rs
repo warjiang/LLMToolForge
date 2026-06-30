@@ -136,14 +136,14 @@ pub async fn ssh_connect(
     config: SshConnectConfig,
     on_event: Channel<SshEvent>,
 ) -> Result<SshConnectResult, String> {
-    eprintln!(
-        "[ssh] connect {}@{}:{} ({} auth) via {} jump(s)",
+    crate::ssh::debug_log(&format!(
+        "ssh_connect: ENTER {}@{}:{} ({} auth) via {} jump(s)",
         config.username,
         config.hostname,
         config.port,
         config.auth_method,
         config.jumps.len()
-    );
+    ));
     let client_config = Arc::new(client::Config {
         inactivity_timeout: None,
         keepalive_interval: Some(Duration::from_secs(30)),
@@ -176,6 +176,9 @@ pub async fn ssh_connect(
         },
     };
 
+    crate::ssh::debug_log(&format!(
+        "ssh_connect: TCP connect to {first_host}:{first_port}"
+    ));
     let mut session = tokio::time::timeout(
         CONNECT_TIMEOUT,
         client::connect(
@@ -187,12 +190,18 @@ pub async fn ssh_connect(
     .await
     .map_err(|_| format!("connection to {first_host}:{first_port} timed out"))?
     .map_err(|e| format!("connection to {first_host}:{first_port} failed: {e}"))?;
+    crate::ssh::debug_log(&format!(
+        "ssh_connect: TCP connected to {first_host}:{first_port}; authenticating"
+    ));
 
     if first_is_target {
         authenticate(&mut session, &config).await?;
     } else {
         authenticate_hop(&mut session, &config.jumps[0]).await?;
     }
+    crate::ssh::debug_log(&format!(
+        "ssh_connect: authenticated with {first_host}:{first_port}"
+    ));
 
     // Tunnel through each remaining hop, then to the target.
     for idx in 0..config.jumps.len() {
@@ -238,21 +247,28 @@ pub async fn ssh_connect(
         }
     }
 
-    let mut channel = session
-        .channel_open_session()
+    crate::ssh::debug_log("ssh_connect: opening session channel");
+    let mut channel = tokio::time::timeout(CONNECT_TIMEOUT, session.channel_open_session())
         .await
+        .map_err(|_| "opening shell channel timed out".to_string())?
         .map_err(|e| format!("failed to open channel: {e}"))?;
 
     let cols = config.cols.filter(|c| *c > 0).unwrap_or(80);
     let rows = config.rows.filter(|r| *r > 0).unwrap_or(24);
-    channel
-        .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
+    crate::ssh::debug_log("ssh_connect: requesting PTY");
+    tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        channel.request_pty(false, "xterm-256color", cols, rows, 0, 0, &[]),
+    )
+    .await
+    .map_err(|_| "PTY request timed out".to_string())?
+    .map_err(|e| format!("pty request failed: {e}"))?;
+    crate::ssh::debug_log("ssh_connect: requesting shell");
+    tokio::time::timeout(CONNECT_TIMEOUT, channel.request_shell(true))
         .await
-        .map_err(|e| format!("pty request failed: {e}"))?;
-    channel
-        .request_shell(true)
-        .await
+        .map_err(|_| "shell request timed out".to_string())?
         .map_err(|e| format!("shell request failed: {e}"))?;
+    crate::ssh::debug_log("ssh_connect: shell ready — connection established");
 
     let (tx, mut rx) = mpsc::unbounded_channel::<SessionCmd>();
     let session_id = new_session_id();
@@ -318,30 +334,38 @@ async fn authenticate(
     session: &mut client::Handle<ClientHandler>,
     config: &SshConnectConfig,
 ) -> Result<(), String> {
-    authenticate_with(
-        session,
-        &config.username,
-        &config.auth_method,
-        config.password.as_deref(),
-        config.private_key.as_deref(),
-        config.passphrase.as_deref(),
+    tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        authenticate_with(
+            session,
+            &config.username,
+            &config.auth_method,
+            config.password.as_deref(),
+            config.private_key.as_deref(),
+            config.passphrase.as_deref(),
+        ),
     )
     .await
+    .map_err(|_| format!("authentication with {} timed out", config.username))?
 }
 
 async fn authenticate_hop(
     session: &mut client::Handle<ClientHandler>,
     hop: &SshHop,
 ) -> Result<(), String> {
-    authenticate_with(
-        session,
-        &hop.username,
-        &hop.auth_method,
-        hop.password.as_deref(),
-        hop.private_key.as_deref(),
-        hop.passphrase.as_deref(),
+    tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        authenticate_with(
+            session,
+            &hop.username,
+            &hop.auth_method,
+            hop.password.as_deref(),
+            hop.private_key.as_deref(),
+            hop.passphrase.as_deref(),
+        ),
     )
     .await
+    .map_err(|_| format!("authentication with {} timed out", hop.username))?
 }
 
 async fn authenticate_with(
@@ -352,6 +376,7 @@ async fn authenticate_with(
     private_key: Option<&str>,
     passphrase: Option<&str>,
 ) -> Result<(), String> {
+    crate::ssh::debug_log(&format!("auth: method={auth_method} user={username}"));
     match auth_method {
         "password" => {
             let password = password.ok_or("password authentication requires a password")?;
@@ -366,13 +391,16 @@ async fn authenticate_with(
         }
         "key" => {
             let pem = private_key.ok_or("key authentication requires a private key")?;
+            crate::ssh::debug_log("auth: decoding private key");
             let key = decode_secret_key(pem, passphrase)
                 .map_err(|e| format!("invalid private key: {e}"))?;
+            crate::ssh::debug_log("auth: negotiating rsa hash");
             let rsa_hash: Option<HashAlg> = session
                 .best_supported_rsa_hash()
                 .await
                 .map_err(|e| format!("authentication error: {e}"))?
                 .flatten();
+            crate::ssh::debug_log("auth: sending publickey");
             let res = session
                 .authenticate_publickey(
                     username,

@@ -144,6 +144,14 @@ async function resolveJumps(
   return chain;
 }
 
+/** Fire-and-forget breadcrumb into the shared SSH diagnostic log. */
+export function debugLog(message: string): void {
+  if (!isTauri()) return;
+  import("@tauri-apps/api/core")
+    .then(({ invoke: ti }) => ti("ssh_debug_log", { message }))
+    .catch(() => {});
+}
+
 /**
  * Build a fully-resolved, decrypted connect config for `host`, including its
  * ProxyJump chain (looked up among `hosts`). Use this instead of assembling the
@@ -155,8 +163,11 @@ export async function buildConnectConfig(
   cols: number,
   rows: number
 ): Promise<SshConnectConfig> {
+  debugLog(`buildConnectConfig: start for ${host.name} (resolving jumps)`);
   const jumps = await resolveJumps(host, hosts, new Set([host.id]));
+  debugLog(`buildConnectConfig: ${jumps.length} jump(s) resolved; decrypting target secrets`);
   const secrets = await openHostSecrets(host);
+  debugLog("buildConnectConfig: done — invoking ssh_connect");
   return {
     hostname: host.hostname,
     port: host.port,

@@ -33,9 +33,13 @@ const FILE_VERSION: u8 = 1;
 const SALT_LEN: usize = 16;
 
 fn load_or_create_key() -> Result<[u8; 32], String> {
+    crate::ssh::debug_log("vault: opening keychain entry (llmtoolforge/ssh-vault-key)");
     let entry = Entry::new(KEYRING_SERVICE, KEYRING_ACCOUNT)
         .map_err(|e| format!("keychain unavailable: {e}"))?;
-    match entry.get_password() {
+    crate::ssh::debug_log("vault: calling get_password() — may block on a keychain prompt");
+    let got = entry.get_password();
+    crate::ssh::debug_log("vault: get_password() returned");
+    match got {
         Ok(b64) => {
             let bytes = B64
                 .decode(b64.trim())
