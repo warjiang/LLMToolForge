@@ -235,8 +235,8 @@ pub async fn ssh_connect(
         .await
         .map_err(|e| format!("failed to open channel: {e}"))?;
 
-    let cols = config.cols.unwrap_or(80);
-    let rows = config.rows.unwrap_or(24);
+    let cols = config.cols.filter(|c| *c > 0).unwrap_or(80);
+    let rows = config.rows.filter(|r| *r > 0).unwrap_or(24);
     channel
         .request_pty(false, "xterm-256color", cols, rows, 0, 0, &[])
         .await
