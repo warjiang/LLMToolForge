@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Loader2, RotateCw } from "lucide-react";
+import { Loader2, RotateCw, TerminalSquare } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
@@ -14,13 +14,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { SshHost } from "@/types";
 import {
+  buildConnectConfig,
   connect,
   disconnect,
   fromBase64,
-  openHostSecrets,
   resize,
   write,
-  type SshConnectConfig,
   type SshEvent,
 } from "@/lib/ssh/client";
 
@@ -28,11 +27,13 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   host: SshHost | null;
+  /** All managed hosts, used to resolve a host's ProxyJump chain. */
+  hosts: SshHost[];
 }
 
 type Status = "connecting" | "connected" | "disconnected" | "error";
 
-export function SshTerminal({ open, onOpenChange, host }: Props) {
+export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
   const { t } = useTranslation("pages");
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<Terminal | null>(null);
@@ -85,19 +86,13 @@ export function SshTerminal({ open, onOpenChange, host }: Props) {
       fit.fit();
 
       try {
-        const secrets = await openHostSecrets(host);
+        const config = await buildConnectConfig(
+          host,
+          hosts,
+          term.cols,
+          term.rows
+        );
         if (disposed) return;
-        const config: SshConnectConfig = {
-          hostname: host.hostname,
-          port: host.port,
-          username: host.username,
-          authMethod: host.authMethod,
-          password: secrets.password,
-          privateKey: secrets.privateKey,
-          passphrase: secrets.passphrase,
-          cols: term.cols,
-          rows: term.rows,
-        };
 
         const onEvent = (event: SshEvent) => {
           if (event.type === "data") {
@@ -191,17 +186,17 @@ export function SshTerminal({ open, onOpenChange, host }: Props) {
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-[920px] gap-3 p-0">
-        <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border px-5 py-3">
-          <div className="flex min-w-0 items-center gap-3">
-            <DialogTitle className="truncate">
-              {t("ssh_terminal_title")} · {host?.name}
+        <DialogHeader className="flex-row items-center justify-between gap-3 border-b border-border py-3 pl-5 pr-14">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <DialogTitle className="flex items-center gap-2 truncate text-heading-16">
+              <TerminalSquare className="h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="truncate">{host?.name}</span>
             </DialogTitle>
-            <span className="truncate text-label-12 text-muted-foreground">
+            <span className="truncate pl-6 text-label-12 font-mono text-muted-foreground">
               {host ? `${host.username}@${host.hostname}:${host.port}` : ""}
             </span>
           </div>
-          <div className="flex items-center gap-2">
-            {statusBadge()}
+          <div className="flex shrink-0 items-center gap-2">
             {(status === "disconnected" || status === "error") && (
               <Button
                 size="sm"
@@ -209,9 +204,10 @@ export function SshTerminal({ open, onOpenChange, host }: Props) {
                 onClick={() => setAttempt((a) => a + 1)}
               >
                 <RotateCw className="h-3.5 w-3.5" />
-                {t("ssh_reconnect")}
+                <span className="hidden sm:inline">{t("ssh_reconnect")}</span>
               </Button>
             )}
+            {statusBadge()}
           </div>
         </DialogHeader>
 

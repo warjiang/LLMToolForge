@@ -72,6 +72,103 @@ export async function openHostSecrets(host: SshHost): Promise<{
   return result;
 }
 
+/**
+ * Resolve a `ProxyJump` reference token to a managed host. The token is usually
+ * a config alias (matched against `host.name`), but inline `user@host:port`
+ * forms are tolerated too. Returns null when nothing matches.
+ */
+function findJumpHost(token: string, hosts: SshHost[]): SshHost | null {
+  const trimmed = token.trim();
+  if (!trimmed || trimmed.toLowerCase() === "none") return null;
+  const byName = hosts.find((h) => h.name === trimmed);
+  if (byName) return byName;
+
+  // Fallback: parse `user@host:port` and match on hostname.
+  let rest = trimmed;
+  let user: string | undefined;
+  const at = rest.lastIndexOf("@");
+  if (at >= 0) {
+    user = rest.slice(0, at);
+    rest = rest.slice(at + 1);
+  }
+  const colon = rest.lastIndexOf(":");
+  const hostname = colon >= 0 ? rest.slice(0, colon) : rest;
+  return (
+    hosts.find(
+      (h) => h.hostname === hostname && (!user || h.username === user)
+    ) ?? null
+  );
+}
+
+async function hostToHop(host: SshHost): Promise<SshHop> {
+  const secrets = await openHostSecrets(host);
+  return {
+    hostname: host.hostname,
+    port: host.port,
+    username: host.username,
+    authMethod: host.authMethod,
+    ...secrets,
+  };
+}
+
+/**
+ * Walk a host's `proxyJump` chain (which may itself reference jumped hosts),
+ * decrypting each hop's credentials. Returns the ordered list of hops with the
+ * outermost (first-dialed) jump first. Guards against cycles and missing hosts.
+ */
+async function resolveJumps(
+  host: SshHost,
+  hosts: SshHost[],
+  seen: Set<string>
+): Promise<SshHop[]> {
+  if (!host.proxyJump) return [];
+  const tokens = host.proxyJump
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+
+  const chain: SshHop[] = [];
+  for (const token of tokens) {
+    const jump = findJumpHost(token, hosts);
+    if (!jump) {
+      throw new Error(`ProxyJump host not found, import it first: ${token}`);
+    }
+    if (seen.has(jump.id)) {
+      throw new Error(`ProxyJump cycle detected at: ${jump.name}`);
+    }
+    const nextSeen = new Set(seen).add(jump.id);
+    // Any jumps the jump host itself needs come before it.
+    const upstream = await resolveJumps(jump, hosts, nextSeen);
+    chain.push(...upstream, await hostToHop(jump));
+  }
+  return chain;
+}
+
+/**
+ * Build a fully-resolved, decrypted connect config for `host`, including its
+ * ProxyJump chain (looked up among `hosts`). Use this instead of assembling the
+ * config by hand so jumped/bastioned hosts connect correctly.
+ */
+export async function buildConnectConfig(
+  host: SshHost,
+  hosts: SshHost[],
+  cols: number,
+  rows: number
+): Promise<SshConnectConfig> {
+  const jumps = await resolveJumps(host, hosts, new Set([host.id]));
+  const secrets = await openHostSecrets(host);
+  return {
+    hostname: host.hostname,
+    port: host.port,
+    username: host.username,
+    authMethod: host.authMethod,
+    ...secrets,
+    jumps,
+    cols,
+    rows,
+  };
+}
+
 export interface SshConfigCandidate {
   name: string;
   hostname: string;
@@ -100,8 +197,21 @@ export interface SshConnectConfig {
   password?: string;
   privateKey?: string;
   passphrase?: string;
+  /** Ordered ProxyJump chain (outermost first); empty for a direct connect. */
+  jumps?: SshHop[];
   cols?: number;
   rows?: number;
+}
+
+/** A single ProxyJump hop with decrypted credentials. */
+export interface SshHop {
+  hostname: string;
+  port: number;
+  username: string;
+  authMethod: "password" | "key" | "agent";
+  password?: string;
+  privateKey?: string;
+  passphrase?: string;
 }
 
 export interface SshConnectResult {

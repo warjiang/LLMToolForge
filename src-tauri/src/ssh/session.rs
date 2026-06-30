@@ -33,11 +33,35 @@ pub struct SshConnectConfig {
     pub password: Option<String>,
     pub private_key: Option<String>,
     pub passphrase: Option<String>,
+    /// Ordered ProxyJump chain. The first hop is reached by a direct TCP
+    /// connection; each subsequent hop (and finally the target) is tunneled
+    /// through the previous one. Empty means a direct connection.
+    #[serde(default)]
+    pub jumps: Vec<SshHop>,
     #[serde(default)]
     pub cols: Option<u32>,
     #[serde(default)]
     pub rows: Option<u32>,
 }
+
+/// A single ProxyJump hop with its own credentials.
+#[derive(serde::Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct SshHop {
+    pub hostname: String,
+    pub port: u16,
+    pub username: String,
+    /// "password" | "key" | "agent"
+    pub auth_method: String,
+    pub password: Option<String>,
+    pub private_key: Option<String>,
+    pub passphrase: Option<String>,
+}
+
+/// Bounds every TCP connect / SSH handshake step so an unreachable host (e.g. a
+/// private IP that is only reachable through a jump host) surfaces a clear error
+/// instead of hanging the terminal on "connecting…" forever.
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(20);
 
 #[derive(serde::Serialize, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -118,20 +142,90 @@ pub async fn ssh_connect(
         ..Default::default()
     });
 
+    // Fingerprint of the *final* target (the host the user sees in the UI).
     let fingerprint = Arc::new(StdMutex::new(None));
-    let handler = ClientHandler {
-        fingerprint: fingerprint.clone(),
+
+    // Establish the (possibly jumped) session. `keep_alive` holds every
+    // intermediate jump session so their tunnels stay open for the lifetime of
+    // the terminal; `session` ends up pointing at the final target.
+    let mut keep_alive: Vec<client::Handle<ClientHandler>> = Vec::new();
+
+    // First endpoint we touch directly over TCP: the first jump, or — when there
+    // are no jumps — the target itself.
+    let (first_host, first_port) = match config.jumps.first() {
+        Some(j) => (j.hostname.clone(), j.port),
+        None => (config.hostname.clone(), config.port),
+    };
+    let first_is_target = config.jumps.is_empty();
+    let first_handler = ClientHandler {
+        fingerprint: if first_is_target {
+            fingerprint.clone()
+        } else {
+            Arc::new(StdMutex::new(None))
+        },
     };
 
-    let mut session = client::connect(
-        client_config,
-        (config.hostname.as_str(), config.port),
-        handler,
+    let mut session = tokio::time::timeout(
+        CONNECT_TIMEOUT,
+        client::connect(
+            client_config.clone(),
+            (first_host.as_str(), first_port),
+            first_handler,
+        ),
     )
     .await
-    .map_err(|e| format!("connection failed: {e}"))?;
+    .map_err(|_| format!("connection to {first_host}:{first_port} timed out"))?
+    .map_err(|e| format!("connection to {first_host}:{first_port} failed: {e}"))?;
 
-    authenticate(&mut session, &config).await?;
+    if first_is_target {
+        authenticate(&mut session, &config).await?;
+    } else {
+        authenticate_hop(&mut session, &config.jumps[0]).await?;
+    }
+
+    // Tunnel through each remaining hop, then to the target.
+    for idx in 0..config.jumps.len() {
+        let (next_host, next_port, next_is_target) = if idx + 1 < config.jumps.len() {
+            let j = &config.jumps[idx + 1];
+            (j.hostname.clone(), j.port, false)
+        } else {
+            (config.hostname.clone(), config.port, true)
+        };
+
+        let channel = tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            session.channel_open_direct_tcpip(next_host.clone(), next_port as u32, "127.0.0.1", 0),
+        )
+        .await
+        .map_err(|_| format!("opening tunnel to {next_host}:{next_port} timed out"))?
+        .map_err(|e| format!("ProxyJump tunnel to {next_host}:{next_port} failed: {e}"))?;
+
+        let stream = channel.into_stream();
+        let next_handler = ClientHandler {
+            fingerprint: if next_is_target {
+                fingerprint.clone()
+            } else {
+                Arc::new(StdMutex::new(None))
+            },
+        };
+        let next_session = tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            client::connect_stream(client_config.clone(), stream, next_handler),
+        )
+        .await
+        .map_err(|_| format!("SSH handshake with {next_host}:{next_port} timed out"))?
+        .map_err(|e| format!("connection to {next_host}:{next_port} failed: {e}"))?;
+
+        // The previous session must outlive the tunnel running over it.
+        keep_alive.push(session);
+        session = next_session;
+
+        if next_is_target {
+            authenticate(&mut session, &config).await?;
+        } else {
+            authenticate_hop(&mut session, &config.jumps[idx + 1]).await?;
+        }
+    }
 
     let mut channel = session
         .channel_open_session()
@@ -156,8 +250,10 @@ pub async fn ssh_connect(
     let fp = fingerprint.lock().unwrap().clone();
 
     tokio::spawn(async move {
-        // Keep the connection handle alive for the lifetime of the shell.
+        // Keep the connection handle (and any ProxyJump tunnels) alive for the
+        // lifetime of the shell.
         let _session = session;
+        let _keep_alive = keep_alive;
         loop {
             tokio::select! {
                 cmd = rx.recv() => {
@@ -211,14 +307,45 @@ async fn authenticate(
     session: &mut client::Handle<ClientHandler>,
     config: &SshConnectConfig,
 ) -> Result<(), String> {
-    match config.auth_method.as_str() {
+    authenticate_with(
+        session,
+        &config.username,
+        &config.auth_method,
+        config.password.as_deref(),
+        config.private_key.as_deref(),
+        config.passphrase.as_deref(),
+    )
+    .await
+}
+
+async fn authenticate_hop(
+    session: &mut client::Handle<ClientHandler>,
+    hop: &SshHop,
+) -> Result<(), String> {
+    authenticate_with(
+        session,
+        &hop.username,
+        &hop.auth_method,
+        hop.password.as_deref(),
+        hop.private_key.as_deref(),
+        hop.passphrase.as_deref(),
+    )
+    .await
+}
+
+async fn authenticate_with(
+    session: &mut client::Handle<ClientHandler>,
+    username: &str,
+    auth_method: &str,
+    password: Option<&str>,
+    private_key: Option<&str>,
+    passphrase: Option<&str>,
+) -> Result<(), String> {
+    match auth_method {
         "password" => {
-            let password = config
-                .password
-                .clone()
-                .ok_or("password authentication requires a password")?;
+            let password = password.ok_or("password authentication requires a password")?;
             let res = session
-                .authenticate_password(&config.username, password)
+                .authenticate_password(username, password)
                 .await
                 .map_err(|e| format!("authentication error: {e}"))?;
             if !res.success() {
@@ -227,11 +354,8 @@ async fn authenticate(
             Ok(())
         }
         "key" => {
-            let pem = config
-                .private_key
-                .clone()
-                .ok_or("key authentication requires a private key")?;
-            let key = decode_secret_key(&pem, config.passphrase.as_deref())
+            let pem = private_key.ok_or("key authentication requires a private key")?;
+            let key = decode_secret_key(pem, passphrase)
                 .map_err(|e| format!("invalid private key: {e}"))?;
             let rsa_hash: Option<HashAlg> = session
                 .best_supported_rsa_hash()
@@ -240,7 +364,7 @@ async fn authenticate(
                 .flatten();
             let res = session
                 .authenticate_publickey(
-                    &config.username,
+                    username,
                     PrivateKeyWithHashAlg::new(Arc::new(key), rsa_hash),
                 )
                 .await
@@ -250,14 +374,14 @@ async fn authenticate(
             }
             Ok(())
         }
-        "agent" => authenticate_agent(session, config).await,
+        "agent" => authenticate_agent(session, username).await,
         other => Err(format!("unsupported auth method: {other}")),
     }
 }
 
 async fn authenticate_agent(
     session: &mut client::Handle<ClientHandler>,
-    config: &SshConnectConfig,
+    username: &str,
 ) -> Result<(), String> {
     use russh::keys::agent::AgentIdentity;
 
@@ -280,7 +404,7 @@ async fn authenticate_agent(
             .map_err(|e| format!("authentication error: {e}"))?
             .flatten();
         let res = session
-            .authenticate_publickey_with(&config.username, public_key, rsa_hash, &mut agent)
+            .authenticate_publickey_with(username, public_key, rsa_hash, &mut agent)
             .await
             .map_err(|e| format!("ssh-agent auth error: {e}"))?;
         if res.success() {

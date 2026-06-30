@@ -238,6 +238,7 @@ export function SshPage() {
         open={!!connecting}
         onOpenChange={(o) => !o && setConnecting(null)}
         host={connecting}
+        hosts={items}
       />
       <ConfirmDialog
         open={!!deleting}
