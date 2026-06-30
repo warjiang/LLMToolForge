@@ -68,6 +68,7 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
     const start = async () => {
       setStatus("connecting");
       setMessage(null);
+      debugLog(`SshTerminal: start() for ${host.name}`);
 
       const term = new Terminal({
         fontFamily:
@@ -81,8 +82,21 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
       termRef.current = term;
       fitRef.current = fit;
 
-      const el = containerRef.current;
-      if (!el) return;
+      // The dialog content (and this container) can mount a tick after the
+      // effect fires, so wait for the ref instead of silently bailing — a
+      // silent return here leaves the UI stuck on "connecting" forever.
+      let el = containerRef.current;
+      for (let i = 0; i < 60 && !el && !disposed; i += 1) {
+        await new Promise((r) => requestAnimationFrame(() => r(null)));
+        el = containerRef.current;
+      }
+      if (disposed) return;
+      if (!el) {
+        debugLog("SshTerminal: terminal container never mounted");
+        setStatus("error");
+        setMessage("terminal container failed to mount");
+        return;
+      }
       term.open(el);
       fit.fit();
 
