@@ -1,4 +1,4 @@
-import { useMemo, useState, useRef, useEffect } from "react";
+import { useMemo, useState, useRef, useEffect, type ReactElement } from "react";
 import {
   AlignLeft,
   Check,
@@ -46,7 +46,7 @@ export function JsonTool() {
   );
 
   // Explicitly narrow the parsed value type for JSX rendering
-  const renderJsonContent = (): JSX.Element | null => {
+  const renderJsonContent = (): ReactElement | null => {
     if (parsed.ok && parsed.value !== undefined) {
       return (
         <div className="font-mono text-sm p-4">
