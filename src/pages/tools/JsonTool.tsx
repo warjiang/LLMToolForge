@@ -288,7 +288,7 @@ export function JsonTool() {
             </div>
 
           {/* 拖动分隔符 - 仅在有效 JSON 和选中值时显示 */}
-          {parsed.ok && parsed.value && selectedValue && (
+          {parsed.ok && parsed.value !== undefined && selectedValue !== null && (
             <>
               <div
                 ref={dividerRef}
