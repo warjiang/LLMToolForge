@@ -243,7 +243,7 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
       )}
       <div
         ref={containerRef}
-        className="min-h-0 w-full flex-1 overflow-hidden bg-[#0a0a0a]"
+        className="min-h-0 w-full flex-1 overflow-hidden bg-[#0a0a0a] pl-3 pt-1"
       />
     </div>
   );
