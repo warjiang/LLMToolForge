@@ -160,7 +160,7 @@ export function SshTerminalWorkspace({ visible }: Props) {
               <div
                 key={tab.id}
                 className={cn(
-                  "absolute inset-3 overflow-hidden rounded-md border border-border",
+                  "absolute inset-0 overflow-hidden",
                   isActive ? "block" : "hidden"
                 )}
               >
