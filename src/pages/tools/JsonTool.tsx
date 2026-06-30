@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { jsonFormat, jsonMinify, parseJson } from "@/lib/tools";
+import { jsonFormat, jsonMinify, parseJson, type JsonParseResult } from "@/lib/tools";
 import { useSidebarStore } from "@/store/sidebar";
 import { JsonTree } from "./JsonTree";
 import { ValuePreviewPanel } from "./ValuePreviewPanel";
@@ -40,7 +40,7 @@ export function JsonTool() {
   const SIDEBAR_COLLAPSED = 64;
   const sidebarWidth = collapsed ? SIDEBAR_COLLAPSED : SIDEBAR_EXPANDED;
 
-  const parsed = useMemo(
+  const parsed: JsonParseResult = useMemo(
     () => parseJson(input, { preserveEscape }),
     [input, preserveEscape]
   );
