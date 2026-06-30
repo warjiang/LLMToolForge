@@ -19,30 +19,65 @@ import { useSidebarStore } from "@/store/sidebar";
 import { useThemeStore } from "@/store/theme";
 import { FormModeToggle } from "./FormModeToggle";
 import { useLocaleStore } from "@/store/locale";
+import { useDeviceConfigStore } from "@/store/deviceConfig";
+import { isFeatureEnabled, type FeatureId } from "@/lib/deviceConfig";
 
 const EXPANDED = 240;
 const COLLAPSED = 64;
+
+type SidebarNavItem = {
+  to: string;
+  label: string;
+  icon: typeof LayoutDashboard;
+  end?: boolean;
+  feature?: FeatureId;
+};
 
 export function Sidebar() {
   const { t } = useTranslation("navigation");
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
+  const featureConfig = useDeviceConfigStore((s) => s.featureConfig);
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const language = useLocaleStore((s) => s.language);
   const setLanguage = useLocaleStore((s) => s.setLanguage);
 
-  const navItems = [
-    { to: "/", label: t("dashboard"), icon: LayoutDashboard, end: true },
-    { to: "/providers", label: t("providers"), icon: Cloud },
-    { to: "/unified", label: t("unified_api"), icon: Network },
-    { to: "/skills", label: t("skills"), icon: Boxes },
-    { to: "/mcp", label: t("mcp_servers"), icon: Server },
-    { to: "/ssh", label: t("ssh"), icon: TerminalSquare },
-    { to: "/tools", label: t("tools"), icon: Wrench },
-    { to: "/browser", label: t("browser"), icon: Globe },
+  const allNavItems = [
+    {
+      to: "/",
+      label: t("dashboard"),
+      icon: LayoutDashboard,
+      end: true,
+      feature: "sidebar.dashboard",
+    },
+    {
+      to: "/providers",
+      label: t("providers"),
+      icon: Cloud,
+      feature: "sidebar.providers",
+    },
+    {
+      to: "/unified",
+      label: t("unified_api"),
+      icon: Network,
+      feature: "sidebar.unified",
+    },
+    { to: "/skills", label: t("skills"), icon: Boxes, feature: "sidebar.skills" },
+    { to: "/mcp", label: t("mcp_servers"), icon: Server, feature: "sidebar.mcp" },
+    {
+      to: "/ssh",
+      label: t("ssh"),
+      icon: TerminalSquare,
+      feature: "sidebar.ssh",
+    },
+    { to: "/tools", label: t("tools"), icon: Wrench, feature: "sidebar.tools" },
+    { to: "/browser", label: t("browser"), icon: Globe, feature: "sidebar.browser" },
     { to: "/settings", label: t("settings"), icon: Settings },
-  ];
+  ] satisfies SidebarNavItem[];
+  const navItems = allNavItems.filter(
+    (item) => !item.feature || isFeatureEnabled(featureConfig, item.feature)
+  );
 
   const labelTransition = reduce
     ? { duration: 0 }
