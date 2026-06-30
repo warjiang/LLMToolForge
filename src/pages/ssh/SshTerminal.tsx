@@ -16,7 +16,6 @@ import type { SshHost } from "@/types";
 import {
   buildConnectConfig,
   connect,
-  debugLog,
   disconnect,
   fromBase64,
   resize,
@@ -68,7 +67,6 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
     const start = async () => {
       setStatus("connecting");
       setMessage(null);
-      debugLog(`SshTerminal: start() for ${host.name}`);
 
       const term = new Terminal({
         fontFamily:
@@ -92,7 +90,6 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
       }
       if (disposed) return;
       if (!el) {
-        debugLog("SshTerminal: terminal container never mounted");
         setStatus("error");
         setMessage("terminal container failed to mount");
         return;
@@ -101,7 +98,6 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
       fit.fit();
 
       try {
-        debugLog(`SshTerminal: connecting to ${host.name}`);
         const config = await buildConnectConfig(
           host,
           hosts,
@@ -124,7 +120,6 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
         };
 
         const result = await connect(config, onEvent);
-        debugLog(`SshTerminal: connect() resolved sessionId=${result.sessionId}`);
         if (disposed) {
           await disconnect(result.sessionId).catch(() => {});
           return;
@@ -149,7 +144,6 @@ export function SshTerminal({ open, onOpenChange, host, hosts }: Props) {
         term.focus();
       } catch (e) {
         if (disposed) return;
-        debugLog(`SshTerminal: ERROR ${e instanceof Error ? e.message : String(e)}`);
         setStatus("error");
         setMessage(e instanceof Error ? e.message : String(e));
       }
