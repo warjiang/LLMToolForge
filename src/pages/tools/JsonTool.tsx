@@ -45,6 +45,18 @@ export function JsonTool() {
     [input, preserveEscape]
   );
 
+  // Explicitly narrow the parsed value type for JSX rendering
+  const renderJsonContent = (): JSX.Element | null => {
+    if (parsed.ok && parsed.value !== undefined) {
+      return (
+        <div className="font-mono text-sm p-4">
+          <JsonTree value={parsed.value} defaultOpen={true} onSelectValue={setSelectedValue} />
+        </div>
+      );
+    }
+    return null;
+  };
+
   const format = () => {
     const r = jsonFormat(input, { indent: 2, preserveEscape });
     if (r.ok && r.value) setInput(r.value);
@@ -237,11 +249,7 @@ export function JsonTool() {
           <div className="flex flex-1 min-h-0 overflow-hidden">
             {/* 左侧：JSON 树形展示 */}
             <div className="flex-1 min-h-0 overflow-auto rounded-none border-r border-border bg-background-secondary">
-              {parsed.ok && parsed.value ? (
-                <div className="font-mono text-sm p-4">
-                  <JsonTree value={parsed.value} defaultOpen={true} onSelectValue={setSelectedValue} />
-                </div>
-              ) : (
+              {renderJsonContent() ?? (
                 <div className="flex h-full items-center justify-center p-6">
                   <div className="text-center max-w-sm space-y-4">
                     <div className="flex justify-center mb-6">
