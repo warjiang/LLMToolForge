@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { RotateCw } from "lucide-react";
 import { Terminal } from "@xterm/xterm";
@@ -53,29 +53,44 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
     onStatusChange?.(status);
   }, [status, onStatusChange]);
 
+  // Recompute terminal dimensions to exactly fill its (visible) container and
+  // push the new size to the remote PTY. Guards against fitting while hidden,
+  // which would otherwise lock in a stale/oversized row count and clip the
+  // bottom line once the pane is shown again.
+  const refit = useCallback(() => {
+    const fit = fitRef.current;
+    const term = termRef.current;
+    const el = containerRef.current;
+    if (!fit || !term || !el) return;
+    if (el.clientWidth === 0 || el.clientHeight === 0) return;
+    fit.fit();
+    if (sessionRef.current) {
+      resize(sessionRef.current, term.cols, term.rows).catch(() => {});
+    }
+  }, []);
+
   // Re-fit + focus whenever this pane becomes visible. A hidden (display:none)
   // xterm reports zero size, so we must recompute dimensions on show.
   useEffect(() => {
     if (!active) return;
     const id = requestAnimationFrame(() => {
-      if (!fitRef.current || !termRef.current) return;
-      if (!containerRef.current || containerRef.current.clientWidth === 0) return;
-      fitRef.current.fit();
-      if (sessionRef.current) {
-        resize(
-          sessionRef.current,
-          termRef.current.cols,
-          termRef.current.rows
-        ).catch(() => {});
-      }
-      termRef.current.focus();
+      refit();
+      termRef.current?.focus();
     });
     return () => cancelAnimationFrame(id);
-  }, [active]);
+  }, [active, refit]);
+
+  // The window resizing changes the container without firing a ResizeObserver
+  // entry in some WebKit layout paths, so refit on it as a safety net.
+  useEffect(() => {
+    window.addEventListener("resize", refit);
+    return () => window.removeEventListener("resize", refit);
+  }, [refit]);
 
   useEffect(() => {
     let disposed = false;
     let resizeObserver: ResizeObserver | null = null;
+    const refitTimers: number[] = [];
 
     const teardown = async () => {
       const sid = sessionRef.current;
@@ -159,19 +174,15 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
           if (sessionRef.current) write(sessionRef.current, data).catch(() => {});
         });
 
+        // Layout often settles a frame or two after the connection resolves
+        // (fonts, flex sizing, the pane's enter transition). Re-fit a couple of
+        // times so the row count matches the final container height and the
+        // bottom line is never left clipped under the rounded border.
+        refitTimers.push(window.setTimeout(refit, 50));
+        refitTimers.push(window.setTimeout(refit, 300));
+
         resizeObserver = new ResizeObserver(() => {
-          if (!fitRef.current || !termRef.current) return;
-          // Skip while the pane is hidden (display:none) — fitting a zero-size
-          // element would shrink the remote PTY to a bogus 1x1.
-          if (el.clientWidth === 0 || el.clientHeight === 0) return;
-          fitRef.current.fit();
-          if (sessionRef.current) {
-            resize(
-              sessionRef.current,
-              termRef.current.cols,
-              termRef.current.rows
-            ).catch(() => {});
-          }
+          refit();
         });
         resizeObserver.observe(el);
         term.focus();
@@ -186,6 +197,7 @@ export function TerminalSession({ host, hosts, active, onStatusChange }: Props) 
 
     return () => {
       disposed = true;
+      refitTimers.forEach((id) => window.clearTimeout(id));
       resizeObserver?.disconnect();
       teardown();
     };
