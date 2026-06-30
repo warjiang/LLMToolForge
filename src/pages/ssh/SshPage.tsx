@@ -31,7 +31,6 @@ import { isTauri } from "@/lib/utils";
 import type { SshAuthMethod, SshHost } from "@/types";
 import { SshHostDialog } from "./SshHostDialog";
 import { SshImportDialog } from "./SshImportDialog";
-import { SshTerminalWorkspace } from "./SshTerminalWorkspace";
 import { SshVaultDialog } from "./SshVaultDialog";
 
 const AUTH_ICON: Record<SshAuthMethod, typeof KeyRound> = {
@@ -234,7 +233,6 @@ export function SshPage() {
         onOpenChange={(o) => !o && setVaultMode(null)}
         mode={vaultMode ?? "export"}
       />
-      <SshTerminalWorkspace hosts={items} />
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}

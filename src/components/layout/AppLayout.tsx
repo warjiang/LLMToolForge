@@ -1,7 +1,8 @@
-import { Outlet } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
 import { lazy, Suspense, useEffect } from "react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+import { SshTerminalWorkspace } from "@/pages/ssh/SshTerminalWorkspace";
 import { useChatStore } from "@/store";
 import { useAppModeStore } from "@/store/appMode";
 
@@ -23,6 +24,7 @@ function AgentFallback() {
 export function AppLayout() {
   const mode = useAppModeStore((s) => s.mode);
   const initChat = useChatStore((s) => s.init);
+  const location = useLocation();
 
   useEffect(() => {
     if (mode === "agent") void initChat();
@@ -42,10 +44,11 @@ export function AppLayout() {
         ) : (
           <>
             <Sidebar />
-            <main className="min-w-0 flex-1 overflow-hidden">
+            <main className="relative min-w-0 flex-1 overflow-hidden">
               <div className="mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-y-auto px-5 py-6 sm:px-6 lg:px-8">
                 <Outlet />
               </div>
+              <SshTerminalWorkspace visible={location.pathname.startsWith("/ssh")} />
             </main>
           </>
         )}

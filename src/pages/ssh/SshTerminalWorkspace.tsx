@@ -1,5 +1,4 @@
-import { useCallback, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Server, TerminalSquare, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,13 +9,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
-import { useSshSessionStore } from "@/store";
-import type { SshHost } from "@/types";
+import { useSshHostStore, useSshSessionStore } from "@/store";
 import { TerminalSession, type SessionStatus } from "./TerminalSession";
 
 interface Props {
-  /** All managed hosts: the `+` picker source and ProxyJump resolution set. */
-  hosts: SshHost[];
+  /**
+   * Whether the workspace is on-screen. It stays mounted when false (so
+   * background sessions survive route changes) but is hidden via CSS.
+   */
+  visible: boolean;
 }
 
 const DOT: Record<SessionStatus, string> = {
@@ -27,15 +28,17 @@ const DOT: Record<SessionStatus, string> = {
 };
 
 /**
- * Fullscreen, Terminus-style terminal workspace: a tab bar of independent SSH
- * sessions plus a `+` picker to open more (including multiple instances of the
- * same host). All sessions stay mounted so background tabs keep their
- * connections; only the active tab's pane is visible. Rendered as a portal
- * overlay (not a Radix Dialog) so Escape reaches the terminal instead of
- * closing the workspace.
+ * Terminal workspace: a tab bar of independent SSH sessions plus a `+` picker to
+ * open more (including multiple instances of the same host). All sessions stay
+ * mounted so background tabs keep their connections; only the active tab's pane
+ * is visible. Rendered inside the app's main content area (below the topbar,
+ * beside the sidebar) — not a fullscreen portal — so the app chrome stays put.
  */
-export function SshTerminalWorkspace({ hosts }: Props) {
+export function SshTerminalWorkspace({ visible }: Props) {
   const { t } = useTranslation("pages");
+  const hosts = useSshHostStore((s) => s.items);
+  const loaded = useSshHostStore((s) => s.loaded);
+  const loadHosts = useSshHostStore((s) => s.load);
   const tabs = useSshSessionStore((s) => s.tabs);
   const activeTabId = useSshSessionStore((s) => s.activeTabId);
   const workspaceOpen = useSshSessionStore((s) => s.workspaceOpen);
@@ -46,6 +49,10 @@ export function SshTerminalWorkspace({ hosts }: Props) {
 
   const [statuses, setStatuses] = useState<Record<string, SessionStatus>>({});
 
+  useEffect(() => {
+    if (workspaceOpen && !loaded) void loadHosts();
+  }, [workspaceOpen, loaded, loadHosts]);
+
   // Stable; guards against re-render loops by bailing when status is unchanged.
   const setStatusFor = useCallback((id: string, status: SessionStatus) => {
     setStatuses((prev) => (prev[id] === status ? prev : { ...prev, [id]: status }));
@@ -55,8 +62,13 @@ export function SshTerminalWorkspace({ hosts }: Props) {
 
   const hostById = (id: string) => hosts.find((h) => h.id === id) ?? null;
 
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex flex-col bg-background">
+  return (
+    <div
+      className={cn(
+        "absolute inset-0 z-30 flex-col bg-background",
+        visible ? "flex" : "hidden"
+      )}
+    >
       {/* Tab bar */}
       <div className="flex items-center gap-1 border-b border-border bg-card pl-2 pr-2">
         <div className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto py-2">
@@ -147,7 +159,10 @@ export function SshTerminalWorkspace({ hosts }: Props) {
             return (
               <div
                 key={tab.id}
-                className={cn("absolute inset-0", isActive ? "block" : "hidden")}
+                className={cn(
+                  "absolute inset-3 overflow-hidden rounded-md border border-border",
+                  isActive ? "block" : "hidden"
+                )}
               >
                 {host && (
                   <TerminalSession
@@ -162,7 +177,6 @@ export function SshTerminalWorkspace({ hosts }: Props) {
           })
         )}
       </div>
-    </div>,
-    document.body
+    </div>
   );
 }
