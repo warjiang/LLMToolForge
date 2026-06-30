@@ -56,7 +56,10 @@
     "react-router-dom": "^7.18.0",
     "remark-gfm": "^4",
     "tailwind-merge": "^3.6.0",
-    "zustand": "^5.0.14"
+    "zustand": "^5.0.14",
+    "reactflow": "^11.10.1",
+    "dagre": "^0.8.5",
+    "html-to-image": "^1.11.11"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.3",
