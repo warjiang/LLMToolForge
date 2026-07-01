@@ -80,6 +80,51 @@ node platform/node/test/runtime.test.mjs
 python3 platform/python/tests/test_runtime.py
 ```
 
+## In-app smoke test (echo agent, no framework/model)
+
+The offline harness above only exercises the pure-Node AAP round-trip. To verify
+the **full in-app path** — Rust `agent_host` → AAP events → the shared
+`AgentChatView` — use the framework-free **echo agent**. It needs no framework
+deps and never calls the model, so it isolates the interaction-reuse plumbing.
+
+Until the "install external agent" UI lands, register it manually:
+
+1. Launch from a terminal so `node` is on the app's `PATH` and the gateway is
+   available:
+   ```sh
+   pnpm tauri dev
+   ```
+2. In the **Unified API** page, enable at least one model and copy its exposed id
+   (`{conn}/{model}`). The echo agent won't call it, but runtime creation
+   requires a valid `modelId`.
+3. Open devtools (`Cmd+Option+I`) → Console and seed one external
+   `AgentDefinition` via the app's own store (WKWebView has no top-level
+   `await`, so wrap in an IIFE):
+   ```js
+   (async () => {
+     const { useAgentDefStore } = await import("/src/store/index.ts");
+     await useAgentDefStore.getState().add({
+       name: "Echo Agent (dev)", description: "AAP smoke test",
+       systemPrompt: "", modelId: "<conn>/<model>",
+       enabledInternalTools: [], enabledSkillIds: [], enabledMcpServerIds: [],
+       sandboxMode: "workspace-write", workspacePath: "",
+       temperature: 0.7, maxTokens: 4096,
+       kind: "external",
+       external: {
+         packageId: "echo-agent", runtime: "node", entry: "main.mjs",
+         packageDir: "<repo>/platform/examples/echo-agent",
+         envPath: "", framework: "none",
+       },
+     });
+   })();
+   ```
+4. Pick **Echo Agent (dev)** in the agent dropdown and send a message. Expect a
+   streamed `echo: <input>`, a short reasoning trace, and one `echo` tool
+   card — rendered by the same UI as the built-in agents.
+
+Host-side subprocess logs (stderr) surface in the `pnpm tauri dev` terminal as
+`[agent <runId>][stderr] …`.
+
 ## Write your own
 
 ### Node
