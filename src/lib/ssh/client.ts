@@ -13,6 +13,8 @@
  */
 
 import { isTauri } from "@/lib/utils";
+import { useSyncStore } from "@/store/sync";
+import type { EncryptionConfig } from "@/data/sync/types";
 import type { SshHost } from "@/types";
 
 export class DesktopOnlyError extends Error {
@@ -32,14 +34,44 @@ async function invoke<T>(cmd: string, args: Record<string, unknown>): Promise<T>
 const SECRET_FIELDS = ["password", "privateKey", "passphrase"] as const;
 type SecretField = (typeof SECRET_FIELDS)[number];
 
-/** Seal one plaintext value into an `enc:v1:` envelope. */
-export function seal(value: string): Promise<string> {
-  return invoke<string>("ssh_seal", { value });
+/**
+ * The current sync encryption config, when the user has a sync passphrase set.
+ *
+ * Passing this to seal/open lets credentials be sealed with a passphrase-derived
+ * key (portable `enc:v2:` envelope) instead of the device-local keychain key, so
+ * they can be opened on every device that shares the sync passphrase. Returns
+ * `null` when sync isn't configured, in which case the backend falls back to the
+ * device-local `enc:v1:` envelope.
+ */
+function currentEncryption(): EncryptionConfig | null {
+  const { passphrase, saltB64 } = useSyncStore.getState();
+  if (passphrase && saltB64) return { passphrase, saltB64 };
+  return null;
 }
 
-/** Open (decrypt) one `enc:v1:` envelope. */
+/** Seal one plaintext value into a sealed envelope (portable when synced). */
+export function seal(value: string): Promise<string> {
+  return invoke<string>("ssh_seal", { value, encryption: currentEncryption() });
+}
+
+/** Open (decrypt) one sealed envelope. */
 export function open(value: string): Promise<string> {
-  return invoke<string>("ssh_open", { value });
+  return invoke<string>("ssh_open", { value, encryption: currentEncryption() });
+}
+
+/** Whether a stored value is a legacy device-local (`enc:v1:`) envelope. */
+export function isDeviceLocalSeal(value: string | undefined): boolean {
+  return typeof value === "string" && value.startsWith("enc:v1:");
+}
+
+/**
+ * Re-seal a legacy device-local value into a portable `enc:v2:` envelope so it
+ * survives cross-device sync. Requires a configured sync passphrase.
+ */
+export function reseal(value: string): Promise<string> {
+  const encryption = currentEncryption();
+  if (!encryption) throw new Error("sync passphrase required to migrate credentials");
+  return invoke<string>("ssh_reseal", { value, encryption });
 }
 
 /** Encrypt the secret fields of a host payload prior to persisting it. */
@@ -70,6 +102,31 @@ export async function openHostSecrets(host: SshHost): Promise<{
     }
   }
   return result;
+}
+
+/**
+ * Migrate a host's legacy device-local (`enc:v1:`) secrets to portable
+ * `enc:v2:` envelopes. Returns a patch with only the re-sealed fields, or `null`
+ * when there's nothing to migrate (already portable, or no sync passphrase).
+ *
+ * This runs on the device that originally sealed the credentials (the only one
+ * whose keychain can open `enc:v1:`), so a subsequent sync propagates openable
+ * blobs to every other device.
+ */
+export async function migrateHostSecretsForSync(
+  host: SshHost
+): Promise<Partial<Record<SecretField, string>> | null> {
+  if (!currentEncryption()) return null;
+  const patch: Partial<Record<SecretField, string>> = {};
+  let changed = false;
+  for (const field of SECRET_FIELDS) {
+    const value = host[field];
+    if (isDeviceLocalSeal(value)) {
+      patch[field] = await reseal(value as string);
+      changed = true;
+    }
+  }
+  return changed ? patch : null;
 }
 
 /**

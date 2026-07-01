@@ -27,6 +27,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useSshHostStore, useSshSessionStore } from "@/store";
+import { useSyncStore } from "@/store/sync";
+import { migrateHostSecretsForSync, isDeviceLocalSeal } from "@/lib/ssh/client";
 import { isTauri } from "@/lib/utils";
 import type { SshAuthMethod, SshHost } from "@/types";
 import { SshHostDialog } from "./SshHostDialog";
@@ -42,6 +44,8 @@ const AUTH_ICON: Record<SshAuthMethod, typeof KeyRound> = {
 export function SshPage() {
   const { t } = useTranslation("pages");
   const { items, loaded, load, remove } = useSshHostStore();
+  const edit = useSshHostStore((s) => s.edit);
+  const syncConfigured = useSyncStore((s) => s.isConfigured());
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [vaultMode, setVaultMode] = useState<"export" | "import" | null>(null);
@@ -53,6 +57,35 @@ export function SshPage() {
   useEffect(() => {
     if (!loaded) load();
   }, [loaded, load]);
+
+  // Migrate legacy device-local (`enc:v1:`) credentials to portable `enc:v2:`
+  // envelopes once sync is configured, so synced devices can open them. Runs on
+  // the origin device (whose keychain can still open v1); failures are skipped.
+  useEffect(() => {
+    if (!loaded || !syncConfigured || !isTauri()) return;
+    const stale = items.filter(
+      (h) =>
+        isDeviceLocalSeal(h.password) ||
+        isDeviceLocalSeal(h.privateKey) ||
+        isDeviceLocalSeal(h.passphrase)
+    );
+    if (stale.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      for (const host of stale) {
+        if (cancelled) return;
+        try {
+          const patch = await migrateHostSecretsForSync(host);
+          if (patch && !cancelled) await edit(host.id, patch);
+        } catch {
+          // Can't open this host's v1 blob on this device — leave it untouched.
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [loaded, syncConfigured, items, edit]);
 
   const passwordCount = items.filter((i) => i.authMethod === "password").length;
   const keyCount = items.filter((i) => i.authMethod === "key").length;
