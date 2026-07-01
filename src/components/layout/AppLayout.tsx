@@ -45,7 +45,7 @@ export function AppLayout() {
           <>
             <Sidebar />
             <main className="relative min-w-0 flex-1 overflow-hidden">
-              <div className="mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-hidden px-5 py-6 sm:px-6 lg:px-8">
+              <div className="mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-y-auto px-5 py-6 sm:px-6 lg:px-8">
                 <Outlet />
               </div>
               <SshTerminalWorkspace visible={location.pathname.startsWith("/ssh")} />

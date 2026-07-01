@@ -9,16 +9,30 @@ pub use session::SshManager;
 
 use config::SshConfigCandidate;
 
-/// Seal a plaintext credential field into an `enc:v1:` envelope for storage.
+use crate::storage::crypto::EncryptionConfig;
+
+/// Seal a plaintext credential field into a sealed envelope for storage.
+///
+/// When `encryption` carries the user's sync passphrase, a portable `enc:v2:`
+/// envelope is produced so the credential can be opened on any synced device;
+/// otherwise it falls back to the device-local `enc:v1:` keychain envelope.
 #[tauri::command]
-pub fn ssh_seal(value: String) -> Result<String, String> {
-    vault::seal(&value)
+pub fn ssh_seal(value: String, encryption: Option<EncryptionConfig>) -> Result<String, String> {
+    vault::seal(&value, encryption.as_ref())
 }
 
-/// Open (decrypt) a sealed credential field for just-in-time use.
+/// Open (decrypt) a sealed credential field for just-in-time use. `encryption`
+/// is required to open portable `enc:v2:` envelopes.
 #[tauri::command]
-pub fn ssh_open(value: String) -> Result<String, String> {
-    vault::open(&value)
+pub fn ssh_open(value: String, encryption: Option<EncryptionConfig>) -> Result<String, String> {
+    vault::open(&value, encryption.as_ref())
+}
+
+/// Re-seal a credential into a portable `enc:v2:` envelope so it survives
+/// cross-device sync. Used to migrate legacy device-local (`enc:v1:`) values.
+#[tauri::command]
+pub fn ssh_reseal(value: String, encryption: EncryptionConfig) -> Result<String, String> {
+    vault::reseal_to_portable(&value, &encryption)
 }
 
 /// Parse `~/.ssh/config` (or a custom path) into importable host candidates,

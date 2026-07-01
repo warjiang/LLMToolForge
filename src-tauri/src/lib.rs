@@ -1003,6 +1003,7 @@ pub fn run() {
             storage::storage_generate_salt,
             ssh::ssh_seal,
             ssh::ssh_open,
+            ssh::ssh_reseal,
             ssh::ssh_parse_config,
             ssh::ssh_vault_export,
             ssh::ssh_vault_import,

@@ -68,7 +68,8 @@ export function SshVaultDialog({ open, onOpenChange, mode }: Props) {
     const hosts = JSON.parse(json) as VaultHost[];
     let count = 0;
     for (const h of hosts) {
-      // Re-seal secrets with THIS device's keychain key before persisting.
+      // Re-seal secrets for storage: portable (`enc:v2:`) when a sync passphrase
+      // is set, otherwise device-local (`enc:v1:`).
       const sealed = await sealHostSecrets({
         password: h.password,
         privateKey: h.privateKey,
