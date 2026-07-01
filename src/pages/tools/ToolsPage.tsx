@@ -1,4 +1,13 @@
-import { Braces, Code2, FileText, Hash, KeyRound, Link2, Type } from "lucide-react";
+import {
+  Braces,
+  Code2,
+  FileText,
+  Hash,
+  KeyRound,
+  Languages,
+  Link2,
+  Type,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/PageHeader";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -9,6 +18,7 @@ import { UnicodeTool } from "./UnicodeTool";
 import { Base64Tool } from "./Base64Tool";
 import { HashTool } from "./HashTool";
 import { MarkdownTool } from "./MarkdownTool";
+import { TranslateTool } from "./TranslateTool";
 
 export function ToolsPage() {
   const { t } = useTranslation("pages");
@@ -21,6 +31,7 @@ export function ToolsPage() {
     { value: "escape", label: t("escape_tool"), icon: Code2, Comp: EscapeTool },
     { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
     { value: "markdown", label: t("markdown_tool"), icon: FileText, Comp: MarkdownTool },
+    { value: "translate", label: t("translate_tool"), icon: Languages, Comp: TranslateTool },
   ];
 
   return (
