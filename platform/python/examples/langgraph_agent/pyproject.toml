@@ -8,3 +8,8 @@ dependencies = [
     "langchain-openai>=0.2",
     "langgraph>=0.2",
 ]
+
+# The SDK ships inside this repo (platform/python), not on PyPI. Resolve it from
+# the local path so `uv pip install -e .` works during zero-config env builds.
+[tool.uv.sources]
+llmtoolforge-agent = { path = "../../", editable = true }
