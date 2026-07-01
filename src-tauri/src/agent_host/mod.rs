@@ -220,10 +220,7 @@ pub async fn agent_send(
 }
 
 #[tauri::command]
-pub async fn agent_kill(
-    host: tauri::State<'_, AgentHost>,
-    run_id: String,
-) -> Result<(), String> {
+pub async fn agent_kill(host: tauri::State<'_, AgentHost>, run_id: String) -> Result<(), String> {
     let mut runs = host.runs.lock().map_err(|_| "agent host poisoned")?;
     if let Some(mut run) = runs.remove(&run_id) {
         // Dropping stdin signals EOF; then hard-kill to be safe.

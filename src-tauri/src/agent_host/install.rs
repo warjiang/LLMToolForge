@@ -69,7 +69,12 @@ fn run_streamed(
     args: &[String],
     cwd: &Path,
 ) -> Result<Option<i32>, String> {
-    emit_line(app, task_id, "info", &format!("$ {program} {}", args.join(" ")));
+    emit_line(
+        app,
+        task_id,
+        "info",
+        &format!("$ {program} {}", args.join(" ")),
+    );
     let mut child = Command::new(program)
         .args(args)
         .current_dir(cwd)
@@ -133,7 +138,11 @@ pub async fn agent_build_env(
                 pkg,
             )?;
             if code != Some(0) {
-                return Ok(BuildEnvResult { ok: false, env_path: venv_str, exit_code: code });
+                return Ok(BuildEnvResult {
+                    ok: false,
+                    env_path: venv_str,
+                    exit_code: code,
+                });
             }
 
             // Prefer an editable project install; fall back to requirements.txt.
@@ -156,8 +165,17 @@ pub async fn agent_build_env(
                     "requirements.txt".into(),
                 ]
             } else {
-                emit_line(&app, &task_id, "info", "无 pyproject.toml / requirements.txt，跳过依赖安装");
-                return Ok(BuildEnvResult { ok: true, env_path: venv_str, exit_code: Some(0) });
+                emit_line(
+                    &app,
+                    &task_id,
+                    "info",
+                    "无 pyproject.toml / requirements.txt，跳过依赖安装",
+                );
+                return Ok(BuildEnvResult {
+                    ok: true,
+                    env_path: venv_str,
+                    exit_code: Some(0),
+                });
             };
 
             let code = run_streamed(&app, &task_id, &uv, &install_args, pkg)?;
@@ -169,13 +187,7 @@ pub async fn agent_build_env(
         }
         "node" => {
             let pnpm = spec.pnpm_bin.clone().unwrap_or_else(|| "pnpm".to_string());
-            let code = run_streamed(
-                &app,
-                &task_id,
-                &pnpm,
-                &["install".to_string()],
-                pkg,
-            )?;
+            let code = run_streamed(&app, &task_id, &pnpm, &["install".to_string()], pkg)?;
             Ok(BuildEnvResult {
                 ok: code == Some(0),
                 env_path: spec.package_dir.clone(),
