@@ -1,0 +1,16 @@
+{
+  "name": "@llmtoolforge/agent-sdk",
+  "version": "0.1.0",
+  "description": "Node SDK for building LLMToolForge external agents that speak the Agent Adapter Protocol (AAP). Framework-neutral core + adapters.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./adapters/vercel-ai": "./src/adapters/vercel-ai.js"
+  },
+  "files": ["src"],
+  "scripts": {
+    "test": "node test/runtime.test.mjs"
+  },
+  "license": "MIT"
+}

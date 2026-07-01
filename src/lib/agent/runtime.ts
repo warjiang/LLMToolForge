@@ -80,6 +80,12 @@ export interface AgentRuntime {
   prompt: (input: string) => Promise<void>;
   abort: () => void;
   waitForIdle: () => Promise<void>;
+  /**
+   * Release runtime-held resources (subprocess, event listeners). Optional:
+   * the built-in Pi runtime is GC-managed and has no external process, so it
+   * omits this; the external subprocess runtime uses it to kill the child.
+   */
+  dispose?: () => void;
   /** MCP servers that failed to inspect while building tools. */
   mcpErrors: { server: string; error: string }[];
   /** MCP servers still warming up in the background (skipped this turn). */

@@ -9,6 +9,7 @@ use std::time::{Duration, Instant};
 use tauri::Manager;
 use wait_timeout::ChildExt;
 
+mod agent_host;
 mod browser;
 mod config_io;
 mod data_tools;
@@ -938,6 +939,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(agent_host::AgentHost::default())
         .manage(unified::UnifiedManager::default())
         .manage(mcp::McpSessions::default())
         .manage(browser::BrowserState::default())
@@ -969,6 +971,10 @@ pub fn run() {
             data_tools::artifact::html_artifact_create,
             data_tools::artifact::html_artifact_block,
             preview::preview_register,
+            agent_host::agent_spawn,
+            agent_host::agent_send,
+            agent_host::agent_kill,
+            agent_host::install::agent_build_env,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,

@@ -11,6 +11,7 @@ export {
   GatewayUnavailableError,
   ModelUnavailableError,
 } from "./runtime";
+export { createExternalAgentRuntime } from "./externalRuntime";
 export type {
   AgentRuntime,
   AgentRuntimeCallbacks,

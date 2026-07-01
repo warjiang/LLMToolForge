@@ -1,0 +1,15 @@
+{
+  "id": "langgraph-agent",
+  "name": "LangGraph Agent",
+  "description": "Minimal streaming ReAct-style agent built with LangGraph + LangChain, routed through the internal Unified gateway.",
+  "runtime": "python",
+  "entry": "main.py",
+  "framework": "langgraph",
+  "sdkVersion": "^0.1.0",
+  "defaults": {
+    "model": "",
+    "temperature": 0.7,
+    "maxTokens": 4096,
+    "systemPrompt": "You are a helpful assistant."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "id": "echo-agent",
+  "name": "Echo Agent",
+  "description": "Minimal AAP demo agent (no framework, no model). Echoes your input back with streaming, reasoning and a demo tool call. Used to verify interaction reuse.",
+  "runtime": "node",
+  "entry": "main.mjs",
+  "framework": "none",
+  "sdkVersion": "0.0.0",
+  "defaults": {
+    "model": "",
+    "temperature": 0.7,
+    "maxTokens": 4096,
+    "systemPrompt": ""
+  }
+}

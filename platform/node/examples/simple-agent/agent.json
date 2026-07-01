@@ -1,0 +1,15 @@
+{
+  "id": "vercel-ai-agent",
+  "name": "Vercel AI Agent",
+  "description": "Minimal streaming agent built with the Vercel AI SDK, routed through the internal Unified gateway.",
+  "runtime": "node",
+  "entry": "main.mjs",
+  "framework": "vercel-ai",
+  "sdkVersion": "^0.1.0",
+  "defaults": {
+    "model": "",
+    "temperature": 0.7,
+    "maxTokens": 4096,
+    "systemPrompt": "You are a helpful assistant."
+  }
+}
