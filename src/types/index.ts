@@ -340,6 +340,32 @@ export type AgentSandboxMode =
   | "workspace-write"
   | "danger-full-access";
 
+/** Language runtime an external (framework-based) agent package runs under. */
+export type ExternalAgentRuntime = "python" | "node";
+
+/**
+ * External-agent (framework-based) execution descriptor. Present only when
+ * `AgentDefinition.kind === "external"`. The agent runs as a subprocess that
+ * speaks the Agent Adapter Protocol (AAP); the host injects the Unified gateway
+ * base URL + local key and shuttles AAP events into the shared chat runtime.
+ */
+export interface ExternalAgentSpec {
+  /** Installed agent package id (directory under the app's `agents/` dir). */
+  packageId: string;
+  runtime: ExternalAgentRuntime;
+  /** Entry file relative to the package dir, e.g. `main.py` / `index.mjs`. */
+  entry: string;
+  /** Absolute package directory (resolved at install time). */
+  packageDir: string;
+  /**
+   * Absolute path to the isolated environment root created at install time
+   * (uv venv for python, node_modules-bearing dir for node). Empty until built.
+   */
+  envPath: string;
+  /** Human-facing framework tag for display, e.g. `langgraph` / `vercel-ai`. */
+  framework?: string;
+}
+
 /**
  * A user-defined (or built-in) agent: a reusable bundle of system prompt,
  * model routing, enabled tools/skills/MCP, and sandbox configuration. The
@@ -363,6 +389,13 @@ export interface AgentDefinition extends BaseEntity {
   workspacePath: string;
   temperature: number;
   maxTokens: number;
+  /**
+   * Runtime family. Absent / `"builtin-pi"` means the in-app Pi runtime.
+   * `"external"` means a framework-based subprocess described by {@link external}.
+   */
+  kind?: "builtin-pi" | "external";
+  /** External subprocess descriptor; required when `kind === "external"`. */
+  external?: ExternalAgentSpec;
 }
 
 export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [

@@ -94,6 +94,7 @@ import { useDebugStore } from "@/store/debug";
 import { useUnifiedStore } from "@/store/unified";
 import {
   createAgentRuntime,
+  createExternalAgentRuntime,
   prewarmMcpServers,
   GatewayUnavailableError,
   ModelUnavailableError,
@@ -2131,14 +2132,21 @@ export function AgentChatView() {
       meta?.signature !== signature ||
       meta?.sessionId !== sessionId;
     if (needNew) {
+      runtime?.dispose?.();
       runtime?.abort();
-      runtime = await createAgentRuntime(def, callbacks, {
-        workspacePath,
-        requestCheckpoint: openCheckpoint,
-        requestAsk: openAsk,
-        autoCheckpoint: def.id === RESEARCH_AGENT_ID,
-        seedHistory: seedHistoryFromMessages(seedHistory),
-      });
+      runtime =
+        def.kind === "external"
+          ? await createExternalAgentRuntime(def, callbacks, {
+              workspacePath,
+              seedHistory: seedHistoryFromMessages(seedHistory),
+            })
+          : await createAgentRuntime(def, callbacks, {
+              workspacePath,
+              requestCheckpoint: openCheckpoint,
+              requestAsk: openAsk,
+              autoCheckpoint: def.id === RESEARCH_AGENT_ID,
+              seedHistory: seedHistoryFromMessages(seedHistory),
+            });
       agentRuntimeRef.current = runtime;
       agentRuntimeMetaRef.current = { signature, sessionId };
       const notices: string[] = [];
@@ -2278,6 +2286,7 @@ export function AgentChatView() {
   const resetAgentRuntime = () => {
     cancelActiveCheckpoint();
     cancelActiveAsk();
+    agentRuntimeRef.current?.dispose?.();
     agentRuntimeRef.current?.abort();
     agentRuntimeRef.current = null;
     agentRuntimeMetaRef.current = null;
