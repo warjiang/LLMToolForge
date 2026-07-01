@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Bot } from "lucide-react";
+import { Pencil, Plus, Trash2, Bot, Package } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAgentDefStore } from "@/store";
 import type { AgentDefinition } from "@/types";
 import { AgentDefDialog } from "./AgentDefDialog";
+import { ExternalAgentInstallDialog } from "./ExternalAgentInstallDialog";
 
 interface Props {
   open: boolean;
@@ -24,6 +25,7 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation("pages");
   const { items, loaded, load, remove } = useAgentDefStore();
   const [editorOpen, setEditorOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
   const [editing, setEditing] = useState<AgentDefinition | null>(null);
   const [deleting, setDeleting] = useState<AgentDefinition | null>(null);
 
@@ -49,10 +51,14 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
             <DialogDescription>{t("agents_manage_desc")}</DialogDescription>
           </DialogHeader>
 
-          <div className="mb-3">
+          <div className="mb-3 flex flex-wrap gap-2">
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               {t("agents_new")}
+            </Button>
+            <Button variant="secondary" onClick={() => setInstallOpen(true)}>
+              <Package className="h-4 w-4" />
+              {t("agents_install_external")}
             </Button>
           </div>
 
@@ -73,6 +79,13 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
                       <span className="truncate text-label-13 font-medium">
                         {def.name}
                       </span>
+                      {def.kind === "external" && (
+                        <Badge variant="outline" className="shrink-0">
+                          {def.external?.framework
+                            ? `${t("agents_badge_external")} · ${def.external.framework}`
+                            : t("agents_badge_external")}
+                        </Badge>
+                      )}
                       {def.modelId && (
                         <Badge variant="default" className="shrink-0">
                           {def.modelId}
@@ -136,6 +149,11 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
         open={editorOpen}
         onOpenChange={setEditorOpen}
         editing={editing}
+      />
+
+      <ExternalAgentInstallDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
       />
 
       <ConfirmDialog
