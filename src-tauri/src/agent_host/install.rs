@@ -113,6 +113,104 @@ fn run_streamed(
     Ok(status.code())
 }
 
+/// Raw `defaults` block in an agent package manifest (`agent.json`).
+#[derive(Debug, Deserialize)]
+struct RawManifestDefaults {
+    #[serde(default)]
+    model: Option<String>,
+    #[serde(default)]
+    temperature: Option<f64>,
+    #[serde(default, rename = "maxTokens")]
+    max_tokens: Option<u32>,
+    #[serde(default, rename = "systemPrompt")]
+    system_prompt: Option<String>,
+}
+
+/// Raw `agent.json` package manifest as authored by an agent package.
+#[derive(Debug, Deserialize)]
+struct RawManifest {
+    id: String,
+    name: String,
+    #[serde(default)]
+    description: String,
+    runtime: String,
+    entry: String,
+    #[serde(default)]
+    framework: Option<String>,
+    #[serde(default)]
+    defaults: Option<RawManifestDefaults>,
+}
+
+/// Normalized manifest returned to the frontend (with resolved absolute dir).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentManifest {
+    id: String,
+    name: String,
+    description: String,
+    runtime: String,
+    entry: String,
+    framework: Option<String>,
+    /// Absolute, canonicalized package directory.
+    package_dir: String,
+    default_model: Option<String>,
+    default_temperature: Option<f64>,
+    default_max_tokens: Option<u32>,
+    default_system_prompt: Option<String>,
+}
+
+/// Read + validate an external agent package's `agent.json` manifest.
+#[tauri::command]
+pub async fn agent_read_manifest(package_dir: String) -> Result<AgentManifest, String> {
+    let dir = Path::new(&package_dir);
+    if !dir.is_dir() {
+        return Err(format!("包目录不存在：{package_dir}"));
+    }
+    let manifest_path = dir.join("agent.json");
+    let raw = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| format!("读取 {} 失败：{e}", manifest_path.display()))?;
+    let m: RawManifest =
+        serde_json::from_str(&raw).map_err(|e| format!("解析 agent.json 失败：{e}"))?;
+
+    if m.runtime != "python" && m.runtime != "node" {
+        return Err(format!(
+            "不支持的 runtime：{}（应为 python 或 node）",
+            m.runtime
+        ));
+    }
+    if m.entry.trim().is_empty() {
+        return Err("agent.json 缺少 entry 入口文件".to_string());
+    }
+    if !dir.join(&m.entry).is_file() {
+        return Err(format!("入口文件不存在：{}", m.entry));
+    }
+
+    let abs = dir
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or(package_dir);
+    let defaults = m.defaults.unwrap_or(RawManifestDefaults {
+        model: None,
+        temperature: None,
+        max_tokens: None,
+        system_prompt: None,
+    });
+
+    Ok(AgentManifest {
+        id: m.id,
+        name: m.name,
+        description: m.description,
+        runtime: m.runtime,
+        entry: m.entry,
+        framework: m.framework.filter(|f| !f.trim().is_empty() && f != "none"),
+        package_dir: abs,
+        default_model: defaults.model.filter(|s| !s.trim().is_empty()),
+        default_temperature: defaults.temperature,
+        default_max_tokens: defaults.max_tokens,
+        default_system_prompt: defaults.system_prompt.filter(|s| !s.trim().is_empty()),
+    })
+}
+
 #[tauri::command]
 pub async fn agent_build_env(
     app: AppHandle,

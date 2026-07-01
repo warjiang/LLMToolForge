@@ -975,6 +975,7 @@ pub fn run() {
             agent_host::agent_send,
             agent_host::agent_kill,
             agent_host::install::agent_build_env,
+            agent_host::install::agent_read_manifest,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,
