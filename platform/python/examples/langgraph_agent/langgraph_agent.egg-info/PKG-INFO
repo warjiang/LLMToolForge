@@ -1,0 +1,8 @@
+Metadata-Version: 2.4
+Name: langgraph-agent
+Version: 0.1.0
+Requires-Python: >=3.9
+Requires-Dist: llmtoolforge-agent>=0.1.0
+Requires-Dist: langchain-core>=0.3
+Requires-Dist: langchain-openai>=0.2
+Requires-Dist: langgraph>=0.2

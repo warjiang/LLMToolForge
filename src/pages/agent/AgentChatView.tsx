@@ -2177,13 +2177,36 @@ export function AgentChatView() {
    * named agent, an ad-hoc agent synthesized from the composer's enabled
    * skills/MCP, or null to fall back to the direct (non-tool) chat path.
    */
+  /**
+   * The gateway-exposed unified model id currently chosen in the composer's
+   * model picker (mapped from `settings.connKey` + `settings.modelId`), or
+   * `null` when it can't be resolved. Custom agents follow this selection so
+   * the composer's model picker is authoritative, mirroring the built-in
+   * DataAgent/ResearchAgent behavior.
+   */
+  const resolveComposerModelId = (): string | null => {
+    if (!settings?.connKey || !settings?.modelId) return null;
+    const unified = useUnifiedStore.getState();
+    const disabled = new Set(unified.config.disabledModelIds);
+    const exposed = unified.models.find(
+      (m) =>
+        m.connId === settings.connKey &&
+        m.realModel === settings.modelId &&
+        !disabled.has(m.id),
+    );
+    return exposed?.id ?? null;
+  };
+
   const resolveTurnAgent = (): AgentDefinition | null => {
     if (
       !isResearchAgent &&
       selectedAgent &&
       selectedAgentId !== DATA_AGENT_ID
     ) {
-      return selectedAgent;
+      const composerModelId = resolveComposerModelId();
+      return composerModelId
+        ? { ...selectedAgent, modelId: composerModelId }
+        : selectedAgent;
     }
     if (!settings?.connKey) return null;
     const wantsTools =
@@ -2218,7 +2241,7 @@ export function AgentChatView() {
     if (selectedAgentId === RESEARCH_AGENT_ID) {
       return buildResearchAgentDef(settings, exposed.id);
     }
-    if (selectedAgent) return selectedAgent;
+    if (selectedAgent) return { ...selectedAgent, modelId: exposed.id };
     return buildAdHocAgentDef(settings, exposed.id);
   };
 
