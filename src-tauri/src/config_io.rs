@@ -18,3 +18,9 @@ pub fn model_config_export(path: String, contents: String) -> Result<(), String>
 pub fn model_config_import(path: String) -> Result<String, String> {
     fs::read_to_string(&path).map_err(|e| format!("read failed: {e}"))
 }
+
+/// Read a user-selected UTF-8 text file for the lightweight text editor tool.
+#[tauri::command]
+pub fn text_file_open(path: String) -> Result<String, String> {
+    fs::read_to_string(&path).map_err(|e| format!("read failed: {e}"))
+}
