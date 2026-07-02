@@ -156,3 +156,24 @@ run(on_prompt, name="my-agent")
 The host provides the Unified gateway via `ctx.config` (and
 `UNIFIED_BASE_URL` / `UNIFIED_API_KEY` / `UNIFIED_MODEL` env), so point any
 OpenAI-compatible client at `modelConfig(ctx.config)`.
+
+## End-to-end verification (offline)
+
+`examples/e2e-harness.mjs` mimics what the Rust `agent_host` does at runtime,
+without cloud credentials. It boots a mock OpenAI-compatible gateway
+(`examples/mock-gateway.mjs`), spawns each example agent as a subprocess with
+`UNIFIED_*` env injected, sends AAP `init` + `prompt`, and asserts the streamed
+event sequence (`ready → assistant_start → assistant_delta… → assistant_end →
+done`) plus the `abort` contract.
+
+This exercises the real framework code paths — Python LangChain `ChatOpenAI`
+streaming and Node Vercel AI `streamText` — end to end.
+
+```sh
+# one-time: build the example isolated envs (what the host does at install)
+(cd node/examples/simple-agent && pnpm install)
+(cd python/examples/langgraph_agent && uv venv && uv pip install -e .)
+
+# run the harness
+node examples/e2e-harness.mjs
+```

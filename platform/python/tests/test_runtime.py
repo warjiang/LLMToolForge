@@ -47,11 +47,8 @@ def test_runtime_loop() -> None:
         "history": [],
     }
     assert proc.stdin is not None
-    proc.stdin.write(json.dumps(init) + "\n")
-    proc.stdin.write(json.dumps({"type": "prompt", "input": "hi"}) + "\n")
-    proc.stdin.flush()
-    proc.stdin.close()
-    out, _ = proc.communicate(timeout=10)
+    payload = json.dumps(init) + "\n" + json.dumps({"type": "prompt", "input": "hi"}) + "\n"
+    out, _ = proc.communicate(input=payload, timeout=10)
 
     events = _parse_events(out)
     types = [e["type"] for e in events]

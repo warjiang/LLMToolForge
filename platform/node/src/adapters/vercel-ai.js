@@ -79,6 +79,20 @@ export async function pipeVercelStream(ctx, result) {
     }
   }
 
-  const finalText = result.text ? await result.text : accumulated;
+  // When aborted, the stream is torn down; awaiting `result.text` may never
+  // settle. Fall back to what we accumulated so the turn can end cleanly.
+  if (ctx.aborted) {
+    ctx.assistantEnd(accumulated);
+    return;
+  }
+
+  let finalText = accumulated;
+  if (result.text) {
+    try {
+      finalText = await result.text;
+    } catch {
+      finalText = accumulated;
+    }
+  }
   ctx.assistantEnd(finalText ?? accumulated);
 }
