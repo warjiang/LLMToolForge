@@ -6,6 +6,7 @@ import {
   KeyRound,
   Languages,
   Link2,
+  NotebookText,
   Type,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -19,6 +20,7 @@ import { Base64Tool } from "./Base64Tool";
 import { HashTool } from "./HashTool";
 import { MarkdownTool } from "./MarkdownTool";
 import { TranslateTool } from "./TranslateTool";
+import { TextEditorTool } from "./TextEditorTool";
 
 export function ToolsPage() {
   const { t } = useTranslation("pages");
@@ -32,6 +34,7 @@ export function ToolsPage() {
     { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
     { value: "markdown", label: t("markdown_tool"), icon: FileText, Comp: MarkdownTool },
     { value: "translate", label: t("translate_tool"), icon: Languages, Comp: TranslateTool },
+    { value: "text-editor", label: t("text_editor_tool"), icon: NotebookText, Comp: TextEditorTool },
   ];
 
   return (

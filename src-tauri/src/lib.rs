@@ -999,6 +999,7 @@ pub fn run() {
             web_fetch::web_fetch,
             config_io::model_config_export,
             config_io::model_config_import,
+            config_io::text_file_open,
             storage::storage_test_connection,
             storage::storage_put_text,
             storage::storage_get_text,
