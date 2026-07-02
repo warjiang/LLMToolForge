@@ -61,6 +61,42 @@ fn emit_line(app: &AppHandle, task_id: &str, stream: &str, line: &str) {
     );
 }
 
+/// Verify a toolchain binary is runnable (`<program> --version`). Returns a
+/// user-actionable error when it's missing so install failures are diagnosable
+/// instead of surfacing an opaque spawn error mid-build.
+fn check_toolchain(
+    app: &AppHandle,
+    task_id: &str,
+    program: &str,
+    install_hint: &str,
+) -> Result<(), String> {
+    match Command::new(program)
+        .arg("--version")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .output()
+    {
+        Ok(out) => {
+            let ver = String::from_utf8_lossy(&out.stdout);
+            let ver = ver.lines().next().unwrap_or("").trim();
+            emit_line(
+                app,
+                task_id,
+                "info",
+                &format!("检测到 {program}：{ver}"),
+            );
+            Ok(())
+        }
+        Err(e) => {
+            let msg = format!(
+                "未找到工具链 `{program}`（{e}）。请先安装：{install_hint}"
+            );
+            emit_line(app, task_id, "stderr", &msg);
+            Err(msg)
+        }
+    }
+}
+
 /// Run a command, streaming stdout+stderr lines to the frontend. Returns the
 /// process exit code (or `None` if it was killed).
 fn run_streamed(
@@ -134,6 +170,8 @@ struct RawManifest {
     name: String,
     #[serde(default)]
     description: String,
+    #[serde(default)]
+    version: Option<String>,
     runtime: String,
     entry: String,
     #[serde(default)]
@@ -149,6 +187,7 @@ pub struct AgentManifest {
     id: String,
     name: String,
     description: String,
+    version: Option<String>,
     runtime: String,
     entry: String,
     framework: Option<String>,
@@ -201,6 +240,7 @@ pub async fn agent_read_manifest(package_dir: String) -> Result<AgentManifest, S
         id: m.id,
         name: m.name,
         description: m.description,
+        version: m.version.filter(|s| !s.trim().is_empty()),
         runtime: m.runtime,
         entry: m.entry,
         framework: m.framework.filter(|f| !f.trim().is_empty() && f != "none"),
@@ -226,6 +266,12 @@ pub async fn agent_build_env(
     match spec.runtime.as_str() {
         "python" => {
             let uv = spec.uv_bin.clone().unwrap_or_else(|| "uv".to_string());
+            check_toolchain(
+                &app,
+                &task_id,
+                &uv,
+                "https://docs.astral.sh/uv/getting-started/installation/",
+            )?;
             let venv = pkg.join(".venv");
             let venv_str = venv.to_string_lossy().to_string();
 
@@ -286,6 +332,7 @@ pub async fn agent_build_env(
         }
         "node" => {
             let pnpm = spec.pnpm_bin.clone().unwrap_or_else(|| "pnpm".to_string());
+            check_toolchain(&app, &task_id, &pnpm, "https://pnpm.io/installation")?;
             let code = run_streamed(&app, &task_id, &pnpm, &["install".to_string()], pkg)?;
             Ok(BuildEnvResult {
                 ok: code == Some(0),

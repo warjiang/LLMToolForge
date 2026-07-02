@@ -36,6 +36,7 @@ interface AgentManifest {
   runtime: "python" | "node";
   entry: string;
   framework?: string | null;
+  version?: string | null;
   packageDir: string;
   defaultModel?: string | null;
   defaultTemperature?: number | null;
@@ -180,6 +181,7 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
           packageDir: manifest.packageDir,
           envPath: res.envPath,
           framework: manifest.framework ?? undefined,
+          installedVersion: manifest.version ?? undefined,
         },
       });
       setPhase("done");
@@ -231,6 +233,11 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
               <div className="rounded-sm border border-border px-3 py-2.5 text-label-13">
                 <div className="mb-1 flex flex-wrap items-center gap-1.5">
                   <span className="font-medium">{manifest.id}</span>
+                  {manifest.version && (
+                    <Badge variant="outline" className="px-1 py-0">
+                      v{manifest.version}
+                    </Badge>
+                  )}
                   <Badge variant="outline" className="px-1 py-0">
                     {manifest.runtime}
                   </Badge>

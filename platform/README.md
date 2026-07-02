@@ -230,3 +230,21 @@ def on_prompt(ctx):
 run(on_prompt, name="my-agent")
 ```
 Or call one directly: `r = ctx.call_host_tool("bash", {"command": "ls"})`.
+
+## Scaffolding a new agent (create-llmtf-agent)
+
+Bootstrap a new agent package instead of copying an example:
+
+```bash
+node create-agent/bin/create-llmtf-agent.mjs my-agent --framework vercel-ai
+# or
+node create-agent/bin/create-llmtf-agent.mjs my-agent --framework langgraph
+```
+
+Use `--sdk-path ../node` / `--sdk-path ../python` to resolve the in-repo SDK
+during local development. See `create-agent/README.md` for the full option list.
+
+The generated `agent.json` includes a `version` field, surfaced in the app's
+install dialog and agent list badge. On install the app also pre-checks that the
+required toolchain (`uv` for Python, `pnpm` for Node) is present and emits an
+actionable error with an install link when it is missing.

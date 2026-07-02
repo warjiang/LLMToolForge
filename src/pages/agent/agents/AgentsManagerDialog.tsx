@@ -84,6 +84,9 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
                           {def.external?.framework
                             ? `${t("agents_badge_external")} · ${def.external.framework}`
                             : t("agents_badge_external")}
+                          {def.external?.installedVersion
+                            ? ` · v${def.external.installedVersion}`
+                            : ""}
                         </Badge>
                       )}
                       {def.modelId && (

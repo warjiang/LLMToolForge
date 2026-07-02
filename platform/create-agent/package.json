@@ -1,0 +1,14 @@
+{
+  "name": "create-llmtf-agent",
+  "version": "0.1.0",
+  "description": "Scaffold a new LLMToolForge external agent package (LangGraph/Python or Vercel AI/Node) that speaks the Agent Adapter Protocol (AAP).",
+  "type": "module",
+  "bin": {
+    "create-llmtf-agent": "bin/create-llmtf-agent.mjs"
+  },
+  "files": ["bin", "src", "templates"],
+  "scripts": {
+    "test": "node test/scaffold.test.mjs"
+  },
+  "license": "MIT"
+}

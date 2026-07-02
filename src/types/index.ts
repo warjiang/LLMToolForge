@@ -364,6 +364,8 @@ export interface ExternalAgentSpec {
   envPath: string;
   /** Human-facing framework tag for display, e.g. `langgraph` / `vercel-ai`. */
   framework?: string;
+  /** Installed package version, from `agent.json` `version` (if declared). */
+  installedVersion?: string;
 }
 
 /**
