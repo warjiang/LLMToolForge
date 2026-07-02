@@ -578,7 +578,7 @@ fn write_skill_files(dir: &Path, skill: &SyncSkillPayload) -> Result<(), String>
 }
 
 /// Normalize a skill-relative path, rejecting absolute paths and `..` escapes.
-fn sanitize_rel_path(input: &str) -> Option<PathBuf> {
+pub(crate) fn sanitize_rel_path(input: &str) -> Option<PathBuf> {
     let normalized = input.replace('\\', "/");
     if normalized.is_empty() {
         return None;
@@ -612,7 +612,7 @@ fn sanitize_rel_path(input: &str) -> Option<PathBuf> {
 }
 
 /// Minimal, dependency-free standard base64 decoder.
-fn decode_base64(input: &str) -> Option<Vec<u8>> {
+pub(crate) fn decode_base64(input: &str) -> Option<Vec<u8>> {
     fn val(c: u8) -> Option<u8> {
         match c {
             b'A'..=b'Z' => Some(c - b'A'),
@@ -976,6 +976,7 @@ pub fn run() {
             agent_host::agent_kill,
             agent_host::install::agent_build_env,
             agent_host::install::agent_read_manifest,
+            agent_host::install::agent_write_package,
             unified::unified_api_set_config,
             unified::unified_api_start,
             unified::unified_api_stop,

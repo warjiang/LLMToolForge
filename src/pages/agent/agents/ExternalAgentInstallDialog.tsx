@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { FolderOpen, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { FolderOpen, Loader2, CheckCircle2, XCircle, GitBranch } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useAgentDefStore } from "@/store";
 import { useUnifiedStore } from "@/store/unified";
+import { useMarketSettingsStore } from "@/store/marketSettings";
+import { resolveGithubAgent } from "@/lib/agentMarket/github";
 
 interface Props {
   open: boolean;
@@ -58,12 +60,24 @@ interface InstallLine {
 
 type Phase = "idle" | "reading" | "review" | "building" | "done" | "error";
 
+/** GitHub provenance recorded when installing from a repo, for update checks. */
+interface GithubMeta {
+  source: string;
+  sourceSubdir: string;
+  sourceRef: string;
+  installedHash: string;
+}
+
 export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation("pages");
   const add = useAgentDefStore((s) => s.add);
   const unifiedModels = useUnifiedStore((s) => s.models);
   const unifiedConfig = useUnifiedStore((s) => s.config);
+  const githubToken = useMarketSettingsStore((s) => s.githubToken);
 
+  const [sourceKind, setSourceKind] = useState<"folder" | "github">("folder");
+  const [repoInput, setRepoInput] = useState("");
+  const [githubMeta, setGithubMeta] = useState<GithubMeta | null>(null);
   const [phase, setPhase] = useState<Phase>("idle");
   const [manifest, setManifest] = useState<AgentManifest | null>(null);
   const [name, setName] = useState("");
@@ -75,6 +89,9 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (!open) {
+      setSourceKind("folder");
+      setRepoInput("");
+      setGithubMeta(null);
       setPhase("idle");
       setManifest(null);
       setName("");
@@ -94,8 +111,21 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
     (m) => !disabledModelIds.has(m.id)
   );
 
+  const applyManifest = (m: AgentManifest) => {
+    setManifest(m);
+    setName(m.name || m.id);
+    setDescription(m.description || "");
+    setModelId(
+      m.defaultModel && availableModels.some((x) => x.id === m.defaultModel)
+        ? m.defaultModel
+        : ""
+    );
+    setPhase("review");
+  };
+
   const chooseFolder = async () => {
     setError(null);
+    setGithubMeta(null);
     const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
     const picked = await openDialog({
       directory: true,
@@ -111,15 +141,36 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
       const m = await invoke<AgentManifest>("agent_read_manifest", {
         packageDir: dir,
       });
-      setManifest(m);
-      setName(m.name || m.id);
-      setDescription(m.description || "");
-      setModelId(
-        m.defaultModel && availableModels.some((x) => x.id === m.defaultModel)
-          ? m.defaultModel
-          : ""
-      );
-      setPhase("review");
+      applyManifest(m);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setPhase("idle");
+    }
+  };
+
+  const resolveGithub = async () => {
+    const ref = repoInput.trim();
+    if (!ref) return setError(t("agents_install_github_required"));
+    setError(null);
+    setPhase("reading");
+    try {
+      const token = githubToken.trim() || undefined;
+      const resolved = await resolveGithubAgent(ref, token);
+      const { invoke } = await import("@tauri-apps/api/core");
+      const packageDir = await invoke<string>("agent_write_package", {
+        id: resolved.manifest.id,
+        files: resolved.files,
+      });
+      const m = await invoke<AgentManifest>("agent_read_manifest", {
+        packageDir,
+      });
+      setGithubMeta({
+        source: resolved.source,
+        sourceSubdir: resolved.subdir,
+        sourceRef: resolved.ref,
+        installedHash: resolved.hash,
+      });
+      applyManifest(m);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setPhase("idle");
@@ -182,6 +233,10 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
           envPath: res.envPath,
           framework: manifest.framework ?? undefined,
           installedVersion: manifest.version ?? undefined,
+          source: githubMeta?.source,
+          sourceSubdir: githubMeta?.sourceSubdir,
+          sourceRef: githubMeta?.sourceRef,
+          installedHash: githubMeta?.installedHash,
         },
       });
       setPhase("done");
@@ -209,22 +264,84 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
 
         <div className="grid gap-4">
           {!showReview && (
-            <div className="grid gap-1.5">
-              <Button
-                variant="secondary"
-                onClick={chooseFolder}
-                disabled={phase === "reading"}
-              >
-                {phase === "reading" ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
+            <div className="grid gap-3">
+              <div className="flex gap-1 rounded-sm border border-border p-0.5">
+                <Button
+                  variant={sourceKind === "folder" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    setError(null);
+                    setSourceKind("folder");
+                  }}
+                >
                   <FolderOpen className="h-4 w-4" />
-                )}
-                {t("agents_install_choose_folder")}
-              </Button>
-              <p className="text-label-12 text-muted-foreground">
-                {t("agents_install_folder_hint")}
-              </p>
+                  {t("agents_install_source_folder")}
+                </Button>
+                <Button
+                  variant={sourceKind === "github" ? "secondary" : "ghost"}
+                  size="sm"
+                  className="flex-1"
+                  onClick={() => {
+                    setError(null);
+                    setSourceKind("github");
+                  }}
+                >
+                  <GitBranch className="h-4 w-4" />
+                  {t("agents_install_source_github")}
+                </Button>
+              </div>
+
+              {sourceKind === "folder" ? (
+                <div className="grid gap-1.5">
+                  <Button
+                    variant="secondary"
+                    onClick={chooseFolder}
+                    disabled={phase === "reading"}
+                  >
+                    {phase === "reading" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FolderOpen className="h-4 w-4" />
+                    )}
+                    {t("agents_install_choose_folder")}
+                  </Button>
+                  <p className="text-label-12 text-muted-foreground">
+                    {t("agents_install_folder_hint")}
+                  </p>
+                </div>
+              ) : (
+                <div className="grid gap-1.5">
+                  <Label htmlFor="ext-repo">
+                    {t("agents_install_github_label")}
+                  </Label>
+                  <div className="flex gap-2">
+                    <Input
+                      id="ext-repo"
+                      value={repoInput}
+                      placeholder="owner/repo 或 owner/repo/agents/my-agent"
+                      disabled={phase === "reading"}
+                      onChange={(e) => setRepoInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") void resolveGithub();
+                      }}
+                    />
+                    <Button
+                      onClick={resolveGithub}
+                      disabled={phase === "reading" || !repoInput.trim()}
+                    >
+                      {phase === "reading" ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        t("agents_install_github_fetch")
+                      )}
+                    </Button>
+                  </div>
+                  <p className="text-label-12 text-muted-foreground">
+                    {t("agents_install_github_hint")}
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -250,6 +367,15 @@ export function ExternalAgentInstallDialog({ open, onOpenChange }: Props) {
                 <p className="truncate text-label-12 text-muted-foreground">
                   {manifest.packageDir}/{manifest.entry}
                 </p>
+                {githubMeta && (
+                  <p className="mt-0.5 flex items-center gap-1 truncate text-label-12 text-muted-foreground">
+                    <GitBranch className="h-3 w-3 shrink-0" />
+                    {githubMeta.source}
+                    {githubMeta.sourceSubdir ? `/${githubMeta.sourceSubdir}` : ""}
+                    {" @ "}
+                    {githubMeta.sourceRef}
+                  </p>
+                )}
               </div>
 
               <div className="grid gap-1.5">

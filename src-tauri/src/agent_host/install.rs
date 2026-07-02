@@ -16,7 +16,9 @@ use std::process::{Command, Stdio};
 use std::thread;
 
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter};
+use tauri::{AppHandle, Emitter, Manager};
+
+use crate::{decode_base64, sanitize_rel_path};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -342,4 +344,99 @@ pub async fn agent_build_env(
         }
         other => Err(format!("unsupported runtime: {other}")),
     }
+}
+
+/// One file in a downloaded agent package (mirrors the TS `SkillFile` shape).
+#[derive(Debug, Deserialize)]
+pub struct PackageFile {
+    /// POSIX-relative path within the package directory.
+    path: String,
+    /// UTF-8 text, or base64 when `encoding` is `"base64"`.
+    content: String,
+    encoding: String,
+}
+
+/// Sanitize an agent package id into a safe single-segment directory name.
+fn sanitize_package_id(id: &str) -> Option<String> {
+    let trimmed = id.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    let cleaned: String = trimmed
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
+                c
+            } else {
+                '-'
+            }
+        })
+        .collect();
+    let cleaned = cleaned.trim_matches(['-', '.']).to_string();
+    if cleaned.is_empty() {
+        None
+    } else {
+        Some(cleaned)
+    }
+}
+
+/// Write a downloaded agent package (list of files) into a managed directory
+/// under the app config dir (`external-agents/<id>/`), replacing any existing
+/// install, and return the absolute package directory. This materializes a
+/// GitHub-fetched package on disk so `agent_build_env` can provision it.
+#[tauri::command]
+pub async fn agent_write_package(
+    app: AppHandle,
+    id: String,
+    files: Vec<PackageFile>,
+) -> Result<String, String> {
+    let safe_id =
+        sanitize_package_id(&id).ok_or_else(|| format!("非法的 agent id：{id}"))?;
+    if files.is_empty() {
+        return Err("下载的 agent 包为空".to_string());
+    }
+
+    let mut dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("获取应用配置目录失败：{e}"))?;
+    dir.push("external-agents");
+    dir.push(&safe_id);
+
+    // Replace any prior install so re-installs/updates are clean.
+    if dir.exists() {
+        std::fs::remove_dir_all(&dir).map_err(|e| format!("清理旧目录失败：{e}"))?;
+    }
+    std::fs::create_dir_all(&dir).map_err(|e| format!("创建 agent 目录失败：{e}"))?;
+
+    let mut wrote_manifest = false;
+    for file in &files {
+        let rel = sanitize_rel_path(&file.path)
+            .ok_or_else(|| format!("非法的文件路径：{}", file.path))?;
+        let dest = dir.join(&rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
+        }
+        let bytes = match file.encoding.as_str() {
+            "utf8" => file.content.clone().into_bytes(),
+            "base64" => decode_base64(&file.content)
+                .ok_or_else(|| format!("base64 解码失败：{}", file.path))?,
+            other => return Err(format!("未知文件编码：{other}")),
+        };
+        std::fs::write(&dest, bytes)
+            .map_err(|e| format!("写入文件失败 {}：{e}", file.path))?;
+        if rel.to_string_lossy().eq_ignore_ascii_case("agent.json") {
+            wrote_manifest = true;
+        }
+    }
+
+    if !wrote_manifest {
+        return Err("下载的 agent 包缺少 agent.json 清单".to_string());
+    }
+
+    let abs = dir
+        .canonicalize()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_else(|_| dir.to_string_lossy().to_string());
+    Ok(abs)
 }
