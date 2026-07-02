@@ -95,7 +95,97 @@ def test_langchain_handler() -> None:
     print("PASS: langchain handler mapping")
 
 
+def test_host_tool_bridge() -> None:
+    """Round-trip host_tool_call/host_tool_result through a real subprocess."""
+    import threading
+
+    agent = HERE / "fixtures" / "host_tool_agent.py"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(PKG_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.Popen(
+        [sys.executable, str(agent)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,
+        text=True,
+        bufsize=1,
+        env=env,
+    )
+    assert proc.stdin is not None and proc.stdout is not None
+
+    events: list = []
+    done = threading.Event()
+
+    def _send(msg: dict) -> None:
+        proc.stdin.write(json.dumps(msg) + "\n")
+        proc.stdin.flush()
+
+    def _reader() -> None:
+        for raw in proc.stdout:
+            line = raw.strip()
+            if not line.startswith(MARKER):
+                continue
+            evt = json.loads(line[len(MARKER):])
+            events.append(evt)
+            if evt["type"] == "host_tool_call":
+                assert evt["toolName"] == "echo_host", evt
+                assert evt["args"] == {"msg": "ping"}, evt
+                _send(
+                    {
+                        "type": "host_tool_result",
+                        "callId": evt["callId"],
+                        "toolName": evt["toolName"],
+                        "resultText": f"echo:{evt['args']['msg']}",
+                        "resultJson": {"echoed": evt["args"]["msg"]},
+                        "isError": False,
+                    }
+                )
+            elif evt["type"] == "done":
+                done.set()
+                return
+
+    t = threading.Thread(target=_reader, daemon=True)
+    t.start()
+
+    _send(
+        {
+            "type": "init",
+            "protocolVersion": 1,
+            "config": {"baseUrl": "x", "localKey": "y", "model": "m"},
+            "history": [],
+            "hostTools": [
+                {
+                    "name": "echo_host",
+                    "description": "echo",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"msg": {"type": "string"}},
+                    },
+                }
+            ],
+        }
+    )
+    _send({"type": "prompt", "input": "ping"})
+
+    assert done.wait(timeout=10), f"no done; events={[e['type'] for e in events]}"
+    proc.stdin.close()
+    proc.wait(timeout=5)
+
+    types = [e["type"] for e in events]
+    assert "host_tool_call" in types, types
+    end = next(e for e in events if e["type"] == "assistant_end")
+    assert end["text"] == "result=echo:ping", end
+    manifest = next(
+        e
+        for e in events
+        if e["type"] == "assistant_delta" and e["delta"].startswith("tools=")
+    )
+    assert "echo_host" in manifest["delta"], manifest
+    print("PASS: host tool bridge")
+
+
 if __name__ == "__main__":
     test_runtime_loop()
     test_langchain_handler()
+    test_host_tool_bridge()
     print("ALL PYTHON SDK TESTS PASSED")

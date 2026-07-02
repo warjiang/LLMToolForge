@@ -177,3 +177,56 @@ streaming and Node Vercel AI `streamText` — end to end.
 # run the harness
 node examples/e2e-harness.mjs
 ```
+
+## Host tools (Phase 2 reverse bridge)
+
+External agents can call the app's built-in tools — bash, file I/O, grep,
+web_fetch, MCP tools, and Skills — without reimplementing them. The host
+advertises the enabled tools in `init.hostTools`; the agent calls them back and
+every call runs through the **same sandbox + human-approval** path as the
+built-in agent, and shows up in the chat UI as a normal tool call.
+
+### Node
+```js
+import { run, modelConfig } from "@llmtoolforge/agent-sdk";
+import { pipeVercelStream, hostToolsForVercel } from "@llmtoolforge/agent-sdk/adapters/vercel-ai";
+import { streamText } from "ai";
+import { createOpenAI } from "@ai-sdk/openai";
+
+run({
+  name: "my-agent",
+  async onPrompt(ctx) {
+    const { baseURL, apiKey, model } = modelConfig(ctx.config);
+    const openai = createOpenAI({ baseURL, apiKey });
+    const result = streamText({
+      model: openai(model),
+      messages: [{ role: "user", content: ctx.input }],
+      tools: await hostToolsForVercel(ctx), // host tools as LLM tools
+      maxSteps: 8,
+    });
+    await pipeVercelStream(ctx, result);
+  },
+});
+```
+Or call one directly: `const r = await ctx.callHostTool("bash", { command: "ls" });`
+
+### Python
+```python
+from llmtoolforge_agent import run, model_config
+from llmtoolforge_agent.adapters.langchain import AAPCallbackHandler, host_tools_for_langchain
+from langchain_openai import ChatOpenAI
+from langgraph.prebuilt import create_react_agent
+
+def on_prompt(ctx):
+    cfg = model_config(ctx.config)
+    llm = ChatOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model, streaming=True)
+    handler = AAPCallbackHandler(ctx)
+    agent = create_react_agent(llm, host_tools_for_langchain(ctx))
+    for chunk in agent.stream({"messages": [("user", ctx.input)]},
+                              config={"callbacks": [handler]}, stream_mode="values"):
+        pass
+    handler.finalize("")
+
+run(on_prompt, name="my-agent")
+```
+Or call one directly: `r = ctx.call_host_tool("bash", {"command": "ls"})`.

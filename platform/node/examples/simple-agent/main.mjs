@@ -12,7 +12,10 @@
  */
 
 import { run, modelConfig } from "@llmtoolforge/agent-sdk";
-import { pipeVercelStream } from "@llmtoolforge/agent-sdk/adapters/vercel-ai";
+import {
+  pipeVercelStream,
+  hostToolsForVercel,
+} from "@llmtoolforge/agent-sdk/adapters/vercel-ai";
 import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
@@ -27,12 +30,19 @@ run({
       { role: "user", content: ctx.input },
     ];
 
+    // Expose the app's host tools (bash/fs/grep/web_fetch/MCP/skills) to the
+    // model. Each call is bridged back to the host via `ctx.callHostTool` and
+    // runs under the host's sandbox + approval.
+    const tools = await hostToolsForVercel(ctx);
+
     const result = streamText({
       model: openai(model),
       system: ctx.config?.systemPrompt || undefined,
       temperature: ctx.config?.temperature,
       maxTokens: ctx.config?.maxTokens,
       messages,
+      tools,
+      maxSteps: 8,
       abortSignal: ctx.signal,
     });
 

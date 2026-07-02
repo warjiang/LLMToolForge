@@ -2138,6 +2138,8 @@ export function AgentChatView() {
         def.kind === "external"
           ? await createExternalAgentRuntime(def, callbacks, {
               workspacePath,
+              requestCheckpoint: openCheckpoint,
+              requestAsk: openAsk,
               seedHistory: seedHistoryFromMessages(seedHistory),
             })
           : await createAgentRuntime(def, callbacks, {

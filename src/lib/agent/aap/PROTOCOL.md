@@ -40,6 +40,13 @@ Newline-delimited JSON over the subprocess's standard streams.
   "history": [
     { "role": "user", "content": "…" },
     { "role": "assistant", "content": "…" }
+  ],
+  "hostTools": [
+    {
+      "name": "bash",
+      "description": "Run a shell command in the sandbox.",
+      "parameters": { "type": "object", "properties": { "command": { "type": "string" } } }
+    }
   ]
 }
 ```
@@ -60,6 +67,24 @@ available at the same base).
 Cooperative cancel of the in-flight turn. The agent should stop as soon as
 practical and emit `done` (or `error`).
 
+`hostTools` in `init` (optional; Phase 2) advertises app tools the agent may
+call back into the host via `host_tool_call`. Each entry's `parameters` is a
+JSON Schema object. Host tools run under the host's sandbox + human-approval.
+
+### `host_tool_result` (Phase 2)
+```json
+{
+  "type": "host_tool_result",
+  "callId": "n1",
+  "toolName": "bash",
+  "resultText": "…",
+  "resultJson": { "exitCode": 0 },
+  "isError": false
+}
+```
+The host's reply to a `host_tool_call`, correlated by `callId`. The agent
+unblocks the framework tool call that requested it.
+
 ## Agent → Host events (marker-prefixed)
 
 | type              | fields                                                         | maps to callback      |
@@ -71,6 +96,7 @@ practical and emit `done` (or `error`).
 | `assistant_end`   | `text` (full final text)                                       | `onAssistantEnd`      |
 | `tool_start`      | `toolCallId`, `toolName`, `args?`                              | `onToolStart`         |
 | `tool_end`        | `toolCallId`, `toolName`, `resultText`, `resultJson?`, `isError` | `onToolEnd`         |
+| `host_tool_call`  | `callId`, `toolName`, `args?`                                  | executes a host tool  |
 | `error`           | `message`                                                      | `onError`             |
 | `done`            | —                                                              | `onDone`              |
 
@@ -87,7 +113,8 @@ agent → ready            (optional, once)
 agent → assistant_start
 agent → reasoning_delta* (0+)
 agent → assistant_delta* (0+)
-agent → tool_start / tool_end   (0+ interleaved)
+agent → tool_start / tool_end   (0+ interleaved)   [framework-native tools]
+agent → host_tool_call → host → host_tool_result   (0+ interleaved)   [Phase 2]
 agent → assistant_end
 agent → done
 ```
@@ -96,12 +123,19 @@ agent → done
   `assistant_start … assistant_end`). Emit exactly one `done` to end the turn.
 - On failure emit `error` then `done`.
 
-## Phase 2 (reserved)
+## Phase 2 — host-tool reverse bridge
 
-Host-tool reverse bridge to reuse MCP / bash / fs / Skills:
+External agents reuse the app's built-in tools (bash / fs / grep / web_fetch /
+MCP / Skills) without reimplementing them:
 
-- Agent → Host: `{ "type": "host_tool_call", "toolCallId", "toolName", "args" }`
-- Host → Agent: `{ "type": "host_tool_result", "toolCallId", "resultText",
-  "resultJson?", "isError" }`
-
-Not implemented in Phase 0/1.
+- Host advertises available tools in `init.hostTools` (name + description +
+  JSON-Schema parameters).
+- Agent → Host: `{ "type": "host_tool_call", "callId", "toolName", "args" }`.
+- Host executes the tool through the **same** sandbox + human-approval path as
+  the built-in agent, surfaces it in the chat UI as a normal tool call, then
+  replies Host → Agent: `{ "type": "host_tool_result", "callId", "toolName",
+  "resultText", "resultJson?", "isError" }`.
+- The Node SDK exposes `ctx.callHostTool(name, args)` + `ctx.hostTools`, and
+  `hostToolsForVercel(ctx)` to register them as Vercel AI SDK tools. The Python
+  SDK exposes `ctx.call_host_tool(name, args)` + `ctx.host_tools`, and
+  `host_tools_for_langchain(ctx)` to register them as LangChain tools.

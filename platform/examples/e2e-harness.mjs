@@ -124,6 +124,92 @@ async function runAgent({ label, command, args, cwd, promptText }) {
   return { events };
 }
 
+/**
+ * Drive a host-tool round trip: spawn a host-bridge agent, advertise an
+ * `echo_host` tool in `init`, then act as the host — execute the tool when the
+ * agent requests it and reply with `host_tool_result`. Mirrors exactly what
+ * `externalRuntime.handleHostToolCall` does at runtime.
+ */
+async function runHostBridge({ label, command, args, cwd }) {
+  log(`\n=== ${label} (host tool bridge) ===`);
+  const child = spawn(command, args, {
+    cwd,
+    stdio: ["pipe", "pipe", "pipe"],
+    env: { ...process.env },
+  });
+  const events = [];
+  let buf = "";
+  const send = (obj) => child.stdin.write(JSON.stringify(obj) + "\n");
+  const done = new Promise((resolve) => {
+    child.stdout.on("data", (chunk) => {
+      buf += chunk.toString();
+      let idx;
+      while ((idx = buf.indexOf("\n")) >= 0) {
+        const line = buf.slice(0, idx);
+        buf = buf.slice(idx + 1);
+        if (!line.startsWith(AAP_MARKER)) continue;
+        const evt = JSON.parse(line.slice(AAP_MARKER.length));
+        events.push(evt);
+        if (evt.type === "host_tool_call") {
+          log(`  <- host_tool_call ${evt.toolName}(${JSON.stringify(evt.args)})`);
+          // The "host" executes the tool and replies.
+          send({
+            type: "host_tool_result",
+            callId: evt.callId,
+            toolName: evt.toolName,
+            resultText: `echo:${evt.args?.msg ?? ""}`,
+            resultJson: { echoed: evt.args?.msg },
+            isError: false,
+          });
+        } else if (evt.type === "done") {
+          resolve();
+        }
+      }
+    });
+  });
+  child.stderr.on("data", (d) => log(`  [stderr] ${d.toString().trim()}`));
+
+  send({
+    type: "init",
+    protocolVersion: 1,
+    config: { baseUrl: BASE_URL, localKey: "mock-local-key", model: "mock/model" },
+    history: [],
+    hostTools: [
+      {
+        name: "echo_host",
+        description: "echo a message back",
+        parameters: { type: "object", properties: { msg: { type: "string" } } },
+      },
+    ],
+  });
+  send({ type: "prompt", input: "ping" });
+
+  await Promise.race([
+    done,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("host bridge timeout")), 30000)),
+  ]);
+  child.stdin.end();
+  child.kill();
+
+  const types = events.map((e) => e.type);
+  const end = events.find((e) => e.type === "assistant_end");
+  const manifest = events.find(
+    (e) => e.type === "assistant_delta" && (e.delta ?? "").startsWith("tools=")
+  );
+  const problems = [];
+  if (!types.includes("host_tool_call")) problems.push("missing 'host_tool_call'");
+  if (end?.text !== "result=echo:ping")
+    problems.push(`assistant_end '${end?.text}' != 'result=echo:ping'`);
+  if (!manifest || !manifest.delta.includes("echo_host"))
+    problems.push("host tool manifest not delivered via init");
+  if (problems.length) {
+    log(`\n[FAIL] ${label} (host bridge):\n  - ${problems.join("\n  - ")}`);
+    return false;
+  }
+  log(`[PASS] ${label} (host bridge)  (final: "${end.text}")`);
+  return true;
+}
+
 function assertSequence(label, events, promptText) {
   const types = events.map((e) => e.type);
   const problems = [];
@@ -256,6 +342,28 @@ async function main() {
         args: ["main.mjs"],
         cwd: path.join(PLATFORM, "node/examples/simple-agent"),
       })) && ok;
+
+    // Phase 2 reverse bridge: host_tool_call/result round trip, both languages.
+    ok =
+      (await runHostBridge({
+        label: "Node",
+        command: "node",
+        args: [path.join(PLATFORM, "node/test/fixtures/host-tool-agent.mjs")],
+        cwd: path.join(PLATFORM, "node/examples/simple-agent"),
+      })) && ok;
+    {
+      const venvPy = path.join(
+        PLATFORM,
+        "python/examples/langgraph_agent/.venv/bin/python"
+      );
+      ok =
+        (await runHostBridge({
+          label: "Python",
+          command: venvPy,
+          args: [path.join(PLATFORM, "python/tests/fixtures/host_tool_agent.py")],
+          cwd: path.join(PLATFORM, "python"),
+        })) && ok;
+    }
   } finally {
     gateway.kill();
   }

@@ -4,7 +4,8 @@
 Streams a LangGraph ReAct agent's model tokens and tool calls through the
 internal Unified gateway, mapping LangChain callbacks to AAP events via the SDK
 adapter. The host injects UNIFIED_BASE_URL / UNIFIED_API_KEY / UNIFIED_MODEL and
-also provides them in the ``init`` config.
+also provides them in the ``init`` config, plus any host tools the agent may
+call back into the app.
 
 Install deps in an isolated env before running (done by the host at install)::
 
@@ -14,7 +15,10 @@ Install deps in an isolated env before running (done by the host at install)::
 from __future__ import annotations
 
 from llmtoolforge_agent import run, model_config
-from llmtoolforge_agent.adapters.langchain import AAPCallbackHandler
+from llmtoolforge_agent.adapters.langchain import (
+    AAPCallbackHandler,
+    host_tools_for_langchain,
+)
 
 
 def on_prompt(ctx) -> None:
@@ -31,16 +35,43 @@ def on_prompt(ctx) -> None:
 
     handler = AAPCallbackHandler(ctx)
 
-    messages = []
     system = (ctx.config or {}).get("systemPrompt")
+    tools = host_tools_for_langchain(ctx)
+
+    if tools:
+        # Full LangGraph ReAct loop: the model may call host tools (bash/fs/grep/
+        # web_fetch/MCP/skills), each bridged back to the app via ctx.
+        from langgraph.prebuilt import create_react_agent
+
+        messages = []
+        if system:
+            messages.append(("system", system))
+        for m in ctx.history:
+            messages.append((m["role"], m["content"]))
+        messages.append(("user", ctx.input))
+
+        agent = create_react_agent(llm, tools)
+        final = ""
+        for chunk in agent.stream(
+            {"messages": messages},
+            config={"callbacks": [handler]},
+            stream_mode="values",
+        ):
+            msgs = chunk.get("messages") or []
+            if msgs:
+                content = getattr(msgs[-1], "content", "")
+                if isinstance(content, str):
+                    final = content
+        handler.finalize(final)
+        return
+
+    # No host tools: a single streamed model turn.
+    messages = []
     if system:
         messages.append(("system", system))
     for m in ctx.history:
         messages.append((m["role"], m["content"]))
     messages.append(("user", ctx.input))
-
-    # A single streamed model turn. (Swap in a full LangGraph graph as needed;
-    # the same callback handler streams graph node LLM tokens the same way.)
     result = llm.invoke(messages, config={"callbacks": [handler]})
     handler.finalize(getattr(result, "content", "") or "")
 

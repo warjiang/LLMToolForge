@@ -42,6 +42,20 @@ export interface AapHistoryMessage {
   content: string;
 }
 
+/**
+ * A host-provided tool the external agent may invoke back into the app
+ * (Phase 2 reverse bridge). These mirror the built-in agent tools — bash, file
+ * I/O, grep, web_fetch, MCP tools, skills — and run through the same sandbox and
+ * human-approval gating. `parameters` is a JSON Schema object describing the
+ * tool's arguments so the agent's framework can register it as an LLM tool.
+ */
+export interface AapHostToolSpec {
+  name: string;
+  description: string;
+  /** JSON Schema (object) for the tool arguments. */
+  parameters: unknown;
+}
+
 /** First message after spawn: hands the agent its model/gateway config. */
 export interface AapInitMessage {
   type: "init";
@@ -49,6 +63,11 @@ export interface AapInitMessage {
   config: AapInitConfig;
   /** Prior conversation, oldest-first, excluding the in-flight user turn. */
   history: AapHistoryMessage[];
+  /**
+   * Host tools the agent may call via {@link AapHostToolCallEvent}. Omitted or
+   * empty when the host exposes none (Phase 1 behaviour).
+   */
+  hostTools?: AapHostToolSpec[];
 }
 
 /** A user turn. `input` is the prompt text (attachment paths inlined by host). */
@@ -62,10 +81,25 @@ export interface AapAbortMessage {
   type: "abort";
 }
 
+/**
+ * Host → Agent reply to an {@link AapHostToolCallEvent}. Correlated by `callId`.
+ * `resultText` is the human/LLM-readable result; `resultJson` carries structured
+ * details when available. `isError` marks a failed/denied invocation.
+ */
+export interface AapHostToolResultMessage {
+  type: "host_tool_result";
+  callId: string;
+  toolName: string;
+  resultText: string;
+  resultJson?: unknown;
+  isError: boolean;
+}
+
 export type AapHostMessage =
   | AapInitMessage
   | AapPromptMessage
-  | AapAbortMessage;
+  | AapAbortMessage
+  | AapHostToolResultMessage;
 
 // ---------------------------------------------------------------------------
 // Agent → Host (emitted on stdout, marker-prefixed, one JSON object per line)
@@ -126,6 +160,20 @@ export interface AapErrorEvent {
   message: string;
 }
 
+/**
+ * Agent → Host request to invoke a host tool (Phase 2 reverse bridge). The host
+ * executes the named tool (through the same sandbox + approval path as built-in
+ * agents) and replies with an {@link AapHostToolResultMessage} carrying the same
+ * `callId`. The agent blocks its framework tool call until the reply arrives.
+ */
+export interface AapHostToolCallEvent {
+  type: "host_tool_call";
+  /** Correlation id chosen by the agent; echoed back in the result. */
+  callId: string;
+  toolName: string;
+  args?: unknown;
+}
+
 /** The current run/turn reached idle. */
 export interface AapDoneEvent {
   type: "done";
@@ -139,6 +187,7 @@ export type AapAgentEvent =
   | AapAssistantEndEvent
   | AapToolStartEvent
   | AapToolEndEvent
+  | AapHostToolCallEvent
   | AapErrorEvent
   | AapDoneEvent;
 

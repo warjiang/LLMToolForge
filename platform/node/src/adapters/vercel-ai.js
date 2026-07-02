@@ -96,3 +96,42 @@ export async function pipeVercelStream(ctx, result) {
   }
   ctx.assistantEnd(finalText ?? accumulated);
 }
+
+/**
+ * Build a Vercel AI SDK `tools` object from the host tools advertised in
+ * `ctx.hostTools`, so the LLM can call app tools (bash/fs/grep/web_fetch/MCP/
+ * skills) and each call is transparently bridged to the host via
+ * `ctx.callHostTool`. The host executes them under its sandbox + approval.
+ *
+ *   const result = streamText({
+ *     model: openai(model),
+ *     messages,
+ *     tools: await hostToolsForVercel(ctx),
+ *     maxSteps: 8,
+ *   });
+ *   await pipeVercelStream(ctx, result);
+ *
+ * @param {import("../runtime.js").TurnContext} ctx
+ * @returns {Promise<Record<string, any>>}
+ */
+export async function hostToolsForVercel(ctx) {
+  const specs = ctx.hostTools ?? [];
+  if (specs.length === 0) return {};
+  // Dynamic import keeps the SDK dependency-light; the agent brings its own `ai`.
+  const { tool, jsonSchema } = await import("ai");
+  const tools = {};
+  for (const spec of specs) {
+    tools[spec.name] = tool({
+      description: spec.description || spec.name,
+      parameters: jsonSchema(spec.parameters ?? { type: "object", properties: {} }),
+      execute: async (args) => {
+        const res = await ctx.callHostTool(spec.name, args ?? {});
+        if (res.isError) {
+          throw new Error(res.resultText || `host tool ${spec.name} failed`);
+        }
+        return res.resultJson ?? res.resultText;
+      },
+    });
+  }
+  return tools;
+}

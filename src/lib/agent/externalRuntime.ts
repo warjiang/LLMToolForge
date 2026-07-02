@@ -12,7 +12,10 @@
  */
 
 import type { AgentDefinition, ExternalAgentSpec } from "@/types";
+import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { useUnifiedStore } from "@/store/unified";
+import { useSkillStore, useMcpStore } from "@/store";
+import { resolveAgent } from "./agentDefinition";
 import {
   GatewayUnavailableError,
   ModelUnavailableError,
@@ -27,6 +30,7 @@ import {
   type AapAgentEvent,
   type AapHistoryMessage,
   type AapHostMessage,
+  type AapHostToolSpec,
 } from "./aap/protocol";
 
 function gatewayBaseUrl(port: number): string {
@@ -58,6 +62,28 @@ let runCounter = 0;
 function nextRunId(defId: string): string {
   runCounter += 1;
   return `agent-${defId}-${Date.now()}-${runCounter}`;
+}
+
+/** Flatten a pi `AgentToolResult` content array into plain text. */
+function resultToText(result: AgentToolResult<unknown> | undefined): string {
+  if (!result?.content) return "";
+  return result.content
+    .map((c) => (c.type === "text" ? c.text : `[${c.type}]`))
+    .join("\n");
+}
+
+/** Advertise a resolved host tool to the agent as a JSON-schema tool spec. */
+function toHostToolSpec(tool: AgentTool): AapHostToolSpec {
+  const t = tool as unknown as {
+    name: string;
+    description?: string;
+    parameters?: unknown;
+  };
+  return {
+    name: t.name,
+    description: t.description ?? "",
+    parameters: t.parameters ?? { type: "object", properties: {} },
+  };
 }
 
 /**
@@ -102,6 +128,22 @@ export async function createExternalAgentRuntime(
   const baseUrl = gatewayBaseUrl(unified.config.port);
   const localKey = unified.config.localKey ?? "";
 
+  // --- Phase 2 reverse bridge: resolve the same host tools the built-in agent
+  // would get (internal bash/fs/grep/web_fetch + skills + MCP), so the external
+  // agent can call back into the app through the identical sandbox + approval
+  // path. Tool execution reuses each tool's `.execute`, so no logic is copied.
+  const resolved = await resolveAgent(def, {
+    skills: useSkillStore.getState().items,
+    mcpServers: useMcpStore.getState().items,
+    workspacePath: options.workspacePath,
+    requestCheckpoint: options.requestCheckpoint,
+    requestAsk: options.requestAsk,
+  });
+  const hostToolMap = new Map<string, AgentTool>(
+    resolved.tools.map((t) => [(t as unknown as { name: string }).name, t])
+  );
+  const hostToolSpecs: AapHostToolSpec[] = resolved.tools.map(toHostToolSpec);
+
   const { invoke } = await import("@tauri-apps/api/core");
   const { listen } = await import("@tauri-apps/api/event");
 
@@ -123,6 +165,78 @@ export async function createExternalAgentRuntime(
 
   const send = (msg: AapHostMessage) =>
     invoke("agent_send", { runId, line: encodeHostMessage(msg) });
+
+  /**
+   * Execute a host tool the agent requested, surfacing it in the chat UI as a
+   * normal tool call, then reply with the correlated `host_tool_result`. All
+   * gating (sandbox mode, human checkpoints/asks) is inherited from the tool's
+   * own `execute`, so external agents get the exact same guarantees.
+   */
+  const handleHostToolCall = async (
+    callId: string,
+    toolName: string,
+    args: unknown
+  ): Promise<void> => {
+    const toolCallId = `host-${callId}`;
+    await callbacks.onToolStart?.({ toolCallId, toolName, args });
+    const tool = hostToolMap.get(toolName);
+    if (!tool) {
+      const message = `未知的宿主工具：${toolName}`;
+      await callbacks.onToolEnd?.({
+        toolCallId,
+        toolName,
+        resultText: message,
+        resultJson: undefined,
+        isError: true,
+      });
+      await send({
+        type: "host_tool_result",
+        callId,
+        toolName,
+        resultText: message,
+        isError: true,
+      });
+      return;
+    }
+    try {
+      const exec = (tool as unknown as {
+        execute: (id: string, params: unknown) => Promise<AgentToolResult<unknown>>;
+      }).execute;
+      const result = await exec(toolCallId, args ?? {});
+      const resultText = resultToText(result);
+      await callbacks.onToolEnd?.({
+        toolCallId,
+        toolName,
+        resultText,
+        resultJson: (result as { details?: unknown })?.details,
+        isError: false,
+      });
+      await send({
+        type: "host_tool_result",
+        callId,
+        toolName,
+        resultText,
+        resultJson: (result as { details?: unknown })?.details,
+        isError: false,
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      await callbacks.onToolEnd?.({
+        toolCallId,
+        toolName,
+        resultText: message,
+        resultJson: undefined,
+        isError: true,
+      });
+      await send({
+        type: "host_tool_result",
+        callId,
+        toolName,
+        resultText: message,
+        isError: true,
+      });
+    }
+  };
 
   const handleEvent = async (evt: AapAgentEvent) => {
     switch (evt.type) {
@@ -159,6 +273,9 @@ export async function createExternalAgentRuntime(
           resultJson: evt.resultJson,
           isError: Boolean(evt.isError),
         });
+        break;
+      case "host_tool_call":
+        await handleHostToolCall(evt.callId, evt.toolName, evt.args);
         break;
       case "error":
         await callbacks.onError?.(evt.message ?? "agent error");
@@ -231,6 +348,7 @@ export async function createExternalAgentRuntime(
       maxTokens: def.maxTokens,
     },
     history,
+    hostTools: hostToolSpecs,
   });
 
   let disposed = false;

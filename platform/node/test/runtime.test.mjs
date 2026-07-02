@@ -106,7 +106,75 @@ async function testVercelAdapter() {
 async function main() {
   await testRuntimeLoop();
   await testVercelAdapter();
+  await testHostToolBridge();
   console.log("ALL NODE SDK TESTS PASSED");
+}
+
+// --- Test 3: the reverse bridge round-trips host_tool_call/result -------------
+async function testHostToolBridge() {
+  const agentPath = join(here, "fixtures", "host-tool-agent.mjs");
+  const child = spawn("node", [agentPath], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  const events = [];
+  let buf = "";
+  const send = (m) => child.stdin.write(JSON.stringify(m) + "\n");
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (c) => {
+    buf += c;
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line.startsWith(MARKER)) continue;
+      const evt = JSON.parse(line.slice(MARKER.length));
+      events.push(evt);
+      // Act as the host: fulfil the tool call.
+      if (evt.type === "host_tool_call") {
+        assert.equal(evt.toolName, "echo_host", "host tool name");
+        assert.deepEqual(evt.args, { msg: "ping" }, "host tool args forwarded");
+        send({
+          type: "host_tool_result",
+          callId: evt.callId,
+          toolName: evt.toolName,
+          resultText: `echo:${evt.args.msg}`,
+          resultJson: { echoed: evt.args.msg },
+          isError: false,
+        });
+      }
+    }
+  });
+
+  send({
+    type: "init",
+    protocolVersion: 1,
+    config: { baseUrl: "x", localKey: "y", model: "m", systemPrompt: "", temperature: 0.7, maxTokens: 100 },
+    history: [],
+    hostTools: [
+      { name: "echo_host", description: "echo", parameters: { type: "object", properties: { msg: { type: "string" } } } },
+    ],
+  });
+  send({ type: "prompt", input: "ping" });
+
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline && !events.some((e) => e.type === "done")) {
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  child.stdin.end();
+  child.kill();
+
+  const types = events.map((e) => e.type);
+  assert.ok(types.includes("host_tool_call"), "host_tool_call emitted");
+  const end = events.find((e) => e.type === "assistant_end");
+  assert.equal(end.text, "result=echo:ping", "bridged result used by agent");
+  const manifestDelta = events.find(
+    (e) => e.type === "assistant_delta" && e.delta.startsWith("tools=")
+  );
+  assert.ok(
+    manifestDelta && manifestDelta.delta.includes("echo_host"),
+    "host tool manifest delivered via init"
+  );
+  console.log("PASS: host tool bridge");
 }
 
 main().catch((e) => {
