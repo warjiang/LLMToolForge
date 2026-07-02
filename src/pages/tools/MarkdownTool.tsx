@@ -1,10 +1,16 @@
-import { useState } from "react";
+import { useCallback, useRef, useState, type CSSProperties } from "react";
 import { Check, Clipboard, Copy, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { ResizeHandle } from "@/components/common/ResizeHandle";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { MarkdownMessage } from "@/components/agent/MarkdownMessage";
+import {
+  clampMarkdownInputPaneWidth,
+  MARKDOWN_DEFAULT_INPUT_WIDTH,
+  MARKDOWN_TOOL_LAYOUT,
+} from "@/lib/markdownTool";
 
 const SAMPLE = `# Markdown 渲染
 
@@ -27,8 +33,11 @@ const hello = (name: string) => \`Hello, \${name}\`;
 export function MarkdownTool() {
   const { t } = useTranslation("pages");
   const tc = useTranslation("common").t;
+  const panesRef = useRef<HTMLDivElement | null>(null);
+  const resizeStartWidthRef = useRef(0);
   const [input, setInput] = useState("");
   const [copied, setCopied] = useState(false);
+  const [inputPaneWidth, setInputPaneWidth] = useState<number | null>(null);
 
   const paste = async () => {
     try {
@@ -46,17 +55,38 @@ export function MarkdownTool() {
     setTimeout(() => setCopied(false), 1200);
   };
 
+  const startResize = useCallback(() => {
+    const containerWidth = panesRef.current?.clientWidth ?? 0;
+    resizeStartWidthRef.current =
+      inputPaneWidth ?? containerWidth * MARKDOWN_DEFAULT_INPUT_WIDTH;
+  }, [inputPaneWidth]);
+
+  const handleResize = useCallback((deltaX: number) => {
+    const containerWidth = panesRef.current?.clientWidth ?? 0;
+    if (!containerWidth) return;
+    setInputPaneWidth(
+      clampMarkdownInputPaneWidth(resizeStartWidthRef.current + deltaX, containerWidth)
+    );
+  }, []);
+
+  const paneStyle = {
+    "--markdown-input-width":
+      inputPaneWidth === null
+        ? `${MARKDOWN_DEFAULT_INPUT_WIDTH * 100}%`
+        : `${inputPaneWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
+    <div className={MARKDOWN_TOOL_LAYOUT.root}>
+      <div className="flex shrink-0 flex-wrap items-center gap-3">
         <Button variant="secondary" size="sm" onClick={() => setInput(SAMPLE)}>
           {t("tool_fill_sample")}
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
+      <div ref={panesRef} className={MARKDOWN_TOOL_LAYOUT.panes} style={paneStyle}>
+        <div className={`${MARKDOWN_TOOL_LAYOUT.pane} ${MARKDOWN_TOOL_LAYOUT.leftPane}`}>
+          <div className="flex shrink-0 items-center justify-between">
             <Label>{t("tool_markdown_input")}</Label>
             <div className="flex items-center gap-1">
               <Button variant="ghost" size="sm" onClick={paste} title={tc("paste")}>
@@ -80,12 +110,20 @@ export function MarkdownTool() {
             onChange={(e) => setInput(e.target.value)}
             placeholder={t("tool_markdown_placeholder")}
             spellCheck={false}
-            className="min-h-[320px] resize-y font-mono text-copy-13 leading-relaxed"
+            className={MARKDOWN_TOOL_LAYOUT.editor}
           />
         </div>
 
-        <div className="space-y-1.5">
-          <div className="flex items-center justify-between">
+        <ResizeHandle
+          className={MARKDOWN_TOOL_LAYOUT.handle}
+          title={t("tool_markdown_preview")}
+          onStart={startResize}
+          onDrag={handleResize}
+          onReset={() => setInputPaneWidth(null)}
+        />
+
+        <div className={`${MARKDOWN_TOOL_LAYOUT.pane} ${MARKDOWN_TOOL_LAYOUT.rightPane}`}>
+          <div className="flex shrink-0 items-center justify-between">
             <Label>{t("tool_markdown_preview")}</Label>
             <Button
               variant="ghost"
@@ -102,7 +140,7 @@ export function MarkdownTool() {
               {copied ? tc("copied") : tc("copy")}
             </Button>
           </div>
-          <div className="min-h-[320px] resize-y overflow-auto rounded-md border border-border bg-background-secondary px-4 py-3">
+          <div className={MARKDOWN_TOOL_LAYOUT.preview}>
             {input ? (
               <MarkdownMessage content={input} />
             ) : (

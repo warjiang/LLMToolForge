@@ -22,19 +22,31 @@ import { MarkdownTool } from "./MarkdownTool";
 import { TranslateTool } from "./TranslateTool";
 import { TextEditorTool } from "./TextEditorTool";
 
+export const TOOL_TAB_ORDER = [
+  "url",
+  "json",
+  "markdown",
+  "text-editor",
+  "base64",
+  "hash",
+  "escape",
+  "unicode",
+  "translate",
+] as const;
+
 export function ToolsPage() {
   const { t } = useTranslation("pages");
 
   const tabs = [
     { value: "url", label: t("url_codec"), icon: Link2, Comp: UrlTool },
     { value: "json", label: t("json_viewer"), icon: Braces, Comp: JsonTool },
+    { value: "markdown", label: t("markdown_tool"), icon: FileText, Comp: MarkdownTool },
+    { value: "text-editor", label: t("text_editor_tool"), icon: NotebookText, Comp: TextEditorTool },
     { value: "base64", label: t("base64_tool"), icon: KeyRound, Comp: Base64Tool },
     { value: "hash", label: t("hash_tool"), icon: Hash, Comp: HashTool },
     { value: "escape", label: t("escape_tool"), icon: Code2, Comp: EscapeTool },
     { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
-    { value: "markdown", label: t("markdown_tool"), icon: FileText, Comp: MarkdownTool },
     { value: "translate", label: t("translate_tool"), icon: Languages, Comp: TranslateTool },
-    { value: "text-editor", label: t("text_editor_tool"), icon: NotebookText, Comp: TextEditorTool },
   ];
 
   return (
