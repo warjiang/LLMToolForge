@@ -81,18 +81,11 @@ fn check_toolchain(
         Ok(out) => {
             let ver = String::from_utf8_lossy(&out.stdout);
             let ver = ver.lines().next().unwrap_or("").trim();
-            emit_line(
-                app,
-                task_id,
-                "info",
-                &format!("检测到 {program}：{ver}"),
-            );
+            emit_line(app, task_id, "info", &format!("检测到 {program}：{ver}"));
             Ok(())
         }
         Err(e) => {
-            let msg = format!(
-                "未找到工具链 `{program}`（{e}）。请先安装：{install_hint}"
-            );
+            let msg = format!("未找到工具链 `{program}`（{e}）。请先安装：{install_hint}");
             emit_line(app, task_id, "stderr", &msg);
             Err(msg)
         }
@@ -390,8 +383,7 @@ pub async fn agent_write_package(
     id: String,
     files: Vec<PackageFile>,
 ) -> Result<String, String> {
-    let safe_id =
-        sanitize_package_id(&id).ok_or_else(|| format!("非法的 agent id：{id}"))?;
+    let safe_id = sanitize_package_id(&id).ok_or_else(|| format!("非法的 agent id：{id}"))?;
     if files.is_empty() {
         return Err("下载的 agent 包为空".to_string());
     }
@@ -423,8 +415,7 @@ pub async fn agent_write_package(
                 .ok_or_else(|| format!("base64 解码失败：{}", file.path))?,
             other => return Err(format!("未知文件编码：{other}")),
         };
-        std::fs::write(&dest, bytes)
-            .map_err(|e| format!("写入文件失败 {}：{e}", file.path))?;
+        std::fs::write(&dest, bytes).map_err(|e| format!("写入文件失败 {}：{e}", file.path))?;
         if rel.to_string_lossy().eq_ignore_ascii_case("agent.json") {
             wrote_manifest = true;
         }
