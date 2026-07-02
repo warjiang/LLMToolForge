@@ -248,3 +248,29 @@ The generated `agent.json` includes a `version` field, surfaced in the app's
 install dialog and agent list badge. On install the app also pre-checks that the
 required toolchain (`uv` for Python, `pnpm` for Node) is present and emits an
 actionable error with an install link when it is missing.
+
+## Call attribution (monitor)
+
+Every model call routes through the app's Unified gateway, which logs each
+request in the **Monitor** tab. To make external-agent calls attributable, the
+host assigns each agent a stable User-Agent
+(`LLMToolForge-Agent/<packageId> (<framework>; <runtime>)`) via the `init`
+config (`config.userAgent`) and the `UNIFIED_USER_AGENT` env var.
+
+`modelConfig()` / `model_config()` surface it as a ready-to-spread `headers`
+object — apply it to your provider client so the gateway records it:
+
+```js
+const { baseURL, apiKey, model, headers } = modelConfig(ctx.config);
+const openai = createOpenAI({ baseURL, apiKey, headers });
+```
+
+```python
+cfg = model_config(ctx.config)
+llm = ChatOpenAI(base_url=cfg.base_url, api_key=cfg.api_key, model=cfg.model,
+                 default_headers=cfg.headers)
+```
+
+The Monitor tab then shows a **Requests by Source** breakdown, a per-row
+**Source** column, and a source filter — so you can see exactly how much traffic
+each agent generates. The scaffolded templates wire `headers` in by default.

@@ -35,7 +35,8 @@ Newline-delimited JSON over the subprocess's standard streams.
     "model": "volcengine/doubao-pro",
     "systemPrompt": "You are…",
     "temperature": 0.7,
-    "maxTokens": 4096
+    "maxTokens": 4096,
+    "userAgent": "LLMToolForge-Agent/my-agent (vercel-ai; node)"
   },
   "history": [
     { "role": "user", "content": "…" },
@@ -54,6 +55,14 @@ The agent must talk to the model **only** through `config.baseUrl` using
 `config.localKey` as the Bearer token and `config.model` as the model name — this
 is the internal Unified gateway (OpenAI-compatible; Anthropic bridge also
 available at the same base).
+
+`config.userAgent` (optional) is a stable identifier the host assigns to this
+agent (`LLMToolForge-Agent/<packageId> (<framework>; <runtime>)`). Send it as
+the `User-Agent` header on gateway requests so the app's **call monitor** can
+attribute traffic to this specific agent. The SDKs surface it via
+`modelConfig().headers` (Node) / `model_config().headers` (Python) — spread it
+into your provider client. It is also injected as the `UNIFIED_USER_AGENT`
+environment variable.
 
 ### `prompt`
 ```json

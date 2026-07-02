@@ -35,6 +35,12 @@ export interface AapInitConfig {
   systemPrompt: string;
   temperature: number;
   maxTokens: number;
+  /**
+   * User-Agent the agent should send on Unified gateway requests so calls are
+   * attributable to this agent in the call monitor. Format:
+   * `LLMToolForge-Agent/<packageId> (<framework>; <runtime>)`.
+   */
+  userAgent?: string;
 }
 
 export interface AapHistoryMessage {

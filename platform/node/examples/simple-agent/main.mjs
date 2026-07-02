@@ -22,8 +22,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 run({
   name: "vercel-ai-agent",
   async onPrompt(ctx) {
-    const { baseURL, apiKey, model } = modelConfig(ctx.config);
-    const openai = createOpenAI({ baseURL, apiKey });
+    const { baseURL, apiKey, model, headers } = modelConfig(ctx.config);
+    const openai = createOpenAI({ baseURL, apiKey, headers });
 
     const messages = [
       ...(ctx.history ?? []).map((m) => ({ role: m.role, content: m.content })),

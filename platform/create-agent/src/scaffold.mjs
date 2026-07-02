@@ -127,7 +127,8 @@ def on_prompt(ctx):
         base_url=cfg.base_url,
         api_key=cfg.api_key,
         model=cfg.model,
-        temperature=cfg.temperature,
+        temperature=cfg.temperature if cfg.temperature is not None else 0.7,
+        default_headers=cfg.headers,
         streaming=True,
     )
     handler = AAPCallbackHandler(ctx)
@@ -226,8 +227,8 @@ import { createOpenAI } from "@ai-sdk/openai";
 run({
   name: ${JSON.stringify(id)},
   async onPrompt(ctx) {
-    const { baseURL, apiKey, model, temperature } = modelConfig(ctx.config);
-    const openai = createOpenAI({ baseURL, apiKey });
+    const { baseURL, apiKey, model, temperature, headers } = modelConfig(ctx.config);
+    const openai = createOpenAI({ baseURL, apiKey, headers });
 
     const result = streamText({
       model: openai(model),

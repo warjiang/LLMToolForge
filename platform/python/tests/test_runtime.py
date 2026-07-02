@@ -189,3 +189,46 @@ if __name__ == "__main__":
     test_langchain_handler()
     test_host_tool_bridge()
     print("ALL PYTHON SDK TESTS PASSED")
+
+
+def test_model_config_user_agent() -> None:
+    """model_config surfaces userAgent + headers so calls are attributable."""
+    from llmtoolforge_agent.model import model_config
+
+    cfg = model_config(
+        {
+            "baseUrl": "http://gw/v1",
+            "localKey": "k",
+            "model": "conn/m",
+            "temperature": 0.3,
+            "maxTokens": 512,
+            "userAgent": "LLMToolForge-Agent/my-agent (langgraph; python)",
+        }
+    )
+    assert cfg.base_url == "http://gw/v1"
+    assert cfg.api_key == "k"
+    assert cfg.model == "conn/m"
+    assert cfg.temperature == 0.3
+    assert cfg.max_tokens == 512
+    assert cfg.user_agent == "LLMToolForge-Agent/my-agent (langgraph; python)"
+    assert cfg.headers == {"User-Agent": cfg.user_agent}
+
+    # Env fallback.
+    prev = dict(os.environ)
+    try:
+        os.environ["UNIFIED_BASE_URL"] = "http://env/v1"
+        os.environ["UNIFIED_USER_AGENT"] = "LLMToolForge-Agent/env (vercel-ai; node)"
+        os.environ["UNIFIED_TEMPERATURE"] = "0.9"
+        env_cfg = model_config(None)
+        assert env_cfg.base_url == "http://env/v1"
+        assert env_cfg.user_agent == "LLMToolForge-Agent/env (vercel-ai; node)"
+        assert env_cfg.headers["User-Agent"] == env_cfg.user_agent
+        assert env_cfg.temperature == 0.9
+
+        # No userAgent → empty headers.
+        del os.environ["UNIFIED_USER_AGENT"]
+        bare = model_config({"baseUrl": "b"})
+        assert bare.headers == {}
+    finally:
+        os.environ.clear()
+        os.environ.update(prev)

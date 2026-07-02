@@ -29,7 +29,8 @@ def on_prompt(ctx) -> None:
         base_url=cfg.base_url,
         api_key=cfg.api_key,
         model=cfg.model,
-        temperature=(ctx.config or {}).get("temperature", 0.7),
+        temperature=cfg.temperature if cfg.temperature is not None else 0.7,
+        default_headers=cfg.headers,
         streaming=True,
     )
 

@@ -64,6 +64,19 @@ function nextRunId(defId: string): string {
   return `agent-${defId}-${Date.now()}-${runCounter}`;
 }
 
+/**
+ * Build a stable User-Agent string for an external agent's Unified requests, so
+ * the call monitor can attribute traffic to a specific installed agent. Kept
+ * ASCII + header-safe (no control chars / newlines).
+ */
+function buildAgentUserAgent(spec: ExternalAgentSpec): string {
+  const safe = (s: string) => s.replace(/[^\x20-\x7E]/g, "").replace(/[()]/g, "").trim();
+  const id = safe(spec.packageId || "agent") || "agent";
+  const parts = [spec.framework, spec.runtime].filter(Boolean).map((p) => safe(String(p)));
+  const suffix = parts.length ? ` (${parts.join("; ")})` : "";
+  return `LLMToolForge-Agent/${id}${suffix}`;
+}
+
 /** Flatten a pi `AgentToolResult` content array into plain text. */
 function resultToText(result: AgentToolResult<unknown> | undefined): string {
   if (!result?.content) return "";
@@ -127,6 +140,10 @@ export async function createExternalAgentRuntime(
 
   const baseUrl = gatewayBaseUrl(unified.config.port);
   const localKey = unified.config.localKey ?? "";
+
+  // A stable User-Agent that lets the call monitor attribute Unified requests to
+  // this specific external agent (package id + framework + runtime).
+  const userAgent = buildAgentUserAgent(spec);
 
   // --- Phase 2 reverse bridge: resolve the same host tools the built-in agent
   // would get (internal bash/fs/grep/web_fetch + skills + MCP), so the external
@@ -324,6 +341,7 @@ export async function createExternalAgentRuntime(
         UNIFIED_BASE_URL: baseUrl,
         UNIFIED_API_KEY: localKey,
         UNIFIED_MODEL: def.modelId,
+        UNIFIED_USER_AGENT: userAgent,
         // Ensure node resolves the package's own node_modules first.
         ...(spec.runtime === "node" && spec.envPath
           ? { NODE_PATH: `${spec.envPath.replace(/\/+$/, "")}/node_modules` }
@@ -346,6 +364,7 @@ export async function createExternalAgentRuntime(
       systemPrompt: def.systemPrompt ?? "",
       temperature: def.temperature,
       maxTokens: def.maxTokens,
+      userAgent,
     },
     history,
     hostTools: hostToolSpecs,
