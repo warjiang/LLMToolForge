@@ -43,6 +43,7 @@ pub struct BuildEnvResult {
 }
 
 #[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct InstallLine {
     task_id: String,
     stream: String,
