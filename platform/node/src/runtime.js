@@ -18,20 +18,38 @@ function writeEvent(event) {
 
 /**
  * Per-turn context handed to `onPrompt`. Exposes typed emit helpers plus the
- * prompt input, the init config/history, and an `AbortSignal` wired to `abort`.
+ * prompt input, the init config/history/host tools, and an `AbortSignal` wired
+ * to `abort`.
  */
 export class TurnContext {
-  constructor({ input, config, history, signal }) {
+  constructor({ input, config, history, hostTools, signal, callHost }) {
     this.input = input;
     this.config = config;
     this.history = history;
+    /** Host tool specs advertised in `init` ({name, description, parameters}). */
+    this.hostTools = hostTools ?? [];
     this.signal = signal;
+    this._callHost = callHost;
     this._ended = false;
     this._started = false;
   }
 
   get aborted() {
     return this.signal?.aborted ?? false;
+  }
+
+  /**
+   * Invoke a host tool (bash/fs/grep/web_fetch/MCP/skills) back in the app and
+   * await its result. Runs through the host's sandbox + approval gating.
+   * @param {string} toolName
+   * @param {unknown} args
+   * @returns {Promise<{resultText:string, resultJson?:unknown, isError:boolean}>}
+   */
+  callHostTool(toolName, args = {}) {
+    if (typeof this._callHost !== "function") {
+      return Promise.reject(new Error("host tools unavailable in this context"));
+    }
+    return this._callHost(toolName, args);
   }
 
   assistantStart() {
@@ -85,7 +103,22 @@ export class TurnContext {
 export function run(agent) {
   let config = null;
   let history = [];
+  let hostTools = [];
   let controller = null;
+
+  // Correlated host tool calls: callId -> { resolve, reject }.
+  const pendingHostCalls = new Map();
+  let hostCallSeq = 0;
+
+  /** Emit a host_tool_call and await the correlated host_tool_result. */
+  function callHost(toolName, args) {
+    hostCallSeq += 1;
+    const callId = `n${hostCallSeq}`;
+    return new Promise((resolve, reject) => {
+      pendingHostCalls.set(callId, { resolve, reject });
+      writeEvent({ type: "host_tool_call", callId, toolName, args });
+    });
+  }
 
   writeEvent({
     type: "ready",
@@ -99,7 +132,9 @@ export function run(agent) {
       input,
       config,
       history,
+      hostTools,
       signal: controller.signal,
+      callHost,
     });
     try {
       await agent.onPrompt(ctx);
@@ -107,6 +142,11 @@ export function run(agent) {
     } catch (err) {
       ctx.error(err?.stack || err?.message || err);
     } finally {
+      // Fail any host calls still outstanding so the turn can't hang a caller.
+      for (const [, pending] of pendingHostCalls) {
+        pending.reject(new Error("turn ended before host_tool_result"));
+      }
+      pendingHostCalls.clear();
       writeEvent({ type: "done" });
       controller = null;
     }
@@ -131,6 +171,7 @@ export function run(agent) {
       if (msg.type === "init") {
         config = msg.config ?? null;
         history = msg.history ?? [];
+        hostTools = msg.hostTools ?? [];
         if (typeof agent.onInit === "function") {
           try {
             agent.onInit(config, history);
@@ -142,6 +183,16 @@ export function run(agent) {
         void handlePrompt(msg.input ?? "");
       } else if (msg.type === "abort") {
         controller?.abort();
+      } else if (msg.type === "host_tool_result") {
+        const pending = pendingHostCalls.get(msg.callId);
+        if (pending) {
+          pendingHostCalls.delete(msg.callId);
+          pending.resolve({
+            resultText: msg.resultText ?? "",
+            resultJson: msg.resultJson,
+            isError: Boolean(msg.isError),
+          });
+        }
       }
     }
   });

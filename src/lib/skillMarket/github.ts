@@ -59,7 +59,7 @@ function authHeaders(token?: string): Record<string, string> {
   return headers;
 }
 
-async function defaultBranch(
+export async function defaultBranch(
   owner: string,
   repo: string,
   token?: string
@@ -89,14 +89,14 @@ async function describeGithubError(res: Response, what: string): Promise<string>
   return `GitHub request failed (${res.status})${detail}`;
 }
 
-interface TreeEntry {
+export interface TreeEntry {
   path: string;
   type: string;
   size?: number;
 }
 
 /** Fetch a repo's full git tree (recursive). */
-async function fetchTree(
+export async function fetchTree(
   ref: RepoRef,
   branch: string,
   token?: string
@@ -208,12 +208,13 @@ async function arrayBufferToBase64(buf: ArrayBuffer): Promise<string> {
 }
 
 /**
- * Fetch every file inside a skill's directory (the folder containing
- * SKILL.md), returning them with paths relative to that directory. Text files
- * are kept as UTF-8; everything else is base64-encoded. Oversized or
- * over-count files are skipped and counted.
+ * Fetch every file inside a directory in a repo (e.g. the folder containing
+ * SKILL.md or agent.json), returning them with paths relative to that
+ * directory. Text files are kept as UTF-8; everything else is base64-encoded.
+ * Oversized or over-count files are skipped and counted. Shared by the Skills
+ * and external-agent GitHub installers.
  */
-async function fetchSkillFiles(
+export async function fetchDirFiles(
   ref: RepoRef,
   branch: string,
   skillDir: string,
@@ -335,7 +336,7 @@ export async function resolveGithubSkill(
   let skippedFiles: number | undefined;
   try {
     const tree = await fetchTree(repoRef, branch, token);
-    const collected = await fetchSkillFiles(repoRef, branch, skillDir, tree);
+    const collected = await fetchDirFiles(repoRef, branch, skillDir, tree);
     // Guarantee SKILL.md is present and matches the raw we already parsed.
     if (!collected.files.some((f) => /^SKILL\.md$/i.test(f.path))) {
       collected.files.unshift({ path: "SKILL.md", content: raw, encoding: "utf8" });

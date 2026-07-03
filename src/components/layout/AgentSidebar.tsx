@@ -33,6 +33,7 @@ import {
   MessageSquarePlus,
   Moon,
   Pencil,
+  Settings2,
   Sun,
   Trash2,
   X,
@@ -49,6 +50,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { FormModeToggle } from "./FormModeToggle";
+import { AgentsManagerDialog } from "@/pages/agent/agents/AgentsManagerDialog";
 import { useChatStore, useAgentDefStore } from "@/store";
 import { useSidebarStore } from "@/store/sidebar";
 import { useSessionGroupStore } from "@/store/sessionGroups";
@@ -172,6 +174,7 @@ export function AgentSidebar() {
   const setLanguage = useLocaleStore((s) => s.setLanguage);
 
   const [deleteSessionId, setDeleteSessionId] = useState<string | null>(null);
+  const [managerOpen, setManagerOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
   const [resizing, setResizing] = useState(false);
@@ -605,6 +608,15 @@ export function AgentSidebar() {
           <Button
             size="icon-sm"
             variant="ghost"
+            onClick={() => setManagerOpen(true)}
+            title={t("agents_manage_title", { ns: "pages" })}
+            aria-label={t("agents_manage_title", { ns: "pages" })}
+          >
+            <Settings2 className="h-4 w-4" />
+          </Button>
+          <Button
+            size="icon-sm"
+            variant="ghost"
             onClick={() => newSession(agentIdFromValue(agentFilterValue))}
             title={t("new_session")}
             aria-label={t("new_session")}
@@ -865,6 +877,8 @@ export function AgentSidebar() {
           setDeleteGroupId(null);
         }}
       />
+
+      <AgentsManagerDialog open={managerOpen} onOpenChange={setManagerOpen} />
     </motion.aside>
     {!collapsed && (
       <ResizeHandle

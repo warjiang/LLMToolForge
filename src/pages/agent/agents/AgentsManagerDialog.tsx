@@ -1,5 +1,15 @@
 import { useEffect, useState } from "react";
-import { Pencil, Plus, Trash2, Bot } from "lucide-react";
+import {
+  Pencil,
+  Plus,
+  Trash2,
+  Bot,
+  Package,
+  RefreshCw,
+  Loader2,
+  ArrowUpCircle,
+  CheckCircle2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -12,24 +22,95 @@ import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAgentDefStore } from "@/store";
+import { useMarketSettingsStore } from "@/store/marketSettings";
 import type { AgentDefinition } from "@/types";
+import { checkAgentUpdate, type AgentUpdateState } from "@/lib/agentMarket";
 import { AgentDefDialog } from "./AgentDefDialog";
+import { ExternalAgentInstallDialog } from "./ExternalAgentInstallDialog";
 
 interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }
 
+interface UpdateInfo {
+  checking?: boolean;
+  updating?: boolean;
+  state?: AgentUpdateState;
+  error?: string;
+}
+
 export function AgentsManagerDialog({ open, onOpenChange }: Props) {
   const { t } = useTranslation("pages");
-  const { items, loaded, load, remove } = useAgentDefStore();
+  const { items, loaded, load, remove, edit } = useAgentDefStore();
+  const githubToken = useMarketSettingsStore((s) => s.githubToken);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
   const [editing, setEditing] = useState<AgentDefinition | null>(null);
   const [deleting, setDeleting] = useState<AgentDefinition | null>(null);
+  const [updates, setUpdates] = useState<Record<string, UpdateInfo>>({});
 
   useEffect(() => {
     if (open && !loaded) load();
   }, [open, loaded, load]);
+
+  const setUpdate = (id: string, info: UpdateInfo) =>
+    setUpdates((prev) => ({ ...prev, [id]: { ...prev[id], ...info } }));
+
+  const checkUpdate = async (def: AgentDefinition) => {
+    setUpdate(def.id, { checking: true, error: undefined, state: undefined });
+    const token = githubToken.trim() || undefined;
+    const res = await checkAgentUpdate(def, token);
+    setUpdate(def.id, {
+      checking: false,
+      state: res.state,
+      error: res.error,
+    });
+  };
+
+  const applyUpdate = async (def: AgentDefinition) => {
+    setUpdate(def.id, { updating: true, error: undefined });
+    try {
+      const token = githubToken.trim() || undefined;
+      const res = await checkAgentUpdate(def, token);
+      if (res.state === "error" || !res.resolved) {
+        throw new Error(res.error || "Update check failed");
+      }
+      const resolved = res.resolved;
+      const { invoke } = await import("@tauri-apps/api/core");
+      const packageDir = await invoke<string>("agent_write_package", {
+        id: resolved.manifest.id,
+        files: resolved.files,
+      });
+      const taskId = `update-${resolved.manifest.id}-${Date.now()}`;
+      const build = await invoke<{ ok: boolean; envPath: string }>(
+        "agent_build_env",
+        {
+          taskId,
+          spec: { runtime: def.external!.runtime, packageDir },
+        }
+      );
+      if (!build.ok) throw new Error(t("agents_update_build_failed"));
+      await edit(def.id, {
+        external: {
+          ...def.external!,
+          packageDir,
+          envPath: build.envPath,
+          framework: resolved.manifest.framework ?? def.external!.framework,
+          installedVersion:
+            resolved.manifest.version ?? def.external!.installedVersion,
+          sourceRef: resolved.ref,
+          installedHash: resolved.hash,
+        },
+      });
+      setUpdate(def.id, { updating: false, state: "up-to-date" });
+    } catch (e) {
+      setUpdate(def.id, {
+        updating: false,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  };
 
   const openCreate = () => {
     setEditing(null);
@@ -49,10 +130,14 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
             <DialogDescription>{t("agents_manage_desc")}</DialogDescription>
           </DialogHeader>
 
-          <div className="mb-3">
+          <div className="mb-3 flex flex-wrap gap-2">
             <Button onClick={openCreate}>
               <Plus className="h-4 w-4" />
               {t("agents_new")}
+            </Button>
+            <Button variant="secondary" onClick={() => setInstallOpen(true)}>
+              <Package className="h-4 w-4" />
+              {t("agents_install_external")}
             </Button>
           </div>
 
@@ -73,6 +158,16 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
                       <span className="truncate text-label-13 font-medium">
                         {def.name}
                       </span>
+                      {def.kind === "external" && (
+                        <Badge variant="outline" className="shrink-0">
+                          {def.external?.framework
+                            ? `${t("agents_badge_external")} · ${def.external.framework}`
+                            : t("agents_badge_external")}
+                          {def.external?.installedVersion
+                            ? ` · v${def.external.installedVersion}`
+                            : ""}
+                        </Badge>
+                      )}
                       {def.modelId && (
                         <Badge variant="default" className="shrink-0">
                           {def.modelId}
@@ -107,6 +202,19 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
                     </div>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
+                    {def.kind === "external" && def.external?.source && (
+                      <UpdateControls
+                        info={updates[def.id]}
+                        onCheck={() => checkUpdate(def)}
+                        onUpdate={() => applyUpdate(def)}
+                        labels={{
+                          check: t("agents_update_check"),
+                          update: t("agents_update_apply"),
+                          available: t("agents_update_available"),
+                          upToDate: t("agents_update_uptodate"),
+                        }}
+                      />
+                    )}
                     <Button
                       size="icon-sm"
                       variant="ghost"
@@ -138,6 +246,11 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
         editing={editing}
       />
 
+      <ExternalAgentInstallDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+      />
+
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => {
@@ -152,5 +265,72 @@ export function AgentsManagerDialog({ open, onOpenChange }: Props) {
         }}
       />
     </>
+  );
+}
+
+interface UpdateControlsProps {
+  info?: UpdateInfo;
+  onCheck: () => void;
+  onUpdate: () => void;
+  labels: {
+    check: string;
+    update: string;
+    available: string;
+    upToDate: string;
+  };
+}
+
+function UpdateControls({
+  info,
+  onCheck,
+  onUpdate,
+  labels,
+}: UpdateControlsProps) {
+  const busy = info?.checking || info?.updating;
+
+  if (info?.state === "update-available" && !busy) {
+    return (
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-primary hover:text-primary"
+        title={`${labels.available} — ${labels.update}`}
+        onClick={onUpdate}
+      >
+        <ArrowUpCircle className="h-3.5 w-3.5" />
+      </Button>
+    );
+  }
+
+  if (info?.state === "up-to-date" && !busy) {
+    return (
+      <Button
+        size="icon-sm"
+        variant="ghost"
+        className="text-success hover:text-success"
+        title={labels.upToDate}
+        onClick={onCheck}
+      >
+        <CheckCircle2 className="h-3.5 w-3.5" />
+      </Button>
+    );
+  }
+
+  return (
+    <Button
+      size="icon-sm"
+      variant="ghost"
+      title={info?.error ?? labels.check}
+      disabled={busy}
+      onClick={onCheck}
+    >
+      {busy ? (
+        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+      ) : (
+        <RefreshCw
+          className={`h-3.5 w-3.5 ${info?.error ? "text-destructive" : ""}`}
+        />
+      )}
+    </Button>
   );
 }

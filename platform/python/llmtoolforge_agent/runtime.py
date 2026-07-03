@@ -45,13 +45,33 @@ class TurnContext:
     ``abort``).
     """
 
-    def __init__(self, *, input: str, config: Optional[dict], history: list):
+    def __init__(
+        self,
+        *,
+        input: str,
+        config: Optional[dict],
+        history: list,
+        host_tools: Optional[list] = None,
+        call_host: Optional[Callable[[str, Any], dict]] = None,
+    ):
         self.input = input
         self.config = config or {}
         self.history = history or []
+        #: Host tool specs advertised in ``init`` ({name, description, parameters}).
+        self.host_tools = host_tools or []
+        self._call_host = call_host
         self.aborted = False
         self._started = False
         self._ended = False
+
+    def call_host_tool(self, tool_name: str, args: Any = None) -> dict:
+        """Invoke a host tool (bash/fs/grep/web_fetch/MCP/skills) and block for
+        its result. Runs through the host's sandbox + approval gating. Returns
+        ``{"resultText": str, "resultJson": Any, "isError": bool}``.
+        """
+        if self._call_host is None:
+            raise RuntimeError("host tools unavailable in this context")
+        return self._call_host(tool_name, args if args is not None else {})
 
     def assistant_start(self) -> None:
         self._started = True
@@ -140,7 +160,44 @@ def run(
     _emit({"type": "ready", "protocolVersion": AAP_PROTOCOL_VERSION, "agent": name})
 
     prompts: "queue.Queue[Optional[str]]" = queue.Queue()
-    state: dict = {"config": None, "history": [], "ctx": None}
+    state: dict = {"config": None, "history": [], "host_tools": [], "ctx": None}
+
+    # Correlated host tool calls: callId -> {"event": Event, "result": dict}.
+    host_calls: dict = {}
+    host_calls_lock = threading.Lock()
+    host_seq = {"n": 0}
+
+    def call_host(tool_name: str, args: Any) -> dict:
+        with host_calls_lock:
+            host_seq["n"] += 1
+            call_id = f"p{host_seq['n']}"
+            slot = {"event": threading.Event(), "result": None}
+            host_calls[call_id] = slot
+        _emit(
+            {
+                "type": "host_tool_call",
+                "callId": call_id,
+                "toolName": tool_name,
+                "args": args,
+            }
+        )
+        ctx = state.get("ctx")
+        # Wait for the reader thread to deliver the result, staying responsive to
+        # a cooperative abort so a denied/slow tool can't wedge the turn.
+        while not slot["event"].wait(timeout=0.1):
+            if ctx is not None and getattr(ctx, "aborted", False):
+                with host_calls_lock:
+                    host_calls.pop(call_id, None)
+                return {
+                    "resultText": "aborted",
+                    "resultJson": None,
+                    "isError": True,
+                }
+        return slot["result"] or {
+            "resultText": "",
+            "resultJson": None,
+            "isError": True,
+        }
 
     def reader() -> None:
         for raw in sys.stdin:
@@ -156,6 +213,7 @@ def run(
             if mtype == "init":
                 state["config"] = msg.get("config")
                 state["history"] = msg.get("history", [])
+                state["host_tools"] = msg.get("hostTools", [])
                 if on_init is not None:
                     try:
                         on_init(state["config"], state["history"])
@@ -167,6 +225,17 @@ def run(
                 ctx = state.get("ctx")
                 if ctx is not None:
                     ctx.aborted = True
+            elif mtype == "host_tool_result":
+                call_id = msg.get("callId")
+                with host_calls_lock:
+                    slot = host_calls.pop(call_id, None)
+                if slot is not None:
+                    slot["result"] = {
+                        "resultText": msg.get("resultText", ""),
+                        "resultJson": msg.get("resultJson"),
+                        "isError": bool(msg.get("isError")),
+                    }
+                    slot["event"].set()
         prompts.put(None)  # sentinel: stdin closed
 
     threading.Thread(target=reader, daemon=True).start()
@@ -176,8 +245,22 @@ def run(
         if item is None:
             break
         ctx = TurnContext(
-            input=item, config=state["config"], history=state["history"]
+            input=item,
+            config=state["config"],
+            history=state["history"],
+            host_tools=state["host_tools"],
+            call_host=call_host,
         )
         state["ctx"] = ctx
         _run_handler(on_prompt, ctx)
         state["ctx"] = None
+        # Fail any host calls left dangling so a later turn can't inherit them.
+        with host_calls_lock:
+            for slot in host_calls.values():
+                slot["result"] = {
+                    "resultText": "turn ended",
+                    "resultJson": None,
+                    "isError": True,
+                }
+                slot["event"].set()
+            host_calls.clear()

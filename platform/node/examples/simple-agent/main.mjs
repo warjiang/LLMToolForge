@@ -12,20 +12,28 @@
  */
 
 import { run, modelConfig } from "@llmtoolforge/agent-sdk";
-import { pipeVercelStream } from "@llmtoolforge/agent-sdk/adapters/vercel-ai";
+import {
+  pipeVercelStream,
+  hostToolsForVercel,
+} from "@llmtoolforge/agent-sdk/adapters/vercel-ai";
 import { streamText } from "ai";
 import { createOpenAI } from "@ai-sdk/openai";
 
 run({
   name: "vercel-ai-agent",
   async onPrompt(ctx) {
-    const { baseURL, apiKey, model } = modelConfig(ctx.config);
-    const openai = createOpenAI({ baseURL, apiKey });
+    const { baseURL, apiKey, model, headers } = modelConfig(ctx.config);
+    const openai = createOpenAI({ baseURL, apiKey, headers });
 
     const messages = [
       ...(ctx.history ?? []).map((m) => ({ role: m.role, content: m.content })),
       { role: "user", content: ctx.input },
     ];
+
+    // Expose the app's host tools (bash/fs/grep/web_fetch/MCP/skills) to the
+    // model. Each call is bridged back to the host via `ctx.callHostTool` and
+    // runs under the host's sandbox + approval.
+    const tools = await hostToolsForVercel(ctx);
 
     const result = streamText({
       model: openai(model),
@@ -33,6 +41,8 @@ run({
       temperature: ctx.config?.temperature,
       maxTokens: ctx.config?.maxTokens,
       messages,
+      tools,
+      maxSteps: 8,
       abortSignal: ctx.signal,
     });
 

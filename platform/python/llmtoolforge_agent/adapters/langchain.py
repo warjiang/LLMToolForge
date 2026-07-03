@@ -107,3 +107,65 @@ def _safe_json(value: Any) -> Any:
         return value
     except Exception:  # noqa: BLE001
         return None
+
+
+_JSON_TO_PY = {
+    "string": str,
+    "integer": int,
+    "number": float,
+    "boolean": bool,
+    "object": dict,
+    "array": list,
+}
+
+
+def host_tools_for_langchain(ctx) -> list:
+    """Build LangChain ``StructuredTool`` objects from ``ctx.host_tools``.
+
+    Each tool bridges to :meth:`TurnContext.call_host_tool`, so a LangGraph /
+    LangChain agent's LLM can call app tools (bash/fs/grep/web_fetch/MCP/skills)
+    and every call runs through the host's sandbox + approval. Requires
+    ``langchain_core`` and ``pydantic`` (present wherever LangChain runs).
+
+    Usage::
+
+        from langgraph.prebuilt import create_react_agent
+        tools = host_tools_for_langchain(ctx)
+        agent = create_react_agent(llm, tools)
+    """
+    from langchain_core.tools import StructuredTool
+    from pydantic import create_model
+
+    tools = []
+    for spec in getattr(ctx, "host_tools", []) or []:
+        name = spec.get("name")
+        if not name:
+            continue
+        schema = spec.get("parameters") or {}
+        props = schema.get("properties", {}) if isinstance(schema, dict) else {}
+        required = set(schema.get("required", []) if isinstance(schema, dict) else [])
+        fields = {}
+        for field, meta in props.items():
+            py_type = _JSON_TO_PY.get((meta or {}).get("type"), Any)
+            default = ... if field in required else None
+            fields[field] = (py_type, default)
+        args_model = create_model(f"{name}_Args", **fields) if fields else None
+
+        def _make(tool_name: str):
+            def _call(**kwargs: Any) -> str:
+                res = ctx.call_host_tool(tool_name, kwargs)
+                if res.get("isError"):
+                    raise RuntimeError(res.get("resultText") or f"{tool_name} failed")
+                return res.get("resultText", "")
+
+            return _call
+
+        tools.append(
+            StructuredTool.from_function(
+                func=_make(name),
+                name=name,
+                description=spec.get("description", name),
+                args_schema=args_model,
+            )
+        )
+    return tools

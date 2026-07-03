@@ -58,6 +58,7 @@ pub struct AgentSpawnSpec {
 
 /// Payload emitted to the frontend for each AAP event line.
 #[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 struct AgentEventPayload {
     run_id: String,
     event: Value,

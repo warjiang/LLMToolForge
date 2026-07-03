@@ -364,6 +364,16 @@ export interface ExternalAgentSpec {
   envPath: string;
   /** Human-facing framework tag for display, e.g. `langgraph` / `vercel-ai`. */
   framework?: string;
+  /** Installed package version, from `agent.json` `version` (if declared). */
+  installedVersion?: string;
+  /** GitHub source `owner/repo` when installed from GitHub (else undefined). */
+  source?: string;
+  /** Package sub-directory within the source repo (empty for repo root). */
+  sourceSubdir?: string;
+  /** Branch/tag/commit the package was fetched at. */
+  sourceRef?: string;
+  /** Stable content hash of the installed package, for update detection. */
+  installedHash?: string;
 }
 
 /**

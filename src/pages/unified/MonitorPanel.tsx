@@ -1,14 +1,40 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Download, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useUnifiedStore } from "@/store/unified";
 import type { CallLogRecord } from "@/lib/unifiedApi";
 
 function isOk(r: CallLogRecord): boolean {
   return !r.error && r.status >= 200 && r.status < 400;
+}
+
+/** Sentinel used by the source filter to mean "all sources". */
+const ALL_SOURCES = "__all__";
+
+/**
+ * Classify a call's originating source from its User-Agent. External agents are
+ * tagged `LLMToolForge-Agent/<packageId> (...)` by the host; the built-in agent
+ * runs in the WebView, so its requests carry a browser UA. Everything else is
+ * grouped as an external / unknown client.
+ */
+function sourceLabel(r: CallLogRecord, builtinLabel: string, unknownLabel: string): string {
+  const ua = (r.userAgent ?? "").trim();
+  if (!ua) return unknownLabel;
+  const m = ua.match(/^LLMToolForge-Agent\/([^\s(]+)/i);
+  if (m) return m[1];
+  if (/mozilla|webkit|chrome|safari|tauri/i.test(ua)) return builtinLabel;
+  // Fall back to the UA's leading token (e.g. `openai-python/1.2`).
+  return ua.split(/[\s/]/)[0] || unknownLabel;
 }
 
 function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
@@ -108,6 +134,7 @@ function download(name: string, content: string, type: string) {
 function toCsv(logs: CallLogRecord[]): string {
   const head = [
     "ts",
+    "source",
     "exposedModel",
     "provider",
     "protocol",
@@ -117,11 +144,13 @@ function toCsv(logs: CallLogRecord[]): string {
     "promptTokens",
     "completionTokens",
     "totalTokens",
+    "userAgent",
     "error",
   ];
   const rows = logs.map((r) =>
     [
       new Date(r.ts).toISOString(),
+      sourceLabel(r, "built-in", "unknown"),
       r.exposedModel,
       r.provider,
       r.protocol,
@@ -131,6 +160,7 @@ function toCsv(logs: CallLogRecord[]): string {
       r.promptTokens ?? "",
       r.completionTokens ?? "",
       r.totalTokens ?? "",
+      (r.userAgent ?? "").replace(/"/g, '""'),
       (r.error ?? "").replace(/"/g, '""'),
     ]
       .map((v) => `"${String(v)}"`)
@@ -145,19 +175,44 @@ export function MonitorPanel() {
   const loadLogs = useUnifiedStore((s) => s.loadLogs);
   const clearLogs = useUnifiedStore((s) => s.clearLogs);
 
+  const [sourceFilter, setSourceFilter] = useState<string>(ALL_SOURCES);
+
+  const builtinLabel = t("monitor_source_builtin");
+  const unknownLabel = t("monitor_source_unknown");
+
   useEffect(() => {
     void loadLogs();
   }, [loadLogs]);
 
+  // Requests grouped by originating source (across all logs, unfiltered).
+  const bySource = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const r of logs) {
+      const label = sourceLabel(r, builtinLabel, unknownLabel);
+      map.set(label, (map.get(label) ?? 0) + 1);
+    }
+    return [...map.entries()]
+      .map(([label, value]) => ({ label, value }))
+      .sort((a, b) => b.value - a.value);
+  }, [logs, builtinLabel, unknownLabel]);
+
+  // Rows matching the active source filter feed the stats, charts, and table.
+  const filtered = useMemo(() => {
+    if (sourceFilter === ALL_SOURCES) return logs;
+    return logs.filter(
+      (r) => sourceLabel(r, builtinLabel, unknownLabel) === sourceFilter
+    );
+  }, [logs, sourceFilter, builtinLabel, unknownLabel]);
+
   const metrics = useMemo(() => {
-    const total = logs.length;
-    const ok = logs.filter(isOk).length;
-    const durations = logs.map((r) => r.durationMs).sort((a, b) => a - b);
+    const total = filtered.length;
+    const ok = filtered.filter(isOk).length;
+    const durations = filtered.map((r) => r.durationMs).sort((a, b) => a - b);
     const avg = total ? Math.round(durations.reduce((a, b) => a + b, 0) / total) : 0;
     const p95 = durations.length
       ? durations[Math.min(durations.length - 1, Math.round(0.95 * (durations.length - 1)))]
       : 0;
-    const tokens = logs.reduce((a, r) => a + (r.totalTokens ?? 0), 0);
+    const tokens = filtered.reduce((a, r) => a + (r.totalTokens ?? 0), 0);
     return {
       total,
       ok,
@@ -166,27 +221,27 @@ export function MonitorPanel() {
       p95,
       tokens,
     };
-  }, [logs]);
+  }, [filtered]);
 
   const byModel = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of logs) map.set(r.exposedModel, (map.get(r.exposedModel) ?? 0) + 1);
+    for (const r of filtered) map.set(r.exposedModel, (map.get(r.exposedModel) ?? 0) + 1);
     return [...map.entries()]
       .map(([label, value]) => ({ label, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
-  }, [logs]);
+  }, [filtered]);
 
   const tokenByModel = useMemo(() => {
     const map = new Map<string, number>();
-    for (const r of logs)
+    for (const r of filtered)
       map.set(r.exposedModel, (map.get(r.exposedModel) ?? 0) + (r.totalTokens ?? 0));
     return [...map.entries()]
       .map(([label, value]) => ({ label, value }))
       .filter((d) => d.value > 0)
       .sort((a, b) => b.value - a.value)
       .slice(0, 8);
-  }, [logs]);
+  }, [filtered]);
 
   return (
     <div className="space-y-5">
@@ -202,7 +257,13 @@ export function MonitorPanel() {
         <Card className="p-5">
           <h3 className="text-heading-14">{t("monitor_request_timeline")}</h3>
           <div className="mt-3">
-            <Timeline logs={logs} />
+            <Timeline logs={filtered} />
+          </div>
+        </Card>
+        <Card className="p-5">
+          <h3 className="text-heading-14">{t("monitor_by_source")}</h3>
+          <div className="mt-3">
+            <BarChart data={bySource.slice(0, 8)} empty={t("monitor_no_data")} />
           </div>
         </Card>
         <Card className="p-5">
@@ -211,7 +272,7 @@ export function MonitorPanel() {
             <BarChart data={byModel} empty={t("monitor_no_data")} />
           </div>
         </Card>
-        <Card className="p-5 lg:col-span-2">
+        <Card className="p-5">
           <h3 className="text-heading-14">{t("monitor_token_by_model")}</h3>
           <div className="mt-3">
             <BarChart
@@ -223,8 +284,25 @@ export function MonitorPanel() {
       </div>
 
       <Card className="overflow-hidden">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
-          <h3 className="text-heading-14">{t("monitor_call_records")}</h3>
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
+          <div className="flex items-center gap-3">
+            <h3 className="text-heading-14">{t("monitor_call_records")}</h3>
+            <Select value={sourceFilter} onValueChange={setSourceFilter}>
+              <SelectTrigger className="h-8 w-48 text-copy-12">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={ALL_SOURCES}>
+                  {t("monitor_source_all")}
+                </SelectItem>
+                {bySource.map((s) => (
+                  <SelectItem key={s.label} value={s.label}>
+                    {s.label} ({s.value})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <div className="flex gap-2">
             <Button
               variant="secondary"
@@ -232,7 +310,7 @@ export function MonitorPanel() {
               onClick={() =>
                 download(
                   `unified-logs-${Date.now()}.json`,
-                  JSON.stringify(logs, null, 2),
+                  JSON.stringify(filtered, null, 2),
                   "application/json"
                 )
               }
@@ -243,7 +321,7 @@ export function MonitorPanel() {
               variant="secondary"
               size="sm"
               onClick={() =>
-                download(`unified-logs-${Date.now()}.csv`, toCsv(logs), "text/csv")
+                download(`unified-logs-${Date.now()}.csv`, toCsv(filtered), "text/csv")
               }
             >
               <Download className="h-3.5 w-3.5" /> CSV
@@ -258,6 +336,7 @@ export function MonitorPanel() {
             <thead className="sticky top-0 bg-chrome text-label-12 text-muted-foreground">
               <tr className="[&>th]:px-3 [&>th]:py-2 [&>th]:text-left">
                 <th>{t("monitor_time_col")}</th>
+                <th>{t("monitor_source_col")}</th>
                 <th>{t("monitor_model_col")}</th>
                 <th>{t("monitor_protocol_col")}</th>
                 <th>{t("monitor_status_col")}</th>
@@ -266,17 +345,20 @@ export function MonitorPanel() {
               </tr>
             </thead>
             <tbody>
-              {logs.length === 0 ? (
+              {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-3 py-8 text-center text-muted-foreground">
+                  <td colSpan={7} className="px-3 py-8 text-center text-muted-foreground">
                     {t("monitor_no_calls")}
                   </td>
                 </tr>
               ) : (
-                logs.map((r) => (
+                filtered.map((r) => (
                   <tr key={r.id} className="border-t border-border/60 [&>td]:px-3 [&>td]:py-1.5">
                     <td className="tabular-nums text-muted-foreground">
                       {new Date(r.ts).toLocaleTimeString()}
+                    </td>
+                    <td className="max-w-[180px] truncate" title={r.userAgent}>
+                      {sourceLabel(r, builtinLabel, unknownLabel)}
                     </td>
                     <td className="max-w-[260px] truncate font-mono" title={r.exposedModel}>
                       {r.exposedModel}
