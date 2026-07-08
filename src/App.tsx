@@ -6,6 +6,7 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { useLocaleStore } from "@/store/locale";
 import { useDeviceConfigStore } from "@/store/deviceConfig";
+import { AGENT_ROUTE_PATH } from "@/lib/routes";
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
@@ -59,7 +60,7 @@ const router = createBrowserRouter([
         path: "providers/volcengine",
         element: <Navigate to="/providers" replace />,
       },
-      { path: "playground", element: <Navigate to="/" replace /> },
+      { path: AGENT_ROUTE_PATH, element: page(<DashboardPage />) },
       { path: "unified", element: page(<UnifiedApiPage />) },
       { path: "skills", element: page(<SkillsPage />) },
       { path: "mcp", element: page(<McpPage />) },

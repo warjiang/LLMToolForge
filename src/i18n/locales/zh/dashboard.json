@@ -25,11 +25,11 @@
   "available_mcp": "可用 MCP",
   "next_step": "下一步",
   "setup_model_label": "添加第一个 API Key",
-  "setup_model_desc": "先接入模型凭据，Playground 和工具编排才有可用模型。",
+  "setup_model_desc": "先接入模型凭据，Agent 聊天和工具编排才有可用模型。",
   "setup_skills_label": "创建第一个 Skill",
   "setup_skills_desc": "把常用提示词、工具说明和调用方式整理成可复用能力。",
   "setup_mcp_label": "接入 MCP Server",
   "setup_mcp_desc": "为模型接入本地或远端工具，扩展可调用能力。",
-  "ready_playground_label": "进入 Agent 形态",
-  "ready_playground_desc": "用已配置的模型、Skill 和工具组合，在独立的聊天界面里测试真实对话。"
+  "ready_agent_label": "打开 Agent 聊天",
+  "ready_agent_desc": "用已配置的模型、Skill 和工具组合，在独立的 Agent 聊天界面里测试真实对话。"
 }

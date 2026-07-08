@@ -12,7 +12,7 @@ export interface ApiKey extends BaseEntity {
   key: string;
   baseUrl?: string;
   note?: string;
-  /** Manually configured model ids usable in the Playground. */
+  /** Manually configured model ids usable in Agent chat. */
   models?: string[];
 }
 

@@ -20,7 +20,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [State Management](./state-management.md) | Local state, global state, server state | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
 | [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
-| [Playground Provider Contracts](./playground-provider-contracts.md) | SQLite chat, generated media, provider adapter, and polling contracts | Active |
+| [Agent Chat Provider Contracts](./playground-provider-contracts.md) | SQLite chat, generated media, provider adapter, and polling contracts | Active |
 | [Skill Management Contracts](./skill-management-contracts.md) | Skill deployment payloads, target paths, and sync command behavior | Active |
 
 ---

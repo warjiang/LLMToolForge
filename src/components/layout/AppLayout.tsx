@@ -5,6 +5,7 @@ import { Topbar } from "./Topbar";
 import { SshTerminalWorkspace } from "@/pages/ssh/SshTerminalWorkspace";
 import { useChatStore } from "@/store";
 import { useAppModeStore } from "@/store/appMode";
+import { AGENT_ROUTE_PATH } from "@/lib/routes";
 
 const AgentSidebar = lazy(() =>
   import("./AgentSidebar").then((m) => ({ default: m.AgentSidebar }))
@@ -23,8 +24,14 @@ function AgentFallback() {
 
 export function AppLayout() {
   const mode = useAppModeStore((s) => s.mode);
+  const setMode = useAppModeStore((s) => s.setMode);
   const initChat = useChatStore((s) => s.init);
   const location = useLocation();
+
+  useEffect(() => {
+    const routeMode = location.pathname === `/${AGENT_ROUTE_PATH}` ? "agent" : "tool";
+    if (routeMode !== mode) setMode(routeMode);
+  }, [location.pathname, mode, setMode]);
 
   useEffect(() => {
     if (mode === "agent") void initChat();

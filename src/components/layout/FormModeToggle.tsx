@@ -3,16 +3,22 @@ import { Bot, Settings } from "lucide-react";
 import type { LucideProps } from "lucide-react";
 import type { ComponentType } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAppModeStore, type AppMode } from "@/store/appMode";
 import { useSidebarStore } from "@/store/sidebar";
+import { AGENT_ROUTE_PATH } from "@/lib/routes";
 
 export function FormModeToggle() {
   const { t } = useTranslation("common");
+  const navigate = useNavigate();
   const reduce = useReducedMotion();
   const collapsed = useSidebarStore((s) => s.collapsed);
   const mode = useAppModeStore((s) => s.mode);
-  const setMode = useAppModeStore((s) => s.setMode);
+
+  const switchMode = (nextMode: AppMode) => {
+    navigate(nextMode === "agent" ? `/${AGENT_ROUTE_PATH}` : "/");
+  };
 
   const OPTIONS: {
     value: AppMode;
@@ -29,7 +35,7 @@ export function FormModeToggle() {
     const title = toAgent ? t("switch_to_agent") : t("back_to_settings");
     return (
       <button
-        onClick={() => setMode(toAgent ? "agent" : "tool")}
+        onClick={() => switchMode(toAgent ? "agent" : "tool")}
         title={title}
         aria-label={title}
         className="flex h-9 w-9 items-center justify-center self-center rounded-sm text-muted-foreground transition-colors duration-150 hover:bg-secondary/60 hover:text-foreground"
@@ -46,7 +52,7 @@ export function FormModeToggle() {
         return (
           <button
             key={value}
-            onClick={() => setMode(value)}
+            onClick={() => switchMode(value)}
             title={t("switch_to", { label })}
             aria-label={t("switch_to", { label })}
             className={cn(

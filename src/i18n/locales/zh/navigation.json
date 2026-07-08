@@ -1,7 +1,7 @@
 {
   "dashboard": "概览",
   "providers": "模型接入",
-  "playground": "Playground",
+  "agent": "Agent",
   "unified_api": "Unified API",
   "skills": "Skills",
   "mcp_servers": "MCP Servers",
@@ -13,5 +13,5 @@
   "add_first_skill": "创建第一个 Skill",
   "add_first_mcp": "接入 MCP Server",
   "add_first_ssh": "新增 SSH 主机",
-  "open_playground": "打开 Playground"
+  "open_agent": "打开 Agent 聊天"
 }

@@ -55,7 +55,7 @@
   "delete_confirm_message": "This action cannot be undone.",
   "confirm_delete_named": "Delete \"{{name}}\"? This action cannot be undone.",
   "confirm_delete_session": "Delete session \"{{name}}\"? All messages in this session will be deleted and cannot be recovered.",
-  "switch_to_agent": "Switch to Agent",
+  "switch_to_agent": "Switch to Agent Chat",
   "back_to_settings": "Back to Settings",
   "switch_to": "Switch to {{label}}",
   "multimodal": "Multimodal",

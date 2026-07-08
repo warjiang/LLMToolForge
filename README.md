@@ -18,7 +18,7 @@
   - **Volcengine（火山引擎）**：录入 AK/SK，自动拉取账号已开通的模型（推理 Endpoint）与 Ark API Key；模型按 context window / Function Call / 多模态等能力分类展示
   - **New API**：OpenAI 兼容网关，录入 Base URL + API Key，通过 `/v1/models` 拉取可用模型
   - **LiteLLM**：OpenAI 兼容代理，录入 Base URL + API Key，通过 `/v1/models` 拉取可用模型
-- **Playground**：基于已接入的连接（Volcengine 凭证或 New API / LiteLLM 网关）的对话测试台，支持 OpenAI Chat 与 Responses（火山引擎）两种请求格式、流式输出、System Prompt / 温度 / Max Tokens 参数，多模态模型可附带图片输入
+- **Agent 聊天**：基于已接入的连接（Volcengine 凭证或 New API / LiteLLM 网关）的对话测试界面，支持 OpenAI Chat 与 Responses（火山引擎）两种请求格式、流式输出、System Prompt / 温度 / Max Tokens 参数，多模态模型可附带图片输入，并可组合 Skill 与工具执行真实对话
 - **Unified API（本地统一网关）**：把已接入的各 provider 模型统一暴露为一个本地 HTTP 服务，供 Codex、Claude Code 与本地 agent 直接使用（仅桌面端 Tauri 运行时可启动服务）
   - **OpenAI 兼容**：`GET /v1/models`、`POST /v1/chat/completions`（流式 + 非流式）
   - **Anthropic 兼容**：`POST /v1/messages`（请求/响应/流式事件与工具调用翻译，供 Claude Code 使用）
@@ -81,7 +81,7 @@ src/
     common/      # PageHeader、EmptyState、ConfirmDialog、ModelFeatureBadges
   data/          # 存储适配层 + repository 抽象
   store/         # zustand 状态（集合 store 工厂、主题）
-  pages/         # 各功能页面与表单弹窗（含 providers/、playground/）
+  pages/         # 各功能页面与表单弹窗（含 providers/、agent/）
   lib/
     http.ts      # Tauri/浏览器统一的 fetch（桌面端绕过 CORS）
     volc/        # 火山引擎 OpenAPI V4 签名

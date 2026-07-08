@@ -1,7 +1,7 @@
 {
   "dashboard": "Dashboard",
   "providers": "Model Integration",
-  "playground": "Playground",
+  "agent": "Agent",
   "unified_api": "Unified API",
   "skills": "Skills",
   "mcp_servers": "MCP Servers",
@@ -13,5 +13,5 @@
   "add_first_skill": "Create First Skill",
   "add_first_mcp": "Connect MCP Server",
   "add_first_ssh": "Add SSH Host",
-  "open_playground": "Open Playground"
+  "open_agent": "Open Agent Chat"
 }
