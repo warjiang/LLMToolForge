@@ -34,7 +34,7 @@
   "actions": "Actions",
   "new_session": "New Session",
   "sessions": "Sessions",
-  "default_agent": "LLMToolForge",
+  "default_agent": "General Agent",
   "rename_session": "Rename Session",
   "delete_session": "Delete Session",
   "open_workspace_folder": "Open Workspace Folder",

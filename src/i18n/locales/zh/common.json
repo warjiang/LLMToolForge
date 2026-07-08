@@ -34,7 +34,7 @@
   "actions": "操作",
   "new_session": "新建会话",
   "sessions": "会话",
-  "default_agent": "LLMToolForge",
+  "default_agent": "通用 Agent",
   "rename_session": "重命名会话",
   "delete_session": "删除会话",
   "open_workspace_folder": "打开工作目录",
