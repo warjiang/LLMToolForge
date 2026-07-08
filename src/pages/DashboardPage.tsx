@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -15,10 +15,11 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Reveal } from "@/components/common/Reveal";
 import { Card } from "@/components/ui/card";
 import { useApiKeyStore, useMcpStore, useSkillStore } from "@/store";
-import { useAppModeStore } from "@/store/appMode";
+import { AGENT_ROUTE_PATH } from "@/lib/routes";
 
 export function DashboardPage() {
   const { t } = useTranslation("dashboard");
+  const navigate = useNavigate();
   const apiKeys = useApiKeyStore();
   const skills = useSkillStore();
   const mcp = useMcpStore();
@@ -52,9 +53,9 @@ export function DashboardPage() {
               description: t("setup_mcp_desc"),
             }
           : {
-              label: t("ready_playground_label"),
-              description: t("ready_playground_desc"),
-              onClick: () => useAppModeStore.getState().setMode("agent"),
+              label: t("ready_agent_label"),
+              description: t("ready_agent_desc"),
+              onClick: () => navigate(`/${AGENT_ROUTE_PATH}`),
             };
 
   return (

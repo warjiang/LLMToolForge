@@ -1,7 +1,7 @@
 /**
  * Provider-agnostic types for the model adapter layer.
  *
- * The goal is a single normalized shape the Playground talks to, while each
+ * The goal is a single normalized shape the Agent chat runtime talks to, while each
  * concrete provider (Volcengine today; OpenAI / Anthropic / Gemini later)
  * translates to/from its own wire format.
  */

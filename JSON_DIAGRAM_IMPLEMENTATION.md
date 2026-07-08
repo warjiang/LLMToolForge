@@ -223,7 +223,7 @@ export function CustomViewer() {
 
 ## 后续集成建议
 
-1. **与 Playground 集成**
+1. **与 Agent 聊天集成**
    - 显示 API 返回的 JSON 响应可视化
 
 2. **与 Unified API 日志集成**

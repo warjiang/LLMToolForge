@@ -316,7 +316,7 @@ src/pages/tools/
    - JSON 格式转换
 
 3. **集成功能**
-   - Playground JSON 预览
+   - Agent 聊天 JSON 预览
    - API 监控日志可视化
    - 响应数据分析
 

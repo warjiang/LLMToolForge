@@ -1,9 +1,9 @@
-# Playground Provider Contracts
+# Agent Chat Provider Contracts
 
 ## Scenario: SQLite Chat With Generated Media
 
 ### 1. Scope / Trigger
-- Trigger: Playground chat now spans React UI, Zustand state, SQLite persistence,
+- Trigger: Agent chat now spans React UI, Zustand state, SQLite persistence,
   provider adapters, and Tauri commands.
 - Apply this spec when adding chat message fields, provider generation methods,
   attachment kinds, sandbox commands, or async task polling.
@@ -32,8 +32,8 @@
   `raw`, and final `status`.
 
 ### 4. Validation & Error Matrix
-- Missing connection -> show global Playground error, do not persist assistant turn.
-- Missing prompt for image/video model -> show global Playground error.
+- Missing connection -> show global Agent chat error, do not persist assistant turn.
+- Missing prompt for image/video model -> show global Agent chat error.
 - Provider lacks generation method -> assistant error if a turn already exists.
 - Task status `failed/expired/cancelled` -> message status `error` with task id.
 - Polling transport failure -> message status `error`; preserve task id content.
@@ -96,7 +96,7 @@ await chat.updateMessage(messageId, { content: "已生成视频。", status: "co
 ## Scenario: Message Edit / Retry With Linear History
 
 ### 1. Scope / Trigger
-- Trigger: Playground message editing, retry, and deletion span React actions,
+- Trigger: Agent chat message editing, retry, and deletion span React actions,
   Zustand state, `chatRepository`, SQLite/fallback storage, and provider calls.
 - Apply this spec when changing message action UI or truncation persistence.
 
@@ -118,10 +118,10 @@ await chat.updateMessage(messageId, { content: "已生成视频。", status: "co
   `messageId`, and sandbox runs linked through those tool calls.
 
 ### 4. Validation & Error Matrix
-- Empty edited text with no attachments -> show Playground error; do not persist.
-- Missing connection/model/provider before retry -> show Playground error; do not
+- Empty edited text with no attachments -> show Agent chat error; do not persist.
+- Missing connection/model/provider before retry -> show Agent chat error; do not
   truncate history.
-- Assistant retry without a previous user message -> show Playground error.
+- Assistant retry without a previous user message -> show Agent chat error.
 - Repository target message not found -> no-op for truncation, error for content
   replacement.
 

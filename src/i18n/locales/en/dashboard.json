@@ -25,11 +25,11 @@
   "available_mcp": "Available MCP",
   "next_step": "Next Step",
   "setup_model_label": "Add First API Key",
-  "setup_model_desc": "First configure model credentials so Playground and tool orchestration have available models.",
+  "setup_model_desc": "First configure model credentials so Agent chat and tool orchestration have available models.",
   "setup_skills_label": "Create First Skill",
   "setup_skills_desc": "Organize common prompts, tool descriptions, and invocation methods into reusable abilities.",
   "setup_mcp_label": "Connect MCP Server",
   "setup_mcp_desc": "Connect local or remote tools to models to extend callable capabilities.",
-  "ready_playground_label": "Enter Agent mode",
-  "ready_playground_desc": "Test real conversations in a dedicated chat interface using your configured models, Skills, and tools."
+  "ready_agent_label": "Open Agent Chat",
+  "ready_agent_desc": "Test real conversations in a dedicated Agent chat interface using your configured models, Skills, and tools."
 }
