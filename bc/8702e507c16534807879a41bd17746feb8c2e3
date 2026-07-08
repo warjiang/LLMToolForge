@@ -1,0 +1,124 @@
+.trellis/tasks/06-27-dataagent-duckdb-tools/check.jsonl
+  s_a50339537302b4::t_79019623fe93d3 2 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a4e35c2748bd63335f32b80","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":2}]}]}
+.trellis/tasks/06-27-dataagent-duckdb-tools/implement.jsonl
+  s_a50339537302b4::t_d57570f4bae7bf 2 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a4e35c5748bd63335f32ba7","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":2}]}]}
+.trellis/spec/frontend/index.md
+  s_a50339537302b4::t_ceb51332ad01f0 23 gitai:{"mixed_line_ranges":[],"operations":[{"operation_id":"6a4e35b8748bd63335f32b63","tool_type":"agent","tool_id":"apply_patch","line_ranges":[{"Single":23}]}]}
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "bc8702e507c16534807879a41bd17746feb8c2e3",
+  "prompts": {},
+  "sessions": {
+    "s_a50339537302b4": {
+      "agent_id": {
+        "tool": "trae",
+        "id": "6a45c8d9963d77b7a683ec5d",
+        "model": "gpt-5.4__dev"
+      },
+      "human_author": "xjhznick <xjhznick@gmail.com>"
+    }
+  },
+  "attestation_metadata": {
+    ".trellis/spec/frontend/index.md": [
+      {
+        "hash": "s_a50339537302b4::t_ceb51332ad01f0",
+        "line_ranges": [
+          {
+            "Single": 23
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a4e35b8748bd63335f32b63",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 23
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trellis/tasks/06-27-dataagent-duckdb-tools/check.jsonl": [
+      {
+        "hash": "s_a50339537302b4::t_79019623fe93d3",
+        "line_ranges": [
+          {
+            "Single": 2
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a4e35c2748bd63335f32b80",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 2
+              }
+            ]
+          }
+        ]
+      }
+    ],
+    ".trellis/tasks/06-27-dataagent-duckdb-tools/implement.jsonl": [
+      {
+        "hash": "s_a50339537302b4::t_d57570f4bae7bf",
+        "line_ranges": [
+          {
+            "Single": 2
+          }
+        ],
+        "mixed_line_ranges": [],
+        "operations": [
+          {
+            "operation_id": "6a4e35c5748bd63335f32ba7",
+            "tool_type": "agent",
+            "tool_id": "apply_patch",
+            "line_ranges": [
+              {
+                "Single": 2
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "remote_transcripts": {
+    "s_a50339537302b4": {
+      "tool": "trae",
+      "conversation_id": "6a45c8d9963d77b7a683ec5d",
+      "session_id": "6a45c8d9963d77b7a683ec5d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_a50339537302b4::t_79019623fe93d3": {
+      "tool": "trae",
+      "conversation_id": "6a45c8d9963d77b7a683ec5d",
+      "session_id": "6a45c8d9963d77b7a683ec5d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_a50339537302b4::t_ceb51332ad01f0": {
+      "tool": "trae",
+      "conversation_id": "6a45c8d9963d77b7a683ec5d",
+      "session_id": "6a45c8d9963d77b7a683ec5d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    },
+    "s_a50339537302b4::t_d57570f4bae7bf": {
+      "tool": "trae",
+      "conversation_id": "6a45c8d9963d77b7a683ec5d",
+      "session_id": "6a45c8d9963d77b7a683ec5d",
+      "status": "remote_only",
+      "message": "Remote transcript resolution is not implemented yet for TRAE prompts."
+    }
+  }
+}
