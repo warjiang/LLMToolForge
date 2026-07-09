@@ -2,6 +2,11 @@ import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { cn } from "@/lib/utils";
+import {
+  getJsonTreeClosingPadding,
+  getJsonTreeContainerPadding,
+  getJsonTreeLeafPadding,
+} from "./jsonTreeLayout";
 
 type Json = unknown;
 
@@ -57,7 +62,10 @@ function Node({ label, value, depth, defaultOpen, trailingComma, onSelectValue }
 
   if (!isContainer(value)) {
     return (
-      <div style={{ paddingLeft: depth * 14 }} className="whitespace-pre-wrap">
+      <div
+        style={{ paddingLeft: getJsonTreeLeafPadding(depth) }}
+        className="whitespace-pre-wrap"
+      >
         {keyLabel}
         {colon}
         <Scalar value={value} onSelect={onSelectValue} />
@@ -76,7 +84,7 @@ function Node({ label, value, depth, defaultOpen, trailingComma, onSelectValue }
   return (
     <div>
       <div
-        style={{ paddingLeft: depth * 14 }}
+        style={{ paddingLeft: getJsonTreeContainerPadding(depth) }}
         className="flex cursor-pointer items-start hover:bg-muted/40"
         onClick={() => setOpen((o) => !o)}
       >
@@ -113,8 +121,11 @@ function Node({ label, value, depth, defaultOpen, trailingComma, onSelectValue }
               onSelectValue={onSelectValue}
             />
           ))}
-          <div style={{ paddingLeft: depth * 14 }} className="whitespace-pre-wrap">
-            <span className="pl-[14px]">
+          <div
+            style={{ paddingLeft: getJsonTreeClosingPadding(depth) }}
+            className="whitespace-pre-wrap"
+          >
+            <span>
               {closeBrace}
               {trailingComma ? "," : ""}
             </span>
