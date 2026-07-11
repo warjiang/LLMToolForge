@@ -127,6 +127,15 @@ Deliverable
     actually gathered.
   - Keep all assets offline and self-contained; the bundled ECharts runtime is served
     at /_vendor/echarts.min.js. Do NOT rely on external CDNs.
+  - Make the report print-friendly (users export to PDF via the browser's print
+    dialog). In your headHtml <style>, add an "@media print" block that: forces a
+    light background and dark text (background:#fff; color:#000); sets a sensible
+    page margin (e.g. "@page { margin: 16mm; }"); keeps section/card/heading blocks
+    together with "break-inside: avoid" and headings with "break-after: avoid";
+    hides purely interactive chrome (nav bars, sticky headers, buttons) with a
+    ".no-print { display: none !important; }" helper; and lets charts/tables size
+    to the page width. Enable "print-color-adjust: exact" only where a colored
+    background is essential to meaning. Assume A4/Letter width.
   - "data_report_html" remains available as a quick, lower-effort fallback, but the
     incremental HTML artifact is the preferred, higher-quality deliverable.
 - Structure: an executive summary first, then sections covering the framework above.

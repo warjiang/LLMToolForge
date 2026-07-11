@@ -26,9 +26,15 @@ interface PreviewState {
   open: boolean;
   url: string | null;
   title: string | null;
+  /** Source artifact directory on disk, used to export the report to HTML. */
+  outputDir: string | null;
   nonce: number;
   width: number;
-  openPreview: (url: string, title?: string) => void;
+  openPreview: (
+    url: string,
+    title?: string,
+    outputDir?: string | null
+  ) => void;
   closePreview: () => void;
   setWidth: (width: number) => void;
 }
@@ -37,10 +43,17 @@ export const usePreviewStore = create<PreviewState>((set) => ({
   open: false,
   url: null,
   title: null,
+  outputDir: null,
   nonce: 0,
   width: getInitialWidth(),
-  openPreview: (url, title) =>
-    set((s) => ({ open: true, url, title: title ?? null, nonce: s.nonce + 1 })),
+  openPreview: (url, title, outputDir) =>
+    set((s) => ({
+      open: true,
+      url,
+      title: title ?? null,
+      outputDir: outputDir ?? null,
+      nonce: s.nonce + 1,
+    })),
   closePreview: () => set({ open: false }),
   setWidth: (width) => {
     const next = clampWidth(width);

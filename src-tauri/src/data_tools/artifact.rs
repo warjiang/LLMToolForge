@@ -154,6 +154,220 @@ pub fn html_artifact_block(req: HtmlArtifactBlockRequest) -> Result<HtmlArtifact
     })
 }
 
+/// Bundled ECharts runtime, inlined into exported HTML so charts render offline.
+/// Same file the preview server exposes at `/_vendor/echarts.min.js`.
+const ECHARTS_JS: &[u8] = include_bytes!("../../assets/echarts.min.js");
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportExportRequest {
+    /// Artifact directory (the `outputDir` currently shown in the preview).
+    output_dir: String,
+    /// Destination file chosen via the save dialog.
+    target_path: String,
+    /// Served file name to export; defaults to `index.html`.
+    file: Option<String>,
+}
+
+/// Export a served artifact page to a single self-contained HTML file: inline
+/// sibling `./*.css` / `./*.js`, inline the bundled ECharts runtime, and drop
+/// the live-reload poller so the file opens offline (for sharing / notes).
+#[tauri::command]
+pub fn report_export_html(req: ReportExportRequest) -> Result<(), String> {
+    let dir = PathBuf::from(&req.output_dir);
+    if !dir.is_dir() {
+        return Err(format!("报告目录不存在: {}", dir.display()));
+    }
+    let file = req.file.as_deref().unwrap_or(INDEX_FILE);
+    let source = dir.join(file);
+    let raw = fs::read_to_string(&source)
+        .map_err(|e| format!("读取报告失败 {}: {e}", source.display()))?;
+
+    let html = inline_for_export(&raw, &dir);
+    fs::write(&req.target_path, html.as_bytes())
+        .map_err(|e| format!("导出失败 {}: {e}", req.target_path))
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ReportOpenRequest {
+    /// Artifact directory (the `outputDir` currently shown in the preview).
+    output_dir: String,
+    /// Served file name to export; defaults to `index.html`.
+    file: Option<String>,
+    /// Report title, used to name the temp file the browser opens.
+    title: Option<String>,
+}
+
+/// Export the report to a self-contained HTML file in a temp dir and open it in
+/// the OS default browser, so the user can print it to PDF from there.
+///
+/// This is the cross-platform path for "Export PDF": the embedded WKWebView on
+/// macOS silently ignores `window.print()`, so we hand the page to the system
+/// browser (which has a working print / "Save as PDF" flow) instead.
+#[tauri::command]
+pub fn report_open_in_browser(req: ReportOpenRequest) -> Result<String, String> {
+    let dir = PathBuf::from(&req.output_dir);
+    if !dir.is_dir() {
+        return Err(format!("报告目录不存在: {}", dir.display()));
+    }
+    let file = req.file.as_deref().unwrap_or(INDEX_FILE);
+    let source = dir.join(file);
+    let raw = fs::read_to_string(&source)
+        .map_err(|e| format!("读取报告失败 {}: {e}", source.display()))?;
+
+    let html = inline_for_export(&raw, &dir);
+    let name = sanitize_file_stem(req.title.as_deref().unwrap_or("report"));
+    let target = std::env::temp_dir().join(format!("{name}-{}.html", timestamp_ms()));
+    fs::write(&target, html.as_bytes())
+        .map_err(|e| format!("导出失败 {}: {e}", target.display()))?;
+    open_in_default_browser(&target)?;
+    Ok(target.display().to_string())
+}
+
+/// Filesystem-safe file stem derived from a report title.
+fn sanitize_file_stem(title: &str) -> String {
+    let cleaned: String = title
+        .chars()
+        .map(|c| {
+            if c.is_control() || matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                '_'
+            } else {
+                c
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim_matches([' ', '.']).trim();
+    if trimmed.is_empty() {
+        "report".to_string()
+    } else {
+        trimmed.chars().take(80).collect()
+    }
+}
+
+/// Open `path` with the OS default handler (a browser, for `.html`). Uses
+/// `open` on macOS, `explorer` on Windows, `xdg-open` elsewhere.
+fn open_in_default_browser(path: &Path) -> Result<(), String> {
+    use std::process::Command;
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(path);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("explorer");
+        c.arg(path);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(path);
+        c
+    };
+    // `explorer` returns a non-zero exit code even on success, so we only check
+    // that the process could be spawned, not its status.
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开浏览器失败: {e}"))
+}
+
+/// Turn a locally served page into a self-contained document. Sibling assets are
+/// inlined first so the ECharts blob (inserted last) is never rescanned; missing
+/// files are left untouched. The live-reload script is stripped.
+fn inline_for_export(html: &str, dir: &Path) -> String {
+    let mut out = inline_stylesheets(html, dir);
+    out = inline_scripts(&out, dir);
+    let echarts = String::from_utf8_lossy(ECHARTS_JS).replace("</script>", "<\\/script>");
+    out = out.replace(
+        "<script src=\"/_vendor/echarts.min.js\"></script>",
+        &format!("<script>{echarts}</script>"),
+    );
+    out.replace(RELOAD_SCRIPT, "")
+}
+
+/// Extract a sibling `./name` value for `attr` from a tag, rejecting anything
+/// that escapes the artifact directory.
+fn local_ref(tag: &str, attr: &str) -> Option<String> {
+    let needle = format!("{attr}=\"./");
+    let idx = tag.find(&needle)? + needle.len();
+    let end = tag[idx..].find('"')?;
+    let name = &tag[idx..idx + end];
+    if name.is_empty() || name.contains('/') || name.contains("..") {
+        return None;
+    }
+    Some(name.to_string())
+}
+
+/// Inline `<link rel="stylesheet" href="./NAME">` tags as `<style>` blocks.
+fn inline_stylesheets(html: &str, dir: &Path) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find("<link") {
+        let after = &rest[start..];
+        let Some(end) = after.find('>').map(|e| e + 1) else {
+            break;
+        };
+        let tag = &after[..end];
+        out.push_str(&rest[..start]);
+        match local_ref(tag, "href").and_then(|n| fs::read_to_string(dir.join(n)).ok()) {
+            Some(css) => {
+                out.push_str("<style>");
+                out.push_str(&css);
+                out.push_str("</style>");
+            }
+            None => out.push_str(tag),
+        }
+        rest = &after[end..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Inline `<script src="./NAME"></script>` tags with the file contents. Vendor
+/// (`/_vendor/...`) and inline scripts are left as-is.
+fn inline_scripts(html: &str, dir: &Path) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(start) = rest.find("<script") {
+        let after = &rest[start..];
+        let Some(open_end) = after.find('>').map(|e| e + 1) else {
+            break;
+        };
+        out.push_str(&rest[..start]);
+        let open_tag = &after[..open_end];
+        let close = "</script>";
+        match local_ref(open_tag, "src") {
+            Some(name) => {
+                let body = &after[open_end..];
+                let Some(close_at) = body.find(close) else {
+                    out.push_str(open_tag);
+                    rest = body;
+                    continue;
+                };
+                let full = open_end + close_at + close.len();
+                match fs::read_to_string(dir.join(&name)) {
+                    Ok(js) => {
+                        out.push_str("<script>");
+                        out.push_str(&js.replace(close, "<\\/script>"));
+                        out.push_str(close);
+                    }
+                    Err(_) => out.push_str(&after[..full]),
+                }
+                rest = &after[full..];
+            }
+            None => {
+                out.push_str(open_tag);
+                rest = &after[open_end..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Insert, update, move, or delete a block in place.
 fn apply_block(
     manifest: &mut Manifest,
@@ -462,5 +676,55 @@ mod tests {
         assert!(err.is_err());
         let _ = std::fs::remove_dir_all(ws);
         let _ = std::fs::remove_dir_all(other);
+    }
+
+    #[test]
+    fn export_inlines_assets_and_strips_reload() {
+        let ws = temp_workspace("export");
+        let res = create(&ws, "page");
+        let dir = PathBuf::from(&res.output_dir);
+        // A block that pulls in a sibling stylesheet + script, like data_report_html.
+        std::fs::write(dir.join("style.css"), "body{color:red}").unwrap();
+        std::fs::write(dir.join("main.js"), "console.log('hi')").unwrap();
+        block(
+            &ws,
+            &res.output_dir,
+            "assets",
+            "<link rel=\"stylesheet\" href=\"./style.css\">\n<script src=\"./main.js\"></script>",
+            None,
+            false,
+        );
+
+        let target = dir.join("exported.html");
+        report_export_html(ReportExportRequest {
+            output_dir: res.output_dir.clone(),
+            target_path: target.display().to_string(),
+            file: None,
+        })
+        .unwrap();
+
+        let out = std::fs::read_to_string(&target).unwrap();
+        // Live-reload poller stripped; no more localhost-relative asset refs.
+        assert!(!out.contains("__artifact_version"));
+        assert!(!out.contains("/_vendor/echarts.min.js"));
+        assert!(!out.contains("href=\"./style.css\""));
+        assert!(!out.contains("src=\"./main.js\""));
+        // Assets inlined verbatim.
+        assert!(out.contains("<style>body{color:red}</style>"));
+        assert!(out.contains("console.log('hi')"));
+        // ECharts runtime inlined (bundle is large; a marker suffices).
+        assert!(out.contains("echarts") && out.len() > 100_000);
+        let _ = std::fs::remove_dir_all(ws);
+    }
+
+    #[test]
+    fn export_missing_dir_errors() {
+        let missing = std::env::temp_dir().join("artifact-export-missing-xyz");
+        let err = report_export_html(ReportExportRequest {
+            output_dir: missing.display().to_string(),
+            target_path: missing.join("out.html").display().to_string(),
+            file: None,
+        });
+        assert!(err.is_err());
     }
 }
