@@ -821,6 +821,8 @@
   "agent_edit_message": "Edit message",
   "agent_retry": "Retry",
   "agent_delete_from_here": "Delete from here",
+  "agent_copy_message": "Copy",
+  "agent_copied": "Copied",
 
   "provider_label_manual": "Custom",
 

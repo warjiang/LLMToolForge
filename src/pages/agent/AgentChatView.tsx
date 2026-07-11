@@ -16,6 +16,7 @@ import {
   ChevronsUpDown,
   CircleAlert,
   Compass,
+  Copy,
   Database,
   Eraser,
   FileArchive,
@@ -4193,6 +4194,19 @@ function ChatBubble({
   const [toolsUserOpen, setToolsUserOpen] = useState<boolean | null>(null);
   const toolsOpen = toolsUserOpen ?? toolsActive;
 
+  const [copied, setCopied] = useState(false);
+  const copyMessage = async () => {
+    const text = visibleContent.trim() || message.content;
+    if (!text) return;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1400);
+    } catch {
+      /* clipboard may be unavailable */
+    }
+  };
+
   useEffect(() => {
     if (!editing) return;
     const textarea = editTextareaRef.current;
@@ -4365,6 +4379,20 @@ function ChatBubble({
             <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
               {formatMessageTime(message.createdAt)}
             </span>
+            {hasVisibleContent && !editing && (
+              <Button
+                size="icon-sm"
+                variant="ghost"
+                title={copied ? t("agent_copied") : t("agent_copy_message")}
+                onClick={copyMessage}
+              >
+                {copied ? (
+                  <Check className="h-3.5 w-3.5 text-success" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            )}
             {debug && !editing && !actionsDisabled && (
               <div
                 className={cn(
