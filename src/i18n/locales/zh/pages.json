@@ -821,6 +821,8 @@
   "agent_edit_message": "编辑消息",
   "agent_retry": "重试",
   "agent_delete_from_here": "删除此处及后续消息",
+  "agent_copy_message": "复制",
+  "agent_copied": "已复制",
 
   "provider_label_manual": "自定义",
 
