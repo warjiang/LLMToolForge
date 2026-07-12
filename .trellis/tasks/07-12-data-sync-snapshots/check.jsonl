@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Verify code standards / forbidden patterns for the snapshot additions"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify engine -> store -> UI data flow for snapshot write/list/restore"}

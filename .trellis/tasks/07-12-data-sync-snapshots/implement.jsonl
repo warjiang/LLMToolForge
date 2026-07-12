@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Zustand store conventions for the new snapshots state/actions in store/sync.ts"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type patterns for new SnapshotArchive/SnapshotIndex types in data/sync/types.ts"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse existing ResourcePayload, mergeResource, and replaceAll/replaceTombstones instead of duplicating logic"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Version-history UI additions in StorageSyncCard.tsx follow component/layout conventions"}

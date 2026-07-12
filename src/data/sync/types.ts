@@ -89,3 +89,41 @@ export const SCHEMA_VERSION = 1;
 export function resourceRemoteKey(id: string): string {
   return `resources/${id}.json.enc`;
 }
+
+/**
+ * Decrypted payload of a history snapshot (`snapshots/<id>.enc`): an immutable,
+ * whole-archive copy of every synced resource for one backup.
+ */
+export interface SnapshotArchive {
+  snapshotId: string;
+  createdAt: string;
+  deviceId: string;
+  resources: Record<string, ResourcePayload>;
+}
+
+/** One row of the plaintext snapshot index cache. */
+export interface SnapshotIndexEntry {
+  id: string;
+  /** Object key of the encrypted archive, e.g. "snapshots/<id>.enc". */
+  key: string;
+  createdAt: string;
+  deviceId: string;
+  /** Item count per resource id, for display without decrypting the archive. */
+  resourceCounts: Record<string, number>;
+}
+
+/** Plaintext index of history snapshots. A cache only — the source of truth is
+ *  the set of `snapshots/*.enc` objects, so it is rebuildable by listing. */
+export interface SnapshotIndex {
+  schemaVersion: number;
+  /** Newest-first. */
+  snapshots: SnapshotIndexEntry[];
+}
+
+export const SNAPSHOTS_PREFIX = "snapshots/";
+export const SNAPSHOTS_INDEX_KEY = "snapshots/index.json";
+export const SNAPSHOT_SCHEMA_VERSION = 1;
+
+export function snapshotKey(id: string): string {
+  return `${SNAPSHOTS_PREFIX}${id}.enc`;
+}
