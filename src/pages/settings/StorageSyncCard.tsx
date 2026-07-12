@@ -8,6 +8,8 @@ import {
   AlertCircle,
   CloudCog,
   ShieldCheck,
+  History,
+  RotateCcw,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,7 @@ import { Switch } from "@/components/ui/switch";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useSyncStore } from "@/store/sync";
 import { isTauri } from "@/lib/utils";
+import type { SnapshotIndexEntry } from "@/data/sync/types";
 
 export function StorageSyncCard() {
   const { t } = useTranslation("pages");
@@ -26,18 +29,30 @@ export function StorageSyncCard() {
   const phase = useSyncStore((s) => s.phase);
   const error = useSyncStore((s) => s.error);
   const lastSyncedAt = useSyncStore((s) => s.lastSyncedAt);
+  const snapshots = useSyncStore((s) => s.snapshots);
+  const snapshotsLoading = useSyncStore((s) => s.snapshotsLoading);
   const setConfig = useSyncStore((s) => s.setConfig);
   const setPassphrase = useSyncStore((s) => s.setPassphrase);
   const isConfigured = useSyncStore((s) => s.isConfigured);
   const test = useSyncStore((s) => s.test);
   const sync = useSyncStore((s) => s.sync);
   const restore = useSyncStore((s) => s.restore);
+  const loadSnapshots = useSyncStore((s) => s.loadSnapshots);
+  const restoreSnapshot = useSyncStore((s) => s.restoreSnapshot);
 
   const [confirmRestore, setConfirmRestore] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
   const desktop = isTauri();
   const busy =
     phase === "testing" || phase === "syncing" || phase === "restoring";
   const ready = isConfigured() && desktop && !busy;
+
+  const toggleHistory = () => {
+    const next = !historyOpen;
+    setHistoryOpen(next);
+    if (next) void loadSnapshots();
+  };
 
   const statusText = () => {
     switch (phase) {
@@ -150,6 +165,14 @@ export function StorageSyncCard() {
           <DownloadCloud className="h-4 w-4" />
           {t("sync_restore")}
         </Button>
+        <Button
+          variant="ghost"
+          onClick={toggleHistory}
+          disabled={!isConfigured() || !desktop}
+        >
+          <History className="h-4 w-4" />
+          {t("sync_history_show")}
+        </Button>
       </div>
 
       <div className="mt-3 text-label-13">
@@ -186,6 +209,53 @@ export function StorageSyncCard() {
         )}
       </div>
 
+      {historyOpen && (
+        <div className="mt-4 rounded-md border border-border">
+          <div className="flex items-center justify-between border-b border-border px-3 py-2">
+            <div>
+              <p className="text-label-13 font-medium">{t("sync_history_title")}</p>
+              <p className="mt-0.5 text-label-13 text-muted-foreground">
+                {t("sync_history_desc")}
+              </p>
+            </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => void loadSnapshots()}
+              disabled={snapshotsLoading}
+            >
+              <RefreshCw
+                className={`h-3.5 w-3.5 ${snapshotsLoading ? "animate-spin" : ""}`}
+              />
+              {t("sync_history_refresh")}
+            </Button>
+          </div>
+
+          {snapshotsLoading && (
+            <p className="px-3 py-3 text-label-13 text-muted-foreground">
+              {t("sync_history_loading")}
+            </p>
+          )}
+          {!snapshotsLoading && snapshots.length === 0 && (
+            <p className="px-3 py-3 text-label-13 text-muted-foreground">
+              {t("sync_history_empty")}
+            </p>
+          )}
+          {!snapshotsLoading && snapshots.length > 0 && (
+            <ul className="divide-y divide-border">
+              {snapshots.map((snap) => (
+                <SnapshotRow
+                  key={snap.id}
+                  snapshot={snap}
+                  disabled={!ready}
+                  onRestore={() => setPendingSnapshot(snap.id)}
+                />
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
       <ConfirmDialog
         open={confirmRestore}
         onOpenChange={setConfirmRestore}
@@ -197,7 +267,64 @@ export function StorageSyncCard() {
           void restore();
         }}
       />
+
+      <ConfirmDialog
+        open={pendingSnapshot !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingSnapshot(null);
+        }}
+        title={t("sync_history_restore_confirm_title")}
+        description={t("sync_history_restore_confirm_desc")}
+        confirmLabel={t("sync_history_restore_confirm_ok")}
+        onConfirm={() => {
+          const id = pendingSnapshot;
+          setPendingSnapshot(null);
+          if (id) void restoreSnapshot(id);
+        }}
+      />
     </Card>
+  );
+}
+
+function SnapshotRow({
+  snapshot,
+  disabled,
+  onRestore,
+}: {
+  snapshot: SnapshotIndexEntry;
+  disabled: boolean;
+  onRestore: () => void;
+}) {
+  const { t } = useTranslation("pages");
+  const totalItems = Object.values(snapshot.resourceCounts).reduce(
+    (sum, n) => sum + n,
+    0
+  );
+  return (
+    <li className="flex items-center justify-between gap-3 px-3 py-2">
+      <div className="min-w-0">
+        <p className="truncate font-mono text-label-13">
+          {new Date(snapshot.createdAt).toLocaleString()}
+        </p>
+        <p className="mt-0.5 truncate text-label-13 text-muted-foreground">
+          {snapshot.deviceId && (
+            <span>
+              {t("sync_history_device")}: {snapshot.deviceId} ·{" "}
+            </span>
+          )}
+          {t("sync_history_items", { count: totalItems })}
+        </p>
+      </div>
+      <Button
+        variant="secondary"
+        size="sm"
+        onClick={onRestore}
+        disabled={disabled}
+      >
+        <RotateCcw className="h-3.5 w-3.5" />
+        {t("sync_history_restore")}
+      </Button>
+    </li>
   );
 }
 

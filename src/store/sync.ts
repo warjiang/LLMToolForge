@@ -2,13 +2,16 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { uid } from "@/lib/utils";
 import {
+  listSnapshots,
   restoreFromRemote,
+  restoreFromSnapshot,
   runSync,
   testConnection,
 } from "@/data/sync/engine";
 import { storageBackend } from "@/data/sync/backend";
 import { reloadSyncedData } from "./index";
 import type {
+  SnapshotIndexEntry,
   StorageConfig,
   SyncOutcome,
   SyncPhase,
@@ -37,6 +40,9 @@ interface SyncStore {
   error: string | null;
   lastSyncedAt: string | null;
   lastOutcome: SyncOutcome | null;
+  /** History snapshots listed from the remote (newest-first). */
+  snapshots: SnapshotIndexEntry[];
+  snapshotsLoading: boolean;
 
   setConfig: (patch: Partial<StorageConfig>) => void;
   setPassphrase: (passphrase: string) => void;
@@ -44,6 +50,10 @@ interface SyncStore {
   test: () => Promise<boolean>;
   sync: () => Promise<boolean>;
   restore: () => Promise<boolean>;
+  /** Load the remote history snapshot list into `snapshots`. */
+  loadSnapshots: () => Promise<boolean>;
+  /** Restore local collections from a chosen history snapshot. */
+  restoreSnapshot: (snapshotId: string) => Promise<boolean>;
 }
 
 function messageOf(e: unknown): string {
@@ -66,6 +76,8 @@ export const useSyncStore = create<SyncStore>()(
       error: null,
       lastSyncedAt: null,
       lastOutcome: null,
+      snapshots: [],
+      snapshotsLoading: false,
 
       setConfig: (patch) =>
         set((s) => ({ config: { ...s.config, ...patch }, phase: "idle", error: null })),
@@ -132,6 +144,50 @@ export const useSyncStore = create<SyncStore>()(
           const saltB64 = await ensureSalt(get().saltB64);
           const { config, passphrase } = get();
           const result = await restoreFromRemote(config, { passphrase, saltB64 });
+          await reloadSyncedData();
+          set({
+            phase: "success",
+            saltB64: result.saltB64,
+            lastSyncedAt: result.outcome.at,
+            lastOutcome: result.outcome,
+          });
+          return true;
+        } catch (e) {
+          set({ phase: "error", error: messageOf(e) });
+          return false;
+        }
+      },
+
+      loadSnapshots: async () => {
+        if (!get().isConfigured()) {
+          set({ error: "storage sync is not fully configured" });
+          return false;
+        }
+        set({ snapshotsLoading: true, error: null });
+        try {
+          const snapshots = await listSnapshots(get().config);
+          set({ snapshots, snapshotsLoading: false });
+          return true;
+        } catch (e) {
+          set({ snapshotsLoading: false, error: messageOf(e) });
+          return false;
+        }
+      },
+
+      restoreSnapshot: async (snapshotId) => {
+        if (!get().isConfigured()) {
+          set({ phase: "error", error: "storage sync is not fully configured" });
+          return false;
+        }
+        set({ phase: "restoring", error: null });
+        try {
+          const saltB64 = await ensureSalt(get().saltB64);
+          const { config, passphrase } = get();
+          const result = await restoreFromSnapshot(
+            config,
+            { passphrase, saltB64 },
+            snapshotId
+          );
           await reloadSyncedData();
           set({
             phase: "success",
