@@ -970,6 +970,8 @@ pub fn run() {
             data_tools::data_report_html,
             data_tools::artifact::html_artifact_create,
             data_tools::artifact::html_artifact_block,
+            data_tools::artifact::report_export_html,
+            data_tools::artifact::report_open_in_browser,
             preview::preview_register,
             agent_host::agent_spawn,
             agent_host::agent_send,

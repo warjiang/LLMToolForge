@@ -18,7 +18,9 @@ import {
   Compass,
   Copy,
   Database,
+  Download,
   Eraser,
+  ExternalLink,
   FileArchive,
   FileCode,
   FileAudio,
@@ -111,6 +113,7 @@ import {
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { registerPreview } from "@/lib/preview";
+import { exportReportHtml, exportReportPdf } from "@/lib/reportExport";
 import {
   usePreviewStore,
   PREVIEW_DEFAULT_WIDTH,
@@ -568,7 +571,7 @@ async function openArtifactPreview(
     const reg = await registerPreview(dir);
     if (reg) {
       const url = file ? reg.url + encodeURIComponent(file) : reg.url;
-      usePreviewStore.getState().openPreview(url, title);
+      usePreviewStore.getState().openPreview(url, title, dir);
     }
   } catch (e) {
     console.error("Failed to open DataAgent preview", e);
@@ -644,6 +647,30 @@ export function AgentChatView() {
   const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
   const previewResizeReleaseRef = useRef<(() => void) | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [exportingHtml, setExportingHtml] = useState(false);
+
+  const handleExportHtml = async () => {
+    const dir = usePreviewStore.getState().outputDir;
+    if (!dir || exportingHtml) return;
+    setExportingHtml(true);
+    try {
+      await exportReportHtml(dir, usePreviewStore.getState().title);
+    } catch (e) {
+      console.error("Failed to export report HTML", e);
+    } finally {
+      setExportingHtml(false);
+    }
+  };
+
+  const handleExportPdf = async () => {
+    const { outputDir: dir, title } = usePreviewStore.getState();
+    if (!dir) return;
+    try {
+      await exportReportPdf(dir, title);
+    } catch (e) {
+      console.error("Failed to open report for PDF export", e);
+    }
+  };
 
   useEffect(() => {
     if (!preview.open || !isTauri()) return;
@@ -2929,6 +2956,31 @@ export function AgentChatView() {
               <span className="min-w-0 flex-1 truncate text-heading-14 text-foreground">
                 {preview.title || t("agent_preview_title")}
               </span>
+              {preview.outputDir && (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => void handleExportHtml()}
+                    disabled={exportingHtml}
+                    title={t("agent_export_html")}
+                  >
+                    {exportingHtml ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Download className="h-4 w-4" />
+                    )}
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => void handleExportPdf()}
+                    title={t("agent_export_pdf")}
+                  >
+                    <ExternalLink className="h-4 w-4" />
+                  </Button>
+                </>
+              )}
               <Button
                 variant="ghost"
                 size="icon-sm"
