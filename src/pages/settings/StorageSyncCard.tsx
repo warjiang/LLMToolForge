@@ -73,8 +73,8 @@ export function StorageSyncCard() {
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Field label={t("sync_endpoint")} className="sm:col-span-2">
+      <div className="mt-5 grid grid-cols-1 gap-x-4 gap-y-4 sm:grid-cols-2">
+        <Field label={t("sync_endpoint")}>
           <Input
             value={config.endpoint ?? ""}
             placeholder={t("sync_endpoint_ph")}
@@ -105,34 +105,32 @@ export function StorageSyncCard() {
             onChange={(e) => setConfig({ accessKeyId: e.target.value })}
           />
         </Field>
-        <Field label={t("sync_secret_key")} className="sm:col-span-2">
+        <Field label={t("sync_secret_key")}>
           <PasswordInput
             value={config.secretAccessKey}
             onChange={(e) => setConfig({ secretAccessKey: e.target.value })}
           />
         </Field>
-      </div>
 
-      <div className="mt-3 flex items-center justify-between rounded-md border border-border px-3 py-2">
-        <Label className="text-copy-14">{t("sync_path_style")}</Label>
-        <Switch
-          checked={config.pathStyle}
-          onCheckedChange={(v) => setConfig({ pathStyle: v })}
-        />
-      </div>
-
-      <div className="mt-4">
-        <Field label={t("sync_passphrase")}>
+        <Field label={t("sync_passphrase")} className="sm:col-span-2">
           <PasswordInput
             value={passphrase}
             placeholder={t("sync_passphrase_ph")}
             onChange={(e) => setPassphrase(e.target.value)}
           />
+          <p className="mt-1.5 flex items-start gap-1.5 text-label-13 text-muted-foreground">
+            <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            {t("sync_passphrase_hint")}
+          </p>
         </Field>
-        <p className="mt-1.5 flex items-start gap-1.5 text-label-13 text-muted-foreground">
-          <ShieldCheck className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          {t("sync_passphrase_hint")}
-        </p>
+
+        <div className="flex h-9 items-center justify-between gap-3 rounded-md border border-border px-3 sm:col-span-2">
+          <Label className="text-copy-14">{t("sync_path_style")}</Label>
+          <Switch
+            checked={config.pathStyle}
+            onCheckedChange={(v) => setConfig({ pathStyle: v })}
+          />
+        </div>
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
