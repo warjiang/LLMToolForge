@@ -40,6 +40,13 @@ export function useUpdater(options?: { auto?: boolean }) {
 
   useEffect(() => {
     if (!isTauri) return;
+    // In dev the compiled Tauri version is the stale committed value (0.1.0),
+    // so prefer the git-derived version injected at build time to reflect the
+    // actual code state. Production keeps the real bundled version.
+    if (import.meta.env.DEV && __GIT_APP_VERSION__) {
+      setState((s) => ({ ...s, currentVersion: __GIT_APP_VERSION__ }));
+      return;
+    }
     getVersion()
       .then((v) => setState((s) => ({ ...s, currentVersion: v })))
       .catch(() => undefined);
