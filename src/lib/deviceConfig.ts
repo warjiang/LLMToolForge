@@ -13,6 +13,7 @@ export type FeatureId =
   | "sidebar.unified"
   | "sidebar.skills"
   | "sidebar.mcp"
+  | "sidebar.connectors"
   | "sidebar.ssh"
   | "sidebar.tools"
   | "sidebar.browser";
@@ -41,6 +42,8 @@ export const DEFAULT_FEATURES: Record<FeatureId, boolean> = {
   "sidebar.skills": true,
   // Shows the MCP Servers navigation entry.
   "sidebar.mcp": true,
+  // Shows the Connectors (OpenConnector) navigation entry.
+  "sidebar.connectors": true,
   // Shows the SSH navigation entry; disabled by default until SSH is ready for broad use.
   "sidebar.ssh": false,
   // Shows the utility tools navigation entry.

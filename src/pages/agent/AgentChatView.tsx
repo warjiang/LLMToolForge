@@ -41,6 +41,7 @@ import {
   RefreshCcw,
   RotateCcw,
   RotateCw,
+  Plug,
   Send,
   Server,
   Settings2,
@@ -254,6 +255,7 @@ function buildAdHocAgentDef(
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
+    connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
@@ -290,6 +292,7 @@ function buildDataAgentDef(
     ],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
+    connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
@@ -327,6 +330,7 @@ function buildResearchAgentDef(
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds,
+    connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
     temperature: Number(settings.temperature) || 0,
@@ -343,6 +347,7 @@ function agentRuntimeSignature(def: AgentDefinition, workspacePath: string): str
     def.enabledInternalTools.join(","),
     def.enabledSkillIds.join(","),
     def.enabledMcpServerIds.join(","),
+    def.connectorEnabled ? "conn" : "",
     def.sandboxMode,
     workspacePath,
     def.temperature,
@@ -2894,6 +2899,26 @@ export function AgentChatView() {
                       updateSettings({ enabledMcpServerIds })
                     }
                   />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      updateSettings({
+                        connectorEnabled: !settings?.connectorEnabled,
+                      })
+                    }
+                    title={t("agent_connector_toggle")}
+                    className={cn(
+                      "h-7 shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal",
+                      settings?.connectorEnabled
+                        ? "bg-primary/10 text-foreground"
+                        : "text-muted-foreground"
+                    )}
+                  >
+                    <Plug className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">Connector</span>
+                  </Button>
 
                   {sending ? (
                     <Button

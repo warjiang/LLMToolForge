@@ -11,6 +11,7 @@ import type { AgentDefinition, McpServer, Skill } from "@/types";
 import { buildInternalTools } from "./tools/internal";
 import type { RequestCheckpoint, RequestAsk } from "./tools/internal";
 import { buildMcpTools } from "./tools/mcp";
+import { buildConnectorTools } from "./tools/connector";
 import { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";
 
 export interface ResolveAgentDeps {
@@ -96,6 +97,11 @@ export async function resolveAgent(
 
   const mcp = await buildMcpTools(servers);
   tools.push(...mcp.tools);
+
+  // OpenConnector discovery/execute tools (opt-in per agent definition).
+  if (def.connectorEnabled) {
+    tools.push(...buildConnectorTools());
+  }
 
   return {
     systemPrompt: resolveSystemPrompt(def, deps.skills),

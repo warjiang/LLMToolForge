@@ -23,6 +23,7 @@ export const useAgentDefStore = createCollectionStore(agentDefinitionRepo);
 export const useSshHostStore = createCollectionStore(sshHostRepo);
 export { useChatStore } from "./chat";
 export { useDebugStore } from "./debug";
+export { useConnectorStore } from "./connector";
 export { useSessionGroupStore } from "./sessionGroups";
 export { useLocaleStore } from "./locale";
 export { useMarketSettingsStore } from "./marketSettings";

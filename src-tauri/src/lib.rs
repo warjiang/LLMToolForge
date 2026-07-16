@@ -12,6 +12,7 @@ use wait_timeout::ChildExt;
 mod agent_host;
 mod browser;
 mod config_io;
+mod connector;
 mod data_tools;
 mod fs_tools;
 mod mcp;
@@ -943,6 +944,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .manage(agent_host::AgentHost::default())
         .manage(unified::UnifiedManager::default())
+        .manage(connector::ConnectorManager::default())
         .manage(mcp::McpSessions::default())
         .manage(browser::BrowserState::default())
         .manage(preview::PreviewState::default())
@@ -988,6 +990,10 @@ pub fn run() {
             unified::unified_api_logs,
             unified::unified_api_clear_logs,
             unified::unified_api_stats,
+            connector::connector_start,
+            connector::connector_stop,
+            connector::connector_status,
+            connector::connector_open_url,
             mcp::mcp_inspect,
             mcp::mcp_call_tool,
             mcp::mcp_read_resource,
@@ -1036,6 +1042,9 @@ pub fn run() {
             // shared config but its stdout/call-log is no longer captured).
             if let tauri::RunEvent::Exit = event {
                 app_handle.state::<unified::UnifiedManager>().shutdown();
+                app_handle
+                    .state::<connector::ConnectorManager>()
+                    .shutdown();
             }
         });
 }
