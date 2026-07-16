@@ -1042,9 +1042,7 @@ pub fn run() {
             // shared config but its stdout/call-log is no longer captured).
             if let tauri::RunEvent::Exit = event {
                 app_handle.state::<unified::UnifiedManager>().shutdown();
-                app_handle
-                    .state::<connector::ConnectorManager>()
-                    .shutdown();
+                app_handle.state::<connector::ConnectorManager>().shutdown();
             }
         });
 }
