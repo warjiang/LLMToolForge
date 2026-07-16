@@ -37,6 +37,21 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Remove ANSI escape sequences (color / style codes like `\x1b[2m`) from text.
+ *
+ * CLI-based MCP servers (e.g. Playwright) emit colorized output; without a
+ * terminal to interpret them the raw codes leak into the UI as noise such as
+ * `[2m ... [22m`. Strip them before displaying the text.
+ */
+// eslint-disable-next-line no-control-regex
+const ANSI_PATTERN =
+  /[\u001B\u009B][[\]()#;?]*(?:(?:[a-zA-Z\d]*(?:;[-a-zA-Z\d/#&.:=?%@~_]*)*)?\u0007|(?:\d{1,4}(?:;\d{0,4})*)?[\dA-PR-TZcf-nq-uy=><~])/g;
+
+export function stripAnsi(value: string): string {
+  return value.replace(ANSI_PATTERN, "");
+}
+
 export function formatDate(value: string | number | Date): string {
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return "-";

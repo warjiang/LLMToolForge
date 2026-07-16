@@ -225,10 +225,18 @@ export function AgentSidebar() {
   const baseContainers = useMemo(() => {
     const orderIndex = new Map<string, number>();
     order.forEach((id, i) => orderIndex.set(id, i));
-    const sorted = [...visibleSessions].sort(
-      (a, b) =>
-        (orderIndex.get(a.id) ?? Infinity) - (orderIndex.get(b.id) ?? Infinity)
-    );
+    // Sessions absent from the custom order (e.g. freshly created ones) sort to
+    // the front, keeping the store's newest-first order among themselves, so a
+    // new session always shows at the top rather than sinking below arranged
+    // ones.
+    const sorted = [...visibleSessions].sort((a, b) => {
+      const ai = orderIndex.get(a.id);
+      const bi = orderIndex.get(b.id);
+      if (ai === undefined && bi === undefined) return 0;
+      if (ai === undefined) return -1;
+      if (bi === undefined) return 1;
+      return ai - bi;
+    });
     const result: Record<string, string[]> = { [UNGROUPED]: [] };
     for (const g of groups) result[g.id] = [];
     for (const s of sorted) {

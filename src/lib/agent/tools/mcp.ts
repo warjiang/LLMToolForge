@@ -11,7 +11,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
 import type { McpServer } from "@/types";
 import { callTool, inspectServer, type McpToolDef, type McpInspectSnapshot } from "@/lib/mcpInspector";
-import { text } from "./shared";
+import { text, stripAnsi } from "./shared";
 
 /** Separator between the server slug and the tool name in the exposed name. */
 const NAME_SEP = "__";
@@ -26,6 +26,10 @@ function emptySchema(): TSchema {
 
 /** Best-effort flatten of an MCP tool result into readable text. */
 function formatMcpResult(result: unknown): string {
+  return stripAnsi(rawFormatMcpResult(result));
+}
+
+function rawFormatMcpResult(result: unknown): string {
   if (result == null) return "(无返回)";
   if (typeof result === "string") return result;
   if (typeof result === "object") {

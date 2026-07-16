@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { stripAnsi } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { McpServer } from "@/types";
 import {
@@ -184,7 +185,7 @@ export function McpInspectorDialog({ open, onOpenChange, server }: Props) {
                   <AlertCircle className="h-5 w-5" />
                 </div>
                 <p className="whitespace-pre-wrap text-label-13 text-destructive">
-                  {error}
+                  {stripAnsi(error ?? "")}
                 </p>
                 <Button
                   className="mt-4"

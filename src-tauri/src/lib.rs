@@ -16,6 +16,7 @@ mod data_tools;
 mod fs_tools;
 mod mcp;
 mod preview;
+mod proc_env;
 mod ssh;
 mod storage;
 mod unified;

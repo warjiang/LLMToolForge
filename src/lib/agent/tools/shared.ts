@@ -26,6 +26,8 @@ export function text(value: string): TextContent {
   return { type: "text", text: value };
 }
 
+export { stripAnsi } from "@/lib/utils";
+
 /** Build a simple text tool result. */
 export function textResult<T>(value: string, details: T): AgentToolResult<T> {
   return { content: [text(value)], details };
