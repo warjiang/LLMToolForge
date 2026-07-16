@@ -96,6 +96,19 @@ async function loadIntoState(set: (patch: Partial<ChatState>) => void, id: strin
   });
 }
 
+export function findSettingsSeedSessionId(
+  sessions: readonly ChatSession[],
+  agentId: string | null
+): string | null {
+  const targetAgentId = agentId ?? null;
+  let seed: ChatSession | null = null;
+  for (const session of sessions) {
+    if ((session.agentId ?? null) !== targetAgentId) continue;
+    if (!seed || session.updatedAt > seed.updatedAt) seed = session;
+  }
+  return seed?.id ?? null;
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
@@ -137,7 +150,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   newSession: async (agentId = null) => {
-    const created = await chatRepo.createSession(undefined, agentId);
+    const seedSessionId = findSettingsSeedSessionId(get().sessions, agentId);
+    const settingsSeed = seedSessionId
+      ? await chatRepo.getSettings(seedSessionId)
+      : null;
+    const created = await chatRepo.createSession(undefined, agentId, settingsSeed);
     set({ sessions: [created.session, ...get().sessions] });
     await loadIntoState(set, created.session.id);
   },

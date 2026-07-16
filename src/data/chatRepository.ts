@@ -63,6 +63,31 @@ function defaultSettings(sessionId: string): ChatSessionSettings {
   };
 }
 
+function settingsForNewSession(
+  sessionId: string,
+  seed?: ChatSessionSettings | null
+): ChatSessionSettings {
+  if (!seed) return defaultSettings(sessionId);
+  const normalized = normalizeSettings(seed);
+  return {
+    connKey: normalized.connKey,
+    modelId: normalized.modelId,
+    keyIdx: normalized.keyIdx,
+    wireFormat: normalized.wireFormat,
+    system: normalized.system,
+    temperature: normalized.temperature,
+    maxTokens: normalized.maxTokens,
+    streaming: normalized.streaming,
+    enabledSkillIds: [...normalized.enabledSkillIds],
+    enabledMcpServerIds: [...normalized.enabledMcpServerIds],
+    sandboxMode: normalized.sandboxMode,
+    autoApproveCheckpoints: normalized.autoApproveCheckpoints,
+    workspacePath: normalized.workspacePath,
+    sessionId,
+    updatedAt: nowIso(),
+  };
+}
+
 function normalizeSettings(settings: ChatSessionSettings): ChatSessionSettings {
   return {
     ...settings,
@@ -296,7 +321,8 @@ class ChatRepository {
 
   async createSession(
     title = i18n.t("new_session", { ns: "common" }),
-    agentId: string | null = null
+    agentId: string | null = null,
+    settingsSeed?: ChatSessionSettings | null
   ): Promise<SessionBundle> {
     await this.ensureInit();
     const timestamp = nowIso();
@@ -308,7 +334,7 @@ class ChatRepository {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    const settings = defaultSettings(session.id);
+    const settings = settingsForNewSession(session.id, settingsSeed);
     if (!isTauri()) {
       const state = readFallback();
       state.sessions.unshift(session);
