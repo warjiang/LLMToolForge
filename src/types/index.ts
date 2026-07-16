@@ -199,6 +199,9 @@ export interface SshConfigCandidate {
 
 export type McpTransport = "stdio" | "sse" | "http";
 
+/** Kind of a built-in, ship-with-the-app MCP tool. */
+export type BuiltinMcpKind = "playwright" | "web-search" | "web-fetch";
+
 export interface McpServer extends BaseEntity {
   name: string;
   description?: string;
@@ -208,6 +211,14 @@ export interface McpServer extends BaseEntity {
   url?: string;
   env: Record<string, string>;
   enabled: boolean;
+  /** Set for the three ship-with-the-app tools; user servers leave it unset. */
+  builtin?: BuiltinMcpKind;
+  /**
+   * True once a builtin that needs external tooling (e.g. playwright's npm
+   * package) has been installed. Local builtins (web-search/web-fetch) are
+   * always considered installed. Undefined for user servers.
+   */
+  installed?: boolean;
 }
 
 export interface ArkApiKeyRef {

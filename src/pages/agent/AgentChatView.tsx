@@ -92,7 +92,9 @@ import {
   useSkillStore,
   useMcpStore,
   useAgentDefStore,
+  useBuiltinMcpStore,
 } from "@/store";
+import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
 import { useUnifiedStore } from "@/store/unified";
 import {
@@ -304,9 +306,11 @@ function buildResearchAgentDef(
   // (Tavily / AskEcho / AnySearch, etc.). Auto-enable every configured,
   // non-disabled MCP server so the agent always has its search/extract tools,
   // even if the session composer didn't explicitly toggle them on.
-  const allMcpServerIds = useMcpStore
-    .getState()
-    .items.filter((s) => s.enabled !== false)
+  const allMcpServerIds = [
+    ...useMcpStore.getState().items,
+    ...getAllBuiltinServers().filter((s) => s.installed),
+  ]
+    .filter((s) => s.enabled !== false)
     .map((s) => s.id);
   const enabledMcpServerIds = Array.from(
     new Set([...settings.enabledMcpServerIds, ...allMcpServerIds])
@@ -638,6 +642,15 @@ export function AgentChatView() {
   const apiKeys = useApiKeyStore();
   const skills = useSkillStore();
   const mcp = useMcpStore();
+  const builtinMcp = useBuiltinMcpStore();
+  // User-defined MCP servers plus installed built-ins, both selectable per agent.
+  const mcpItems = useMemo(
+    () => [
+      ...mcp.items,
+      ...builtinServers(builtinMcp.states).filter((s) => s.installed),
+    ],
+    [mcp.items, builtinMcp.states]
+  );
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
   const debug = useDebugStore((s) => s.debug);
@@ -1055,7 +1068,7 @@ export function AgentChatView() {
   const activeSkills = skills.items.filter(
     (s) => s.enabled !== false && settings?.enabledSkillIds.includes(s.id)
   );
-  const activeMcp = mcp.items.filter(
+  const activeMcp = mcpItems.filter(
     (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
   );
   const isResearchAgent = selectedAgentId === RESEARCH_AGENT_ID;
@@ -2874,7 +2887,7 @@ export function AgentChatView() {
                     icon={Server}
                     label="MCP"
                     empty={t("agent_no_mcp")}
-                    items={mcp.items}
+                    items={mcpItems}
                     activeIds={settings?.enabledMcpServerIds ?? []}
                     onChange={(enabledMcpServerIds) =>
                       updateSettings({ enabledMcpServerIds })

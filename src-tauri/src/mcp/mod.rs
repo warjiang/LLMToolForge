@@ -925,3 +925,60 @@ pub async fn mcp_get_prompt(
     })
     .await
 }
+
+/// One-shot install / warm-up for a built-in stdio MCP tool.
+///
+/// Runs the package manager (`npx` / `uvx`) a single time with the given args
+/// so its cache is primed (e.g. `npx -y @playwright/mcp@latest --help`). We do
+/// not manage a persistent install; success simply means the runner could be
+/// found and executed. Combined stdout+stderr is returned as a log, and a
+/// missing runner yields the same friendly install hint as a failed spawn.
+#[tauri::command]
+pub async fn mcp_install(manager: String, args: Vec<String>) -> Result<String, String> {
+    let manager = manager.trim();
+    if manager != "npx" && manager != "uvx" {
+        return Err(format!("不支持的安装器: {manager}"));
+    }
+
+    let mut cmd = tokio::process::Command::new(manager);
+    cmd.args(&args);
+    crate::proc_env::apply_to_tokio_command(&mut cmd);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let child = cmd.spawn().map_err(|e| spawn_error_message(manager, &e))?;
+
+    // Allow generous time for a cold download of the package.
+    let output = match timeout(Duration::from_secs(300), child.wait_with_output()).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(format!("安装执行失败: {e}")),
+        Err(_) => return Err("安装超时（>5 分钟），请检查网络后重试".into()),
+    };
+
+    let mut log = String::new();
+    log.push_str(&String::from_utf8_lossy(&output.stdout));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        if !log.is_empty() {
+            log.push('\n');
+        }
+        log.push_str(&stderr);
+    }
+
+    if !output.status.success() {
+        let code = output.status.code().unwrap_or(-1);
+        let tail: String = log.chars().rev().take(2000).collect::<String>().chars().rev().collect();
+        return Err(format!("安装失败（退出码 {code}）:\n{tail}"));
+    }
+
+    Ok(log)
+}
+
+/// Uninstall is intentionally state-only on the frontend (npx/uvx caches are
+/// shared and messy to remove). This command exists so the UI has a symmetric
+/// call and can be extended later; it is a no-op that always succeeds.
+#[tauri::command]
+pub async fn mcp_uninstall(_manager: String) -> Result<(), String> {
+    Ok(())
+}

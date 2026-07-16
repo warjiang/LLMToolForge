@@ -1,4 +1,5 @@
 import { createCollectionStore } from "./createCollectionStore";
+import { getAllBuiltinServers } from "./builtinMcp";
 import {
   apiKeyRepo,
   skillRepo,
@@ -27,6 +28,15 @@ export { useLocaleStore } from "./locale";
 export { useMarketSettingsStore } from "./marketSettings";
 export { useSshSessionStore } from "./sshSessions";
 export type { TerminalTab } from "./sshSessions";
+export { useBuiltinMcpStore, getActiveBuiltinServers } from "./builtinMcp";
+
+/**
+ * Every MCP server the app knows about: user-defined (synced repo) plus the
+ * built-in tools. Non-react accessor for use in the agent runtime.
+ */
+export function getEffectiveMcpServers(): import("@/types").McpServer[] {
+  return [...useMcpStore.getState().items, ...getAllBuiltinServers()];
+}
 
 /** Collection stores that mirror synced repositories. */
 const syncedCollectionStores = [

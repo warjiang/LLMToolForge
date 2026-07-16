@@ -22,6 +22,7 @@ mod storage;
 mod unified;
 mod web_fetch;
 mod web_fetch_render;
+mod web_search;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -991,6 +992,8 @@ pub fn run() {
             mcp::mcp_call_tool,
             mcp::mcp_read_resource,
             mcp::mcp_get_prompt,
+            mcp::mcp_install,
+            mcp::mcp_uninstall,
             browser::browser_open,
             browser::browser_navigate,
             browser::browser_back,
@@ -1002,6 +1005,7 @@ pub fn run() {
             browser::browser_close,
             browser::browser_status,
             web_fetch::web_fetch,
+            web_search::web_search,
             config_io::model_config_export,
             config_io::model_config_import,
             config_io::text_file_open,

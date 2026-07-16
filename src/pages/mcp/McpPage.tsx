@@ -30,6 +30,7 @@ import type { McpServer } from "@/types";
 import { McpDialog } from "./McpDialog";
 import { McpImportDialog } from "./McpImportDialog";
 import { McpInspectorDialog } from "./inspector/McpInspectorDialog";
+import { BuiltinMcpSection } from "./BuiltinMcpSection";
 
 export function McpPage() {
   const { t } = useTranslation("pages");
@@ -101,6 +102,8 @@ export function McpPage() {
           </div>
         </div>
       </section>
+
+      <BuiltinMcpSection />
 
       {!loaded ? (
         <McpSkeleton />

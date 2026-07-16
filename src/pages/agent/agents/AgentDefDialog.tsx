@@ -21,7 +21,8 @@ import {
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { useAgentDefStore, useSkillStore, useMcpStore } from "@/store";
+import { useAgentDefStore, useSkillStore, useMcpStore, useBuiltinMcpStore } from "@/store";
+import { builtinServers } from "@/store/builtinMcp";
 import { useUnifiedStore } from "@/store/unified";
 import {
   AGENT_INTERNAL_TOOL_IDS,
@@ -79,7 +80,12 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
   const add = useAgentDefStore((s) => s.add);
   const edit = useAgentDefStore((s) => s.edit);
   const skills = useSkillStore((s) => s.items);
-  const mcpServers = useMcpStore((s) => s.items);
+  const userMcpServers = useMcpStore((s) => s.items);
+  const builtinStates = useBuiltinMcpStore((s) => s.states);
+  const mcpServers = [
+    ...userMcpServers,
+    ...builtinServers(builtinStates).filter((s) => s.installed),
+  ];
   const unifiedModels = useUnifiedStore((s) => s.models);
   const unifiedConfig = useUnifiedStore((s) => s.config);
 

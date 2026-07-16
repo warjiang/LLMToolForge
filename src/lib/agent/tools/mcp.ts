@@ -12,6 +12,14 @@ import type { TSchema } from "@earendil-works/pi-ai";
 import type { McpServer } from "@/types";
 import { callTool, inspectServer, type McpToolDef, type McpInspectSnapshot } from "@/lib/mcpInspector";
 import { text, stripAnsi } from "./shared";
+import { buildLocalBuiltinTools } from "./builtinLocal";
+
+/** Local builtins run in-process — no subprocess to inspect/warm. */
+function isLocalServer(server: McpServer): boolean {
+  return (
+    server.builtin === "web-search" || server.builtin === "web-fetch"
+  );
+}
 
 /** Separator between the server slug and the tool name in the exposed name. */
 const NAME_SEP = "__";
@@ -225,6 +233,7 @@ function warmServer(server: McpServer): WarmEntry {
  */
 export function prewarmMcpServers(servers: McpServer[]): void {
   for (const server of servers) {
+    if (isLocalServer(server)) continue; // nothing to warm
     try {
       warmServer(server);
     } catch {
@@ -260,7 +269,17 @@ export async function buildMcpTools(
   const errors: { server: string; error: string }[] = [];
   const pending: string[] = [];
 
-  const entries = servers.map((server) => ({ server, entry: warmServer(server) }));
+  // Local builtins resolve immediately in-process; keep them out of warming.
+  const localServers = servers.filter(isLocalServer);
+  const remoteServers = servers.filter((s) => !isLocalServer(s));
+  for (const server of localServers) {
+    tools.push(...buildLocalBuiltinTools(server));
+  }
+
+  const entries = remoteServers.map((server) => ({
+    server,
+    entry: warmServer(server),
+  }));
 
   // Give not-yet-ready servers a brief, shared grace window to settle.
   await Promise.all(

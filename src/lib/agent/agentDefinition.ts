@@ -42,7 +42,13 @@ function activeSkills(def: AgentDefinition, all: Skill[]): Skill[] {
 
 function activeMcpServers(def: AgentDefinition, all: McpServer[]): McpServer[] {
   const enabled = new Set(def.enabledMcpServerIds);
-  return all.filter((s) => s.enabled !== false && enabled.has(s.id));
+  return all.filter(
+    (s) =>
+      s.enabled !== false &&
+      enabled.has(s.id) &&
+      // Builtins that require install must be installed to activate.
+      (s.builtin === undefined || s.installed !== false)
+  );
 }
 
 export function resolveSystemPrompt(
