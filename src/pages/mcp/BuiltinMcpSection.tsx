@@ -279,17 +279,21 @@ function BuiltinCard({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={onEdit}>
-                <Pencil className="h-4 w-4" />
-                {t("edit", { ns: "common" })}
-              </DropdownMenuItem>
-              {customized && (
-                <DropdownMenuItem onClick={onReset}>
-                  <RotateCcw className="h-4 w-4" />
-                  {t("mcp_builtin_reset")}
-                </DropdownMenuItem>
+              {installed && (
+                <>
+                  <DropdownMenuItem onClick={onEdit}>
+                    <Pencil className="h-4 w-4" />
+                    {t("edit", { ns: "common" })}
+                  </DropdownMenuItem>
+                  {customized && (
+                    <DropdownMenuItem onClick={onReset}>
+                      <RotateCcw className="h-4 w-4" />
+                      {t("mcp_builtin_reset")}
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuSeparator />
+                </>
               )}
-              <DropdownMenuSeparator />
               <DropdownMenuItem variant="destructive" onClick={onDelete}>
                 <Trash2 className="h-4 w-4" />
                 {t("delete", { ns: "common" })}
