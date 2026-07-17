@@ -12,6 +12,7 @@ import {
   Bug,
   Check,
   ChevronRight,
+  ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
   CircleAlert,
@@ -30,6 +31,7 @@ import {
   FileVideo,
   FolderOpen,
   Globe,
+  Hand,
   Code2,
   Lightbulb,
   ListChecks,
@@ -97,6 +99,7 @@ import {
 } from "@/store";
 import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
+import { useMessageActionsStore } from "@/store/messageActions";
 import { useUnifiedStore } from "@/store/unified";
 import {
   createAgentRuntime,
@@ -114,7 +117,7 @@ import {
   type SeedHistoryMessage,
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
-import { resolveSessionWorkspace } from "@/lib/agent/workspace";
+import { openSessionWorkspace, resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { registerPreview } from "@/lib/preview";
 import { exportReportHtml, exportReportPdf } from "@/lib/reportExport";
 import {
@@ -208,15 +211,91 @@ const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
   { value: "openai-responses", label: "Responses" },
 ];
 
-const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
-  { value: "read-only", label: "Read only" },
-  { value: "workspace-write", label: "Execution write" },
-  { value: "danger-full-access", label: "Full access" },
+const SANDBOX_MODES: {
+  value: SandboxMode;
+  labelKey: string;
+  descKey: string;
+  icon: ComponentType<{ className?: string }>;
+}[] = [
+  {
+    value: "read-only",
+    labelKey: "agent_sandbox_read_only",
+    descKey: "agent_sandbox_read_only_desc",
+    icon: Hand,
+  },
+  {
+    value: "workspace-write",
+    labelKey: "agent_sandbox_workspace_write",
+    descKey: "agent_sandbox_workspace_write_desc",
+    icon: ShieldIcon,
+  },
+  {
+    value: "danger-full-access",
+    labelKey: "agent_sandbox_full_access",
+    descKey: "agent_sandbox_full_access_desc",
+    icon: CircleAlert,
+  },
 ];
+
+function getSandboxModeMeta(value: SandboxMode) {
+  return (
+    SANDBOX_MODES.find((mode) => mode.value === value) ?? SANDBOX_MODES[0]
+  );
+}
 
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
 const STREAM_CONTENT_FLUSH_MS = 33;
+
+// Resizable right-hand config rail. Width persists across sessions.
+const CONFIG_DEFAULT_WIDTH = 300;
+const CONFIG_MIN_WIDTH = 260;
+const CONFIG_MAX_WIDTH = 560;
+const CONFIG_WIDTH_KEY = "llmtoolforge.config.width";
+function clampConfigWidth(width: number): number {
+  return Math.min(
+    CONFIG_MAX_WIDTH,
+    Math.max(CONFIG_MIN_WIDTH, Math.round(width))
+  );
+}
+function getInitialConfigWidth(): number {
+  if (typeof window === "undefined") return CONFIG_DEFAULT_WIDTH;
+  const raw = Number(localStorage.getItem(CONFIG_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0
+    ? clampConfigWidth(raw)
+    : CONFIG_DEFAULT_WIDTH;
+}
+function persistConfigWidth(width: number): number {
+  const next = clampConfigWidth(width);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(CONFIG_WIDTH_KEY, String(next));
+  }
+  return next;
+}
+// Shared "扫光" (light-sweep) shimmer applied to text in running/executing
+// states. Backed by the `.shimmer-text` CSS class in index.css (uses webkit
+// background-clip so it renders in Tauri's WKWebView). Reduced-motion is
+// handled in CSS, so it's safe to apply unconditionally.
+const SHIMMER_TEXT_CLASS = "shimmer-text";
+
+// Agent runtimes/SDKs sometimes surface errors as a quote-wrapped JSON string
+// (e.g. `"Request cancelled"`). Strip the surrounding quotes and localize the
+// known user-cancellation message so the chat never shows a raw, quoted string.
+function normalizeAgentErrorMessage(
+  raw: string,
+  t: (key: string) => string
+): string {
+  let msg = (raw ?? "").trim();
+  if (msg.length >= 2) {
+    const first = msg[0];
+    const last = msg[msg.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      msg = msg.slice(1, -1).trim();
+    }
+  }
+  if (/^request cancell?ed$/i.test(msg)) return t("agent_request_cancelled");
+  return msg;
+}
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
@@ -664,6 +743,11 @@ export function AgentChatView() {
 
   const [previewResizing, setPreviewResizing] = useState(false);
   const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
+  const [configWidth, setConfigWidth] = useState<number>(getInitialConfigWidth);
+  const configResizeBaseRef = useRef(configWidth);
+  const configResizeReleaseRef = useRef<(() => void) | null>(null);
+  const applyConfigWidth = (width: number) =>
+    setConfigWidth(persistConfigWidth(width));
   const previewResizeReleaseRef = useRef<(() => void) | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [exportingHtml, setExportingHtml] = useState(false);
@@ -2170,16 +2254,18 @@ export function AgentChatView() {
           void maybeOpenPreview(startedRec?.toolName, resultJson);
         }
       },
-      onError: async (message) => {
+      onError: async (raw) => {
         const st = agentTurnRef.current;
+        const message = normalizeAgentErrorMessage(raw, t);
         if (st?.assistantId) {
           await chat.updateMessage(st.assistantId, {
             status: "error",
             error: message,
           });
           st.assistantId = null;
+        } else {
+          setError(message);
         }
-        setError(message);
       },
     };
 
@@ -2638,6 +2724,27 @@ export function AgentChatView() {
           <div className="flex items-center gap-2">
             <Button
               size="icon-sm"
+              variant="ghost"
+              disabled={!activeSession}
+              onClick={() => {
+                if (!activeSession) return;
+                void (async () => {
+                  try {
+                    await openSessionWorkspace(
+                      activeSession.id,
+                      settings?.workspacePath ?? ""
+                    );
+                  } catch (e) {
+                    console.error("Failed to open workspace folder", e);
+                  }
+                })();
+              }}
+              title={t("open_workspace_folder", { ns: "common" })}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon-sm"
               variant={configOpen ? "secondary" : "ghost"}
               onClick={() => setConfigOpen((open) => !open)}
               title={configOpen ? t("agent_hide_config") : t("agent_show_config")}
@@ -2692,7 +2799,6 @@ export function AgentChatView() {
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
                         editing={editingThisMessage}
-                        debug={debug}
                         editingDraft={editingThisMessage ? editingDraft : ""}
                         onEditDraftChange={setEditingDraft}
                         onStartEdit={() => startEditingMessage(m)}
@@ -2712,16 +2818,31 @@ export function AgentChatView() {
                     );
                   })}
                   {(() => {
-                    // While the agent keeps working but the last visible turn
-                    // already settled (intermediate text/tools completed), the
-                    // per-message typing indicator is gone — show a persistent
-                    // footer so it never looks finished mid-run.
+                    // A single, stable working indicator for the whole run. It
+                    // stays mounted for the entire `sending` window (keyed inside
+                    // AnimatePresence) so it never looks like a brand-new
+                    // "执行中" is appended on every intermediate turn. It only
+                    // steps aside while the last bubble is actively streaming
+                    // visible text, where the streaming caret already signals work.
                     const last = chat.messages[chat.messages.length - 1];
-                    const showRunningFooter =
-                      sending && !!last && last.status !== "pending";
-                    return showRunningFooter ? (
-                      <AssistantWorkingStatus label={t("agent_running")} />
-                    ) : null;
+                    const lastStreamingText =
+                      last?.status === "pending" && !!last?.content?.trim();
+                    const showRunningFooter = sending && !lastStreamingText;
+                    return (
+                      <AnimatePresence>
+                        {showRunningFooter && (
+                          <motion.div
+                            key="agent-working-footer"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <AssistantWorkingStatus label={t("agent_running")} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    );
                   })()}
                 </div>
               )}
@@ -2857,7 +2978,7 @@ export function AgentChatView() {
                   }
                 }}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-2.5 pb-2 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 pb-2 pt-2">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                   <Button
                     size="icon-sm"
@@ -2889,7 +3010,7 @@ export function AgentChatView() {
                     <SandboxModeSelect
                       value={settings.sandboxMode}
                       onChange={(sandboxMode) => updateSettings({ sandboxMode })}
-                      triggerClassName="h-7 w-[142px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                      triggerClassName="h-7 w-auto max-w-[160px] shrink-0 gap-1.5 rounded-md border-transparent bg-transparent px-2 text-label-12 font-normal text-muted-foreground shadow-none hover:border-transparent focus-visible:border-transparent"
                       title={t("agent_current_sandbox")}
                       showIcon
                     />
@@ -2968,18 +3089,39 @@ export function AgentChatView() {
         </section>
 
         {configOpen && (
-          <div className="hidden h-full w-[300px] shrink-0 border-l border-border lg:flex">
-            <ConfigRail
-              settings={settings}
-              isResearchAgent={isResearchAgent}
-              isVolc={isVolc}
-              usableKeys={usableKeys}
-              toolCalls={chat.toolCalls}
-              onSettings={updateSettings}
-              onAutoApproveCheckpoints={updateAutoApproveCheckpoints}
-              onClose={() => setConfigOpen(false)}
+          <>
+            <ResizeHandle
+              title={t("agent_resize_preview")}
+              onStart={() => {
+                configResizeBaseRef.current = configWidth;
+                configResizeReleaseRef.current = suppressBrowser();
+              }}
+              onDrag={(dx) =>
+                applyConfigWidth(configResizeBaseRef.current - dx)
+              }
+              onEnd={() => {
+                configResizeReleaseRef.current?.();
+                configResizeReleaseRef.current = null;
+              }}
+              onReset={() => applyConfigWidth(CONFIG_DEFAULT_WIDTH)}
+              className="hidden lg:flex"
             />
-          </div>
+            <div
+              style={{ width: configWidth }}
+              className="hidden h-full shrink-0 border-l border-border lg:flex"
+            >
+              <ConfigRail
+                settings={settings}
+                isResearchAgent={isResearchAgent}
+                isVolc={isVolc}
+                usableKeys={usableKeys}
+                toolCalls={chat.toolCalls}
+                onSettings={updateSettings}
+                onAutoApproveCheckpoints={updateAutoApproveCheckpoints}
+                onClose={() => setConfigOpen(false)}
+              />
+            </div>
+          </>
         )}
 
         {preview.open && isTauri() && (
@@ -3242,8 +3384,50 @@ function ConfigRail({
   onClose: () => void;
 }) {
   const { t } = useTranslation("pages");
-  const debug = useDebugStore((s) => s.debug);
-  const setDebug = useDebugStore((s) => s.setDebug);
+  const msgShowTimestamp = useMessageActionsStore((s) => s.showTimestamp);
+  const msgAllowCopy = useMessageActionsStore((s) => s.allowCopy);
+  const msgAllowModify = useMessageActionsStore((s) => s.allowModify);
+  const setMsgShowTimestamp = useMessageActionsStore((s) => s.setShowTimestamp);
+  const setMsgAllowCopy = useMessageActionsStore((s) => s.setAllowCopy);
+  const setMsgAllowModify = useMessageActionsStore((s) => s.setAllowModify);
+  // Backfill the effective working directory: when the user hasn't set an
+  // explicit path, resolve the managed per-session default so the field shows
+  // the real directory instead of an empty placeholder.
+  const [defaultWorkspaceDir, setDefaultWorkspaceDir] = useState("");
+  const sessionId = settings?.sessionId ?? "";
+  useEffect(() => {
+    let alive = true;
+    if (!sessionId) {
+      setDefaultWorkspaceDir("");
+      return;
+    }
+    void resolveSessionWorkspace(sessionId, "")
+      .then((dir) => {
+        if (alive) setDefaultWorkspaceDir(dir);
+      })
+      .catch(() => {
+        /* best-effort: leave placeholder */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+
+  const chooseWorkspaceDir = async () => {
+    try {
+      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+      const picked = await openDialog({
+        directory: true,
+        multiple: false,
+        defaultPath: settings?.workspacePath || defaultWorkspaceDir || undefined,
+        title: t("agents_workspace_choose"),
+      });
+      const dir = Array.isArray(picked) ? picked[0] : picked;
+      if (dir) onSettings({ workspacePath: dir });
+    } catch {
+      /* dialog unavailable outside the desktop runtime */
+    }
+  };
   if (!settings) {
     return (
       <aside className="flex h-full w-full items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
@@ -3262,10 +3446,7 @@ function ConfigRail({
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-      <RailSection icon={Settings2} title={t("agent_request_section")}>
-        <div className="rounded-md border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
-          {t("agent_conn_model_hint")}
-        </div>
+      <div className="grid gap-3">
         {isVolc && (
           <>
             <div className="grid gap-1.5">
@@ -3306,7 +3487,7 @@ function ConfigRail({
             </div>
           </>
         )}
-      </RailSection>
+      </div>
 
       <Separator className="my-4" />
 
@@ -3352,28 +3533,55 @@ function ConfigRail({
 
       <RailSection icon={FolderOpen} title={t("agents_workspace_label")}>
         <div className="grid gap-1.5">
-          <Label htmlFor="agent-chat-workspace">
-            {t("agents_workspace_label")}
-          </Label>
-          <Input
-            id="agent-chat-workspace"
-            placeholder={t("agents_workspace_placeholder")}
-            value={settings.workspacePath}
-            onChange={(e) => onSettings({ workspacePath: e.target.value })}
-          />
-        </div>
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agents_workspace_hint")}
+          <div className="relative">
+            <Input
+              id="agent-chat-workspace"
+              readOnly
+              title={t("agents_workspace_choose")}
+              placeholder={t("agents_workspace_placeholder")}
+              value={settings.workspacePath || defaultWorkspaceDir}
+              onClick={chooseWorkspaceDir}
+              className={cn(
+                "cursor-pointer pr-9",
+                !settings.workspacePath && "text-muted-foreground"
+              )}
+            />
+            <button
+              type="button"
+              onClick={chooseWorkspaceDir}
+              title={t("agents_workspace_choose")}
+              className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </button>
+          </div>
+          {settings.workspacePath && (
+            <button
+              type="button"
+              onClick={() => onSettings({ workspacePath: "" })}
+              className="w-fit text-label-12 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {t("agents_workspace_reset")}
+            </button>
+          )}
         </div>
       </RailSection>
 
       <Separator className="my-4" />
 
-      <RailSection icon={ShieldIcon} title={t("agent_sandbox_section")}>
-        <SandboxModeSelect
-          value={settings.sandboxMode}
-          onChange={(sandboxMode) => onSettings({ sandboxMode })}
-        />
+      <div className="grid gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
+            <ShieldIcon className="h-3.5 w-3.5" />
+            {t("agent_sandbox_section")}
+          </div>
+          <div className="min-w-0 flex-1">
+            <SandboxModeSelect
+              value={settings.sandboxMode}
+              onChange={(sandboxMode) => onSettings({ sandboxMode })}
+            />
+          </div>
+        </div>
         {isResearchAgent && (
           <>
             <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
@@ -3394,26 +3602,42 @@ function ConfigRail({
             </div>
           </>
         )}
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agent_sandbox_hint")}
-        </div>
-      </RailSection>
+      </div>
 
       <Separator className="my-4" />
 
       <RailSection icon={Bug} title={t("agent_debug_section")}>
-        <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
-          <Label className="cursor-pointer" htmlFor="agent-debug-edit">
-            {t("agent_debug_edit_agent")}
-          </Label>
-          <Switch
-            id="agent-debug-edit"
-            checked={debug}
-            onCheckedChange={(value) => setDebug(value)}
-          />
-        </div>
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agent_debug_edit_agent_hint")}
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-timestamp">
+              {t("agent_message_show_timestamp")}
+            </Label>
+            <Switch
+              id="agent-msg-timestamp"
+              checked={msgShowTimestamp}
+              onCheckedChange={setMsgShowTimestamp}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-copy">
+              {t("agent_message_allow_copy")}
+            </Label>
+            <Switch
+              id="agent-msg-copy"
+              checked={msgAllowCopy}
+              onCheckedChange={setMsgAllowCopy}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-modify">
+              {t("agent_message_allow_modify")}
+            </Label>
+            <Switch
+              id="agent-msg-modify"
+              checked={msgAllowModify}
+              onCheckedChange={setMsgAllowModify}
+            />
+          </div>
         </div>
       </RailSection>
 
@@ -3427,30 +3651,96 @@ function ConfigRail({
         ) : (
           <div className="grid gap-2">
             {toolCalls.slice(0, 5).map((call) => (
-              <div key={call.id} className="rounded-md border border-border bg-card p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-label-12 font-medium">
-                    {call.title}
-                  </span>
-                  <Badge
-                    variant={call.status === "success" ? "success" : "warning"}
-                    className="rounded-sm"
-                  >
-                    {call.status}
-                  </Badge>
-                </div>
-                {call.resultText && (
-                  <div className="mt-1.5 line-clamp-2 text-label-12 text-muted-foreground">
-                    {call.resultText}
-                  </div>
-                )}
-              </div>
+              <ToolRecordItem key={call.id} call={call} />
             ))}
           </div>
         )}
       </RailSection>
       </div>
     </aside>
+  );
+}
+
+function ToolRecordItem({ call }: { call: ToolCallRecord }) {
+  const [open, setOpen] = useState(false);
+  const parsed = parseToolName(call.toolName || call.title);
+  const goal = toolCallGoal(call.argumentsJson);
+  const resultRaw =
+    call.resultText && call.resultText.trim().length > 0
+      ? call.resultText
+      : call.resultJson != null
+        ? JSON.stringify(call.resultJson, null, 2)
+        : "";
+  const result = formatMaybeJson(resultRaw);
+  const hasResult = result.length > 0;
+  const hasError = !!call.error && call.error.trim().length > 0;
+  const expandable = hasResult || hasError || !!goal;
+  const preview = goal || result || call.error || "";
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((v) => !v)}
+        disabled={!expandable}
+        className={cn(
+          "flex w-full items-center gap-2 px-2.5 py-2 text-left",
+          expandable && "cursor-pointer hover:bg-muted/40"
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            !expandable && "opacity-0",
+            open && "rotate-90"
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate font-mono text-label-12 font-medium">
+          {parsed.name}
+        </span>
+        {parsed.server && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground">
+            <Server className="h-3 w-3" />
+            {parsed.server}
+          </span>
+        )}
+        <Badge
+          variant={
+            call.status === "success"
+              ? "success"
+              : call.status === "error"
+                ? "destructive"
+                : "warning"
+          }
+          className="shrink-0 rounded-sm"
+        >
+          {call.status}
+        </Badge>
+      </button>
+      {!open && preview && (
+        <div className="line-clamp-2 px-2.5 pb-2 text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
+          {preview}
+        </div>
+      )}
+      {open && (
+        <div className="grid gap-2 border-t border-border/60 px-2.5 py-2">
+          {goal && (
+            <div className="text-label-12 text-foreground [overflow-wrap:anywhere]">
+              {goal}
+            </div>
+          )}
+          {hasResult && (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/40 p-2 font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
+              {result}
+            </pre>
+          )}
+          {hasError && (
+            <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 p-2 text-label-12 text-destructive [overflow-wrap:anywhere]">
+              {call.error}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -3612,7 +3902,7 @@ function ComposerToolMenu<T extends { id: string; name: string; description?: st
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
-          variant={activeCount > 0 ? "secondary" : "ghost"}
+          variant="ghost"
           className="h-7 px-2"
         >
           <Icon className="h-3.5 w-3.5" />
@@ -3684,23 +3974,87 @@ function SandboxModeSelect({
   title?: string;
   showIcon?: boolean;
 }) {
+  const { t } = useTranslation("pages");
+  const current = getSandboxModeMeta(value);
+  const CurrentIcon = current.icon;
+  const isDanger = current.value === "danger-full-access";
+  // The compact composer trigger passes a custom className and hides the
+  // chevron; the config rail uses the default full-width bordered look.
+  const compact = !!triggerClassName;
+
   return (
-    <Select
-      value={value}
-      onValueChange={(sandboxMode) => onChange(sandboxMode as SandboxMode)}
-    >
-      <SelectTrigger className={triggerClassName} title={title}>
-        {showIcon && <ShieldIcon className="h-3.5 w-3.5 shrink-0" />}
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {SANDBOX_MODES.map((m) => (
-          <SelectItem key={m.value} value={m.value}>
-            {m.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={title}
+          className={cn(
+            "flex items-center justify-between rounded-sm text-label-14 outline-none transition-colors focus-visible:shadow-[0_0_0_1px_var(--ring)]",
+            compact
+              ? triggerClassName
+              : "h-9 w-full border border-input bg-background px-3",
+            isDanger
+              ? cn(
+                  "text-destructive hover:bg-secondary",
+                  !compact && "border-destructive/40"
+                )
+              : compact
+                ? "text-foreground hover:bg-secondary"
+                : "text-foreground hover:border-muted-foreground/40 hover:bg-secondary"
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            {showIcon && (
+              <CurrentIcon
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  isDanger ? "text-destructive" : "text-muted-foreground"
+                )}
+              />
+            )}
+            <span
+              className={cn(
+                "truncate",
+                isDanger && "font-medium text-destructive"
+              )}
+            >
+              {t(current.labelKey)}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            {!compact && (
+              <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+            )}
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        {SANDBOX_MODES.map((m) => {
+          const ItemIcon = m.icon;
+          const active = m.value === value;
+          return (
+            <DropdownMenuItem
+              key={m.value}
+              onSelect={() => onChange(m.value)}
+              className="items-start gap-2 py-2"
+            >
+              <ItemIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-label-13 font-medium">
+                    {t(m.labelKey)}
+                  </span>
+                  {active && <Check className="h-3.5 w-3.5 text-foreground" />}
+                </span>
+                <span className="text-label-12 font-normal leading-snug text-muted-foreground">
+                  {t(m.descKey)}
+                </span>
+              </span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -4194,7 +4548,6 @@ function ChatBubble({
   typing,
   streaming,
   editing,
-  debug,
   editingDraft,
   actionsDisabled,
   onEditDraftChange,
@@ -4210,7 +4563,6 @@ function ChatBubble({
   typing?: boolean;
   streaming?: boolean;
   editing?: boolean;
-  debug?: boolean;
   editingDraft: string;
   actionsDisabled?: boolean;
   onEditDraftChange: (value: string) => void;
@@ -4222,6 +4574,9 @@ function ChatBubble({
 }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const showTimestamp = useMessageActionsStore((s) => s.showTimestamp);
+  const allowCopy = useMessageActionsStore((s) => s.allowCopy);
+  const allowModify = useMessageActionsStore((s) => s.allowModify);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
@@ -4278,6 +4633,16 @@ function ChatBubble({
     pillAttachments.length > 0 ||
     hasVisibleContent ||
     !!message.error;
+  // When a turn produced nothing but an error (e.g. "Request cancelled"), the
+  // inner error box already carries its own border/background — so skip the
+  // bubble chrome to avoid a doubled border.
+  const errorOnlyBubble =
+    !!message.error &&
+    !editing &&
+    !hasVisibleContent &&
+    generatedImages.length === 0 &&
+    generatedVideos.length === 0 &&
+    pillAttachments.length === 0;
   const actionOnly =
     (hasToolCalls || showReasoning) && !hasMessageBubble && !typing;
   // An assistant/tool turn that produced no bubble, no reasoning, no tool calls
@@ -4302,6 +4667,7 @@ function ChatBubble({
   const toolsOpen = toolsUserOpen ?? toolsActive;
 
   const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const copyMessage = async () => {
     const text = visibleContent.trim() || message.content;
     if (!text) return;
@@ -4345,6 +4711,8 @@ function ChatBubble({
           "group relative flex w-fit min-w-[8.5rem] max-w-[90%] flex-col gap-1.5",
           isUser && "items-end"
         )}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         {showReasoning && (
           <ReasoningTrace
@@ -4360,13 +4728,16 @@ function ChatBubble({
                 "text-copy-14",
                 editing
                 ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-                : "rounded-md px-3.5 py-2.5",
+                : errorOnlyBubble
+                  ? ""
+                  : "rounded-md px-3.5 py-2.5",
               !editing &&
+                !errorOnlyBubble &&
                 (isUser
                   ? "rounded-tr-sm bg-muted text-foreground"
                   : isTool
                     ? "rounded-tl-sm border border-border bg-secondary text-foreground"
-                    : "rounded-tl-sm border border-border bg-card text-foreground shadow-geist-sm")
+                    : "rounded-tl-sm bg-card text-foreground")
             )}
           >
             {generatedImages.length > 0 && (
@@ -4469,29 +4840,34 @@ function ChatBubble({
           />
         )}
         {hasToolCalls && toolsOpen && (
-          <div className="grid w-full min-w-0 gap-1 border-l border-border pl-3 ml-3">
+          <div className="ml-3 grid w-fit max-w-full min-w-0 gap-0.5 border-l border-border pl-3">
             {toolCalls!.map((call) => (
               <ToolCallCard key={call.id} call={call} />
             ))}
           </div>
         )}
-        {!isUser && typing && !hasToolCalls && <AssistantWorkingStatus />}
         {!typing && !actionOnly && (
           <div
             className={cn(
-              "flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+              "flex items-center gap-2 transition-opacity duration-150",
+              hovered ? "opacity-100" : "pointer-events-none opacity-0",
               isUser && "flex-row-reverse"
             )}
           >
-            <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
-              {formatMessageTime(message.createdAt)}
-            </span>
-            {hasVisibleContent && !editing && (
+            {showTimestamp && (
+              <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
+                {formatMessageTime(message.createdAt)}
+              </span>
+            )}
+            {allowCopy && hasVisibleContent && !editing && (
               <Button
                 size="icon-sm"
                 variant="ghost"
                 title={copied ? t("agent_copied") : t("agent_copy_message")}
-                onClick={copyMessage}
+                onClick={(e) => {
+                  copyMessage();
+                  e.currentTarget.blur();
+                }}
               >
                 {copied ? (
                   <Check className="h-3.5 w-3.5 text-success" />
@@ -4500,7 +4876,7 @@ function ChatBubble({
                 )}
               </Button>
             )}
-            {debug && !editing && !actionsDisabled && (
+            {!editing && !actionsDisabled && allowModify && (
               <div
                 className={cn(
                   "flex gap-1",
@@ -4560,6 +4936,7 @@ function parseToolName(raw: string): { name: string; server?: string } {
 function AssistantWorkingStatus({ label }: { label?: string }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const text = label ?? t("agent_execution_starting");
 
   return (
     <div
@@ -4568,22 +4945,11 @@ function AssistantWorkingStatus({ label }: { label?: string }) {
       aria-live="polite"
     >
       <Bot className="h-3.5 w-3.5 shrink-0" />
-      <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-        {reduce ? (
-          <span className="block h-full w-1/3 rounded-full bg-muted-foreground/55" />
-        ) : (
-          <motion.span
-            className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-foreground/60"
-            animate={{ x: ["-120%", "320%"] }}
-            transition={{
-              duration: 1.15,
-              repeat: Infinity,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          />
-        )}
-      </span>
-      <span>{label ?? t("agent_execution_starting")}</span>
+      {reduce ? (
+        <span>{text}</span>
+      ) : (
+        <span className={cn(SHIMMER_TEXT_CLASS, "font-medium")}>{text}</span>
+      )}
     </div>
   );
 }
@@ -4619,6 +4985,7 @@ function ToolCallsTrace({
   onToggle: () => void;
 }) {
   const { t } = useTranslation("pages");
+  const reduce = useReducedMotion();
   const label = active
     ? t("agent_actions_running")
     : t("agent_actions_done", { count });
@@ -4629,7 +4996,11 @@ function ToolCallsTrace({
       className="flex w-fit items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
       <Wrench className={cn("h-3.5 w-3.5", active && "animate-pulse")} />
-      <span>{label}</span>
+      <span
+        className={cn(active && !reduce && SHIMMER_TEXT_CLASS)}
+      >
+        {label}
+      </span>
       <ChevronRight
         className={cn(
           "h-3.5 w-3.5 transition-transform duration-200",
@@ -4673,7 +5044,7 @@ function ReasoningTrace({
         className="flex items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <Lightbulb className="h-3.5 w-3.5" />
-        <span>{label}</span>
+        <span className={cn(streaming && SHIMMER_TEXT_CLASS)}>{label}</span>
         <ChevronRight
           className={cn(
             "h-3.5 w-3.5 transition-transform duration-200",
@@ -4813,7 +5184,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   return (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-sm border border-border/70 bg-card",
+        "max-w-full overflow-hidden rounded-sm border border-border/70 bg-card",
         (isRunning || isPending) && "border-accent/25 bg-background"
       )}
     >
@@ -4823,7 +5194,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           onClick={() => expandable && setOpen((v) => !v)}
           disabled={!expandable}
           className={cn(
-            "relative flex min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 text-left",
+            "relative flex min-w-0 flex-1 overflow-hidden px-2 py-1.5 text-left",
             expandable && "cursor-pointer hover:bg-muted/40"
           )}
         >
@@ -4839,8 +5210,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               }}
             />
           )}
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="flex w-full min-w-0 items-center gap-1.5">
             {isRunning ? (
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
             ) : isPending ? (
@@ -4851,7 +5221,12 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               <Check className="h-3.5 w-3.5 shrink-0 text-success" />
             )}
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground">
+              <span
+                className={cn(
+                  "max-w-[10rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground",
+                  isRunning && !reduce && SHIMMER_TEXT_CLASS
+                )}
+              >
                 {parsed.name}
               </span>
               {parsed.server && (
@@ -4859,16 +5234,6 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                   <Server className="h-3 w-3" />
                   {parsed.server}
                 </span>
-              )}
-              {goal && (
-                <>
-                  <span className="shrink-0 text-label-12 text-muted-foreground/50">
-                    ·
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-label-12 text-muted-foreground">
-                    {goal}
-                  </span>
-                </>
               )}
             </span>
             {typeof call.durationMs === "number" && call.durationMs > 0 && (
@@ -4906,6 +5271,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
       </div>
       {expandable && open && (
         <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
+          {goal && <ToolCallSection label={t("agent_tool_goal")} body={goal} />}
           {hasArgs && (
             <ToolCallSection label={t("agent_tool_arguments")} body={args} />
           )}

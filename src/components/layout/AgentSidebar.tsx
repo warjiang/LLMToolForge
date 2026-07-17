@@ -26,7 +26,6 @@ import {
   ChevronRight,
   CircleAlert,
   Folder,
-  FolderOpen,
   FolderPlus,
   Loader2,
   MessageSquare,
@@ -63,8 +62,6 @@ import {
   RESEARCH_AGENT_ID,
   resolveAgentLabel,
 } from "@/lib/agent/builtinAgents";
-import { openSessionWorkspace } from "@/lib/agent/workspace";
-import { chatRepo } from "@/data/chatRepository";
 import { ResizeHandle } from "@/components/common/ResizeHandle";
 import { SIDEBAR_DEFAULT_WIDTH } from "@/store/sidebar";
 import type { ChatSession, SessionRunStatus } from "@/types/chat";
@@ -102,10 +99,14 @@ function DraggableSession({
   id,
   disabled,
   children,
+  onMouseEnter,
+  onMouseLeave,
 }: {
   id: string;
   disabled?: boolean;
   children: React.ReactNode;
+  onMouseEnter?: () => void;
+  onMouseLeave?: () => void;
 }) {
   const {
     setNodeRef,
@@ -120,6 +121,8 @@ function DraggableSession({
       ref={setNodeRef}
       {...listeners}
       {...attributes}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
       style={{ transform: CSS.Translate.toString(transform), transition }}
       className={cn(
         "group relative rounded-sm outline-none",
@@ -177,6 +180,7 @@ export function AgentSidebar() {
   const [managerOpen, setManagerOpen] = useState(false);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
+  const [hoveredSessionId, setHoveredSessionId] = useState<string | null>(null);
   const [resizing, setResizing] = useState(false);
   const resizeBaseRef = useRef(SIDEBAR_DEFAULT_WIDTH);
 
@@ -321,17 +325,6 @@ export function AgentSidebar() {
     setRenamingId(null);
     setRenameDraft("");
   };
-  const openWorkspaceFolder = (session: ChatSession) => {
-    void (async () => {
-      try {
-        const settings = await chatRepo.getSettings(session.id);
-        await openSessionWorkspace(session.id, settings.workspacePath);
-      } catch (e) {
-        console.error("Failed to open workspace folder", session.id, e);
-        window.alert(t("open_workspace_folder_failed"));
-      }
-    })();
-  };
   const startGroupRename = (id: string, name: string) => {
     setEditingGroupId(id);
     setGroupNameDraft(name);
@@ -466,8 +459,17 @@ export function AgentSidebar() {
   const renderSession = (session: ChatSession) => {
     const active = activeSessionId === session.id;
     const renaming = renamingId === session.id;
+    const hovered = hoveredSessionId === session.id;
     return (
-      <DraggableSession key={session.id} id={session.id} disabled={renaming}>
+      <DraggableSession
+        key={session.id}
+        id={session.id}
+        disabled={renaming}
+        onMouseEnter={() => setHoveredSessionId(session.id)}
+        onMouseLeave={() =>
+          setHoveredSessionId((cur) => (cur === session.id ? null : cur))
+        }
+      >
         {renaming ? (
           <div className="flex items-center gap-1 px-1 py-1">
             <Input
@@ -508,48 +510,46 @@ export function AgentSidebar() {
               )}
               onClick={() => selectSession(session.id)}
             >
-              <span className="block truncate pr-24 text-label-13 font-medium leading-5">
-                {session.title}
+              <span
+                className={cn(
+                  "flex items-center gap-1 text-label-13 font-medium leading-5",
+                  hovered ? "pr-14" : "pr-2"
+                )}
+              >
+                <span className="min-w-0 flex-1 truncate">{session.title}</span>
               </span>
               <span className="mt-1 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-label-12 tabular-nums text-muted-foreground">
                 <span className="shrink-0">{formatDateTime(session.updatedAt)}</span>
                 <SessionStatusBadge status={sessionStatus[session.id]} />
               </span>
             </button>
-            <div
-              onPointerDown={(e) => e.stopPropagation()}
-              className="absolute right-2 top-2 flex items-center gap-0.5 rounded-lg border border-border/60 bg-popover/95 p-1 text-popover-foreground opacity-0 shadow-geist-sm backdrop-blur transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100"
-            >
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-                title={t("rename_session")}
-                onClick={() => startRename(session.id, session.title)}
+            {hovered && (
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                className="absolute right-2 top-2 flex items-center gap-0.5"
               >
-                <Pencil className="h-4 w-4" />
-              </Button>
-              <Button
-                size="icon-sm"
-                variant="ghost"
-                className="h-7 w-7 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
-                title={t("open_workspace_folder")}
-                onClick={() => openWorkspaceFolder(session)}
-              >
-                <FolderOpen className="h-4 w-4" />
-              </Button>
-              {canDeleteSession && (
                 <Button
                   size="icon-sm"
                   variant="ghost"
-                  className="h-7 w-7 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-                  title={t("delete_session")}
-                  onClick={() => setDeleteSessionId(session.id)}
+                  className="h-6 w-6 rounded-md text-muted-foreground hover:bg-secondary hover:text-foreground"
+                  title={t("rename_session")}
+                  onClick={() => startRename(session.id, session.title)}
                 >
-                  <Trash2 className="h-4 w-4" />
+                  <Pencil className="h-3.5 w-3.5" />
                 </Button>
-              )}
-            </div>
+                {canDeleteSession && (
+                  <Button
+                    size="icon-sm"
+                    variant="ghost"
+                    className="h-6 w-6 rounded-md text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    title={t("delete_session")}
+                    onClick={() => setDeleteSessionId(session.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                )}
+              </div>
+            )}
           </>
         )}
       </DraggableSession>
