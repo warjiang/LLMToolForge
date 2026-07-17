@@ -402,6 +402,8 @@ export interface AgentDefinition extends BaseEntity {
   enabledInternalTools: AgentInternalToolId[];
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  /** Grant the agent OpenConnector discovery/execute tools. Default off. */
+  connectorEnabled?: boolean;
   sandboxMode: AgentSandboxMode;
   /**
    * @deprecated Execution root now comes from ChatSessionSettings.workspacePath.

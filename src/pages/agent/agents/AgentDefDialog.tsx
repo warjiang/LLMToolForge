@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { useAgentDefStore, useSkillStore, useMcpStore, useBuiltinMcpStore } from "@/store";
@@ -45,6 +46,7 @@ interface FormState {
   enabledInternalTools: AgentInternalToolId[];
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  connectorEnabled: boolean;
   sandboxMode: AgentSandboxMode;
   temperature: string;
   maxTokens: string;
@@ -58,6 +60,7 @@ const EMPTY: FormState = {
   enabledInternalTools: [],
   enabledSkillIds: [],
   enabledMcpServerIds: [],
+  connectorEnabled: false,
   sandboxMode: "read-only",
   temperature: "0.7",
   maxTokens: "4096",
@@ -105,6 +108,7 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
             enabledInternalTools: [...editing.enabledInternalTools],
             enabledSkillIds: [...editing.enabledSkillIds],
             enabledMcpServerIds: [...editing.enabledMcpServerIds],
+            connectorEnabled: editing.connectorEnabled ?? false,
             sandboxMode: editing.sandboxMode,
             temperature: String(editing.temperature),
             maxTokens: String(editing.maxTokens),
@@ -130,6 +134,7 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
       enabledInternalTools: form.enabledInternalTools,
       enabledSkillIds: form.enabledSkillIds,
       enabledMcpServerIds: form.enabledMcpServerIds,
+      connectorEnabled: form.connectorEnabled,
       sandboxMode: form.sandboxMode,
       workspacePath: "",
       temperature: Number(form.temperature) || 0,
@@ -342,6 +347,21 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
               </div>
             </div>
           )}
+
+          <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2">
+            <div className="grid gap-0.5">
+              <Label>{t("agents_connector_label")}</Label>
+              <span className="text-label-12 text-muted-foreground">
+                {t("agents_connector_hint")}
+              </span>
+            </div>
+            <Switch
+              checked={form.connectorEnabled}
+              onCheckedChange={(v) =>
+                setForm({ ...form, connectorEnabled: v })
+              }
+            />
+          </div>
 
           <div className="grid grid-cols-2 gap-3">
             <div className="grid gap-1.5">

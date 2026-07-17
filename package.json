@@ -11,8 +11,9 @@
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
-    "sidecar:install": "cd sidecar && bun install --frozen-lockfile",
-    "sidecar:build": "cd sidecar && bun install --frozen-lockfile && bun run build.ts",
+    "sidecar:gateway:build": "cd sidecar/gateway && bun run build.ts",
+    "sidecar:connector:build": "cd sidecar/connector && bun run build.ts",
+    "sidecar:build": "pnpm run sidecar:gateway:build && pnpm run sidecar:connector:build",
     "clean": "bash scripts/clean.sh",
     "clean:all": "bash scripts/clean.sh --all"
   },

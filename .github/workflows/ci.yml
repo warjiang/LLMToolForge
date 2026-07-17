@@ -91,18 +91,20 @@ jobs:
         with:
           workspaces: src-tauri
 
-      # tauri-build validates `externalBin`, so the gateway sidecar binary for
-      # the host triple must exist before any cargo command runs.
+      # tauri-build validates `externalBin`, so sidecar binaries for the host
+      # triple must exist before any cargo command runs.
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
 
       - name: Build gateway sidecar
-        working-directory: sidecar
-        run: |
-          bun install --frozen-lockfile
-          bun run build.ts
+        working-directory: sidecar/gateway
+        run: bun run build.ts
+
+      - name: Build connector sidecar
+        working-directory: sidecar/connector
+        run: bun run build.ts
 
       - name: cargo fmt
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check

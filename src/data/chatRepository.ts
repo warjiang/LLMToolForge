@@ -81,6 +81,7 @@ function settingsForNewSession(
     enabledSkillIds: [...normalized.enabledSkillIds],
     enabledMcpServerIds: [...normalized.enabledMcpServerIds],
     sandboxMode: normalized.sandboxMode,
+    connectorEnabled: normalized.connectorEnabled,
     autoApproveCheckpoints: normalized.autoApproveCheckpoints,
     workspacePath: normalized.workspacePath,
     sessionId,
@@ -274,6 +275,7 @@ class ChatRepository {
       { table: "messages", column: "reasoning_ms", ddl: "ALTER TABLE messages ADD COLUMN reasoning_ms INTEGER" },
       { table: "session_settings", column: "workspace_path", ddl: "ALTER TABLE session_settings ADD COLUMN workspace_path TEXT NOT NULL DEFAULT ''" },
       { table: "session_settings", column: "auto_approve_checkpoints", ddl: "ALTER TABLE session_settings ADD COLUMN auto_approve_checkpoints INTEGER NOT NULL DEFAULT 0" },
+      { table: "session_settings", column: "connector_enabled", ddl: "ALTER TABLE session_settings ADD COLUMN connector_enabled INTEGER NOT NULL DEFAULT 0" },
       { table: "sessions", column: "agent_id", ddl: "ALTER TABLE sessions ADD COLUMN agent_id TEXT" },
     ];
     for (const { table, column, ddl } of wanted) {
@@ -557,8 +559,8 @@ class ChatRepository {
         session_id, conn_key, model_id, key_idx, wire_format, system,
         temperature, max_tokens, streaming, enabled_skill_ids,
         enabled_mcp_server_ids, sandbox_mode, auto_approve_checkpoints,
-        workspace_path, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+        workspace_path, connector_enabled, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
       ON CONFLICT(session_id) DO UPDATE SET
         conn_key = excluded.conn_key,
         model_id = excluded.model_id,
@@ -573,6 +575,7 @@ class ChatRepository {
         sandbox_mode = excluded.sandbox_mode,
         auto_approve_checkpoints = excluded.auto_approve_checkpoints,
         workspace_path = excluded.workspace_path,
+        connector_enabled = excluded.connector_enabled,
         updated_at = excluded.updated_at`,
       [
         settings.sessionId,
@@ -589,6 +592,7 @@ class ChatRepository {
         settings.sandboxMode,
         settings.autoApproveCheckpoints ? 1 : 0,
         settings.workspacePath,
+        settings.connectorEnabled ? 1 : 0,
         settings.updatedAt,
       ]
     );
@@ -1132,6 +1136,7 @@ function rowToSettings(row: Record<string, unknown>): ChatSessionSettings {
       (row.sandbox_mode as ChatSessionSettings["sandboxMode"]) ?? "read-only",
     autoApproveCheckpoints: Number(row.auto_approve_checkpoints ?? 0) === 1,
     workspacePath: String(row.workspace_path ?? ""),
+    connectorEnabled: Number(row.connector_enabled ?? 0) === 1,
     updatedAt: String(row.updated_at),
   };
 }

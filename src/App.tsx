@@ -17,6 +17,11 @@ const SkillsPage = lazy(() =>
 const McpPage = lazy(() =>
   import("@/pages/mcp/McpPage").then((m) => ({ default: m.McpPage }))
 );
+const ConnectorsPage = lazy(() =>
+  import("@/pages/connectors/ConnectorsPage").then((m) => ({
+    default: m.ConnectorsPage,
+  }))
+);
 const SshPage = lazy(() =>
   import("@/pages/ssh/SshPage").then((m) => ({ default: m.SshPage }))
 );
@@ -64,6 +69,7 @@ const router = createBrowserRouter([
       { path: "unified", element: page(<UnifiedApiPage />) },
       { path: "skills", element: page(<SkillsPage />) },
       { path: "mcp", element: page(<McpPage />) },
+      { path: "connectors", element: page(<ConnectorsPage />) },
       { path: "ssh", element: page(<SshPage />) },
       { path: "tools", element: page(<ToolsPage />) },
       { path: "browser", element: page(<BrowserPage />) },

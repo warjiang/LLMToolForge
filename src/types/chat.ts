@@ -37,6 +37,8 @@ export interface ChatSessionSettings {
   streaming: boolean;
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  /** Grant the agent OpenConnector discovery/execute tools. Default false. */
+  connectorEnabled: boolean;
   sandboxMode: SandboxMode;
   autoApproveCheckpoints: boolean;
   /** Absolute execution root for local tools. Empty = managed temp sandbox. */
@@ -149,6 +151,7 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   streaming: true,
   enabledSkillIds: [],
   enabledMcpServerIds: [],
+  connectorEnabled: false,
   sandboxMode: "read-only",
   autoApproveCheckpoints: false,
   workspacePath: "",

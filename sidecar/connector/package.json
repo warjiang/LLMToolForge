@@ -1,0 +1,10 @@
+{
+  "name": "llmtoolforge-connector-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "OpenConnector (oomol-lab/open-connector, Apache-2.0) compiled to a single binary and supervised by the Tauri backend. Gives agents credentialed access to 1000+ third-party providers.",
+  "scripts": {
+    "build": "bun run build.ts"
+  }
+}

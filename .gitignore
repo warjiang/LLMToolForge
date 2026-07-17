@@ -10,7 +10,12 @@ src-tauri/target/
 
 # Compiled gateway sidecar binaries (built in CI from sidecar/, ~60MB each)
 src-tauri/binaries/portkey-gateway-*
-sidecar/portkey/patches/*.orig
+sidecar/gateway/portkey/patches/*.orig
+
+# OpenConnector sidecar: vendored upstream checkout + build outputs
+src-tauri/binaries/open-connector-*
+src-tauri/resources/connector/
+sidecar/connector/upstream/
 
 # Logs
 *.log
@@ -23,6 +28,7 @@ pnpm-debug.log*
 .DS_Store
 .vscode/*
 !.vscode/extensions.json
+!.vscode/settings.json
 .idea/
 *.local
 

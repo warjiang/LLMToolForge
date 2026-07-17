@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   Boxes,
   Server,
+  Plug,
   TerminalSquare,
   Wrench,
   Globe,
@@ -65,6 +66,12 @@ export function Sidebar() {
     },
     { to: "/skills", label: t("skills"), icon: Boxes, feature: "sidebar.skills" },
     { to: "/mcp", label: t("mcp_servers"), icon: Server, feature: "sidebar.mcp" },
+    {
+      to: "/connectors",
+      label: t("connectors"),
+      icon: Plug,
+      feature: "sidebar.connectors",
+    },
     {
       to: "/ssh",
       label: t("ssh"),

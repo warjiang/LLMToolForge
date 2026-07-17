@@ -143,53 +143,28 @@
   }
 }
 
-/* Streaming markdown — smooth block reveal + live cursor */
+/* Streaming markdown — smooth, blur-free block reveal (no cursor) */
 @keyframes md-fade-in {
   from {
     opacity: 0;
-    transform: translateY(3px);
-    filter: blur(1px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
     transform: translateY(0);
-    filter: blur(0);
-  }
-}
-
-@keyframes md-cursor-blink {
-  0%,
-  45% {
-    opacity: 1;
-  }
-  55%,
-  100% {
-    opacity: 0;
   }
 }
 
 .md-body .md-block {
-  animation: md-fade-in 0.34s cubic-bezier(0.16, 1, 0.3, 1) both;
+  animation: md-fade-in 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .md-body :is(p, li, h1, h2, h3, h4, td, th) {
   transition: color 0.2s ease;
 }
 
-.md-body[data-streaming="true"] > .md-block:last-child::after {
-  content: "▍";
-  display: inline-block;
-  margin-left: 1px;
-  color: var(--accent);
-  transform: translateY(1px);
-  animation: md-cursor-blink 1.05s steps(1, end) infinite;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .md-body .md-block {
-    animation: none;
-  }
-  .md-body[data-streaming="true"] > .md-block:last-child::after {
     animation: none;
   }
 }

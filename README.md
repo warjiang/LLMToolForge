@@ -1,6 +1,6 @@
 # LLMToolForge
 
-为大模型提供各类工具的统一管理桌面端：**API Key 管理、Skill 管理、MCP 管理**。
+为大模型提供各类工具的统一管理桌面端：**API Key 管理、Skill 管理、MCP 管理、第三方连接器（Connectors）**。
 
 ## 技术栈
 
@@ -31,9 +31,15 @@
   - **模型接入**：经本地 Unified 网关路由（`http://127.0.0.1:<port>/v1`），使用 pi-ai 原生 `openai-completions` provider；运行前需先在 Unified 页面启动网关并启用模型
   - **内部工具**：`bash` 与文件工具 `read / write / edit / ls / grep`（Rust 实现），按沙箱模式（read-only / workspace-write / danger-full-access）门控，限定在工作目录内
   - **外部工具（MCP）**：把每个启用的 MCP Server 的 Tools 包装为 agent 工具，经现有 `mcp_inspect` / `mcp_call_tool` 真正执行
+  - **连接器工具（Connectors）**：可选开启 OpenConnector 发现型工具，让 agent 按需检索并执行第三方 Action（凭证由运行时提供，agent 不接触明文）
   - **Skill 调用**：Pi 风格——启用的 Skill 以 `<available_skills>` 注入系统提示词，并提供 `load_skill` 工具按需加载内容
   - **自定义 Agent**：可创建可复用的 `AgentDefinition`（系统提示词 / 模型 / 内部工具 / Skill / MCP / 沙箱 / 温度 / Max Tokens），在输入栏下拉选择，内置最小管理页（增删改查）
 - **MCP Servers**：MCP 服务器增删改查，按传输方式（stdio / SSE / HTTP）动态表单、启用开关；支持从标准 `mcpServers` JSON 一键导入（重名自动跳过并提示）；内置 **Inspector**：连接服务器完成 `initialize` 握手，浏览并调用其 Tools（按 JSON Schema 生成参数表单 / 原始 JSON 两种模式）、读取 Resources、获取 Prompts，结果实时展示（仅桌面端可用）
+- **Connectors（第三方连接器）**：内置 [open-connector](https://github.com/oomol-lab/open-connector)（Apache-2.0，vendored 上游 commit 见 `sidecar/connector/UPSTREAM.json`）运行时，作为 **sidecar** 由应用启动/停止/健康检查，让智能体安全访问 1000+ 第三方平台的 10000+ Action（仅桌面端可用）
+  - **运行时管理**：单二进制由 `sidecar/connector/build.ts` 用 bun 编译（`node:sqlite`→`bun:sqlite` 兼容 shim），Rust supervisor（`src-tauri/src/connector/`）负责生命周期、随机/可配置端口（仅绑 `127.0.0.1`）、生成并持久化 admin token；catalog / migrations / Web Console 作为 Tauri 资源随应用分发
+  - **凭证边界**：第三方凭证（API Key / OAuth2）仅保存在运行时自己的 SQLite 数据目录（`<app-data>/connector`）内，**绝不写入应用配置或参与数据同步**
+  - **Connectors 页面**：运行时状态卡（启动/停止、端口、打开内置 Web 控制台）、Provider 目录浏览与搜索、per-provider 凭证配置（API Key 表单 + OAuth2 客户端配置与系统浏览器授权流程）、Action 搜索与调试（按 JSON Schema 生成参数表单，执行并展示结果）、运行记录
+  - **Agent 工具接入**：以 4 个发现型工具对接（`connector_list_apps` / `connector_search_actions` / `connector_get_action_guide` / `connector_execute_action`），不平铺上万 Action；在自定义 `AgentDefinition` 与会话输入栏均可开关（默认关闭），运行时未启动时返回引导性错误
 - **实用工具**：URL 编解码、JSON 预览（尽力解开被转义/双重编码的嵌套字段）、转义/去转义、Unicode 编解码，纯本地计算
 - **设置**：主题切换、数据存储说明、**数据同步**（加密同步到 S3 / S3 兼容对象存储，支持从远程恢复）
 
@@ -87,7 +93,8 @@ src/
     volc/        # 火山引擎 OpenAPI V4 签名
     providers/   # provider 适配层（统一类型 + volcengine 管理/推理 + openai-compatible 网关）
   types/         # 数据模型
-src-tauri/       # Tauri Rust 后端
+sidecar/         # bun 编译的 sidecar 二进制（gateway、connector/open-connector）
+src-tauri/       # Tauri Rust 后端（含 unified/ 与 connector/ 两个 sidecar supervisor）
 ```
 
 ## CI / CD

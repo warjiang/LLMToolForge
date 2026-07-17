@@ -5,9 +5,10 @@
  *   src-tauri/binaries/portkey-gateway-<rust-target-triple>[.exe]
  *
  * Usage:
- *   bun run build.ts                       # compile for the host triple
+ *   bun run build.ts                       # install deps + compile for host triple
  *   bun run build.ts --target=<rust-triple># cross-compile for another triple
  *   bun run build.ts --outdir=<path>       # override the output directory
+ *   bun run build.ts --skip-install        # skip `bun install` (deps already present)
  *
  * Tauri substitutes the running platform's target triple into the binary name
  * at bundle time, so each platform in the release matrix must produce its own
@@ -19,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '..');
+const repoRoot = resolve(here, '..', '..');
 
 /** Map a Rust target triple to the matching `bun build --compile --target`. */
 const RUST_TO_BUN: Record<string, string> = {
@@ -60,6 +61,18 @@ if (!bunTarget) {
 
 const outDir = resolve(arg('outdir') ?? join(repoRoot, 'src-tauri', 'binaries'));
 mkdirSync(outDir, { recursive: true });
+
+// Install dependencies first (triggers the patch-package postinstall that
+// applies the vendored Portkey patches) so `bun run build.ts` is a
+// self-contained build, symmetric with the connector sidecar.
+if (!arg('skip-install')) {
+  console.error('[build] installing dependencies');
+  const install = spawnSync('bun', ['install', '--frozen-lockfile'], { cwd: here, stdio: 'inherit' });
+  if (install.status !== 0) {
+    console.error(`[build] bun install failed with exit code ${install.status ?? 'unknown'}`);
+    process.exit(install.status ?? 1);
+  }
+}
 
 const ext = triple.includes('windows') ? '.exe' : '';
 const outFile = join(outDir, `portkey-gateway-${triple}${ext}`);
