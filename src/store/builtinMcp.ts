@@ -25,6 +25,8 @@ interface BuiltinState {
   installed: boolean;
   /** Present once the user has edited the shipped config. */
   overrides?: BuiltinOverrides;
+  /** User has deleted (hidden) this builtin from the list. Reversible. */
+  removed?: boolean;
 }
 
 type BuiltinStateMap = Record<string, BuiltinState>;
@@ -67,6 +69,12 @@ interface BuiltinMcpStore {
   setEnabled: (id: string, enabled: boolean) => void;
   install: (id: string) => Promise<void>;
   uninstall: (id: string) => void;
+  /** Permanently hide a builtin from the list (reversible via restore). */
+  remove: (id: string) => void;
+  /** Un-hide a previously deleted builtin, resetting it to defaults. */
+  restore: (id: string) => void;
+  /** Un-hide every deleted builtin. */
+  restoreAll: () => void;
   /** Save user edits (command/args/env/description/url) for a builtin. */
   setOverrides: (id: string, overrides: BuiltinOverrides) => void;
   /** Discard user edits and revert to the shipped defaults. */
@@ -136,6 +144,41 @@ export const useBuiltinMcpStore = create<BuiltinMcpStore>((set, get) => ({
     set({ states, errors: { ...get().errors, [id]: undefined } });
   },
 
+  remove: (id) => {
+    const def = getBuiltinDef(id);
+    if (!def) return;
+    const cur = get().states[id] ?? defaultState(def);
+    // Deleting a builtin hides it and forces it off; config is discarded.
+    const states = {
+      ...get().states,
+      [id]: {
+        enabled: false,
+        installed: cur.installed,
+        removed: true,
+      } as BuiltinState,
+    };
+    writePersisted(states);
+    set({ states, errors: { ...get().errors, [id]: undefined } });
+  },
+
+  restore: (id) => {
+    const def = getBuiltinDef(id);
+    if (!def) return;
+    const states = { ...get().states, [id]: defaultState(def) };
+    writePersisted(states);
+    set({ states });
+  },
+
+  restoreAll: () => {
+    const cur = get().states;
+    const states: BuiltinStateMap = { ...cur };
+    for (const def of BUILTIN_MCP_DEFS) {
+      if (states[def.id]?.removed) states[def.id] = defaultState(def);
+    }
+    writePersisted(states);
+    set({ states });
+  },
+
   setOverrides: (id, overrides) => {
     const def = getBuiltinDef(id);
     if (!def) return;
@@ -203,6 +246,13 @@ export function builtinServers(states: BuiltinStateMap): McpServer[] {
   );
 }
 
+/** IDs of builtins the user has deleted (hidden) from the list. */
+export function builtinRemovedIds(states: BuiltinStateMap): string[] {
+  return BUILTIN_MCP_DEFS.filter((def) => states[def.id]?.removed).map(
+    (def) => def.id
+  );
+}
+
 /** Non-react accessor for all builtin servers with their current state. */
 export function getAllBuiltinServers(): McpServer[] {
   return builtinServers(useBuiltinMcpStore.getState().states);
@@ -214,5 +264,7 @@ export function getAllBuiltinServers(): McpServer[] {
  */
 export function getActiveBuiltinServers(): McpServer[] {
   const states = useBuiltinMcpStore.getState().states;
-  return builtinServers(states).filter((s) => s.installed && s.enabled);
+  return builtinServers(states).filter(
+    (s) => s.installed && s.enabled && !states[s.id]?.removed
+  );
 }

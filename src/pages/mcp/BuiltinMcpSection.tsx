@@ -18,10 +18,16 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { useBuiltinMcpStore } from "@/store";
-import { builtinServers, builtinHasOverrides } from "@/store/builtinMcp";
+import {
+  builtinServers,
+  builtinHasOverrides,
+  builtinRemovedIds,
+} from "@/store/builtinMcp";
 import type { McpServer } from "@/types";
 import {
   BUILTIN_MCP_DEFS,
@@ -56,11 +62,16 @@ export function BuiltinMcpSection({
     setEnabled,
     install,
     uninstall,
+    remove,
+    restoreAll,
     resetOverrides,
   } = useBuiltinMcpStore();
+  const [deleting, setDeleting] = useState<BuiltinMcpDef | null>(null);
 
   const servers = builtinServers(states);
   const serverById = new Map(servers.map((s) => [s.id, s]));
+  const removedIds = new Set(builtinRemovedIds(states));
+  const visibleDefs = BUILTIN_MCP_DEFS.filter((def) => !removedIds.has(def.id));
 
   return (
     <section className="space-y-3">
@@ -72,13 +83,24 @@ export function BuiltinMcpSection({
         <Badge variant="outline" className="rounded-sm uppercase">
           {t("mcp_builtin_badge")}
         </Badge>
+        {removedIds.size > 0 && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="ml-auto"
+            onClick={restoreAll}
+          >
+            <RotateCcw className="h-3.5 w-3.5" />
+            {t("mcp_builtin_restore", { count: removedIds.size })}
+          </Button>
+        )}
       </div>
       <p className="max-w-[62ch] text-copy-13 text-muted-foreground">
         {t("mcp_builtin_desc")}
       </p>
 
       <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        {BUILTIN_MCP_DEFS.map((def) => (
+        {visibleDefs.map((def) => (
           <BuiltinCard
             key={def.id}
             def={def}
@@ -90,6 +112,7 @@ export function BuiltinMcpSection({
             onToggle={(v) => setEnabled(def.id, v)}
             onInstall={() => install(def.id).catch(() => {})}
             onUninstall={() => uninstall(def.id)}
+            onDelete={() => setDeleting(def)}
             onEdit={() => {
               const server = serverById.get(def.id);
               if (server) onEdit(server);
@@ -98,6 +121,19 @@ export function BuiltinMcpSection({
           />
         ))}
       </div>
+
+      <ConfirmDialog
+        open={!!deleting}
+        onOpenChange={(o) => !o && setDeleting(null)}
+        description={t("confirm_delete_named", {
+          ns: "common",
+          name: deleting?.name ?? "",
+        })}
+        onConfirm={() => {
+          if (deleting) remove(deleting.id);
+          setDeleting(null);
+        }}
+      />
     </section>
   );
 }
@@ -112,6 +148,7 @@ function BuiltinCard({
   onToggle,
   onInstall,
   onUninstall,
+  onDelete,
   onEdit,
   onReset,
 }: {
@@ -124,6 +161,7 @@ function BuiltinCard({
   onToggle: (v: boolean) => void;
   onInstall: () => void;
   onUninstall: () => void;
+  onDelete: () => void;
   onEdit: () => void;
   onReset: () => void;
 }) {
@@ -251,6 +289,11 @@ function BuiltinCard({
                   {t("mcp_builtin_reset")}
                 </DropdownMenuItem>
               )}
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <Trash2 className="h-4 w-4" />
+                {t("delete", { ns: "common" })}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
         </div>

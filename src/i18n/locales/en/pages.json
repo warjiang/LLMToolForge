@@ -250,6 +250,7 @@
   "mcp_builtin_install_failed": "Install failed — view log",
   "mcp_builtin_customized": "Customized",
   "mcp_builtin_reset": "Reset to default",
+  "mcp_builtin_restore": "Restore hidden ({{count}})",
   "mcp_description_label": "Description",
   "mcp_connection_label": "Connection",
   "mcp_no_connection": "No connection target",
