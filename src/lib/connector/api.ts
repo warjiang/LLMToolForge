@@ -64,15 +64,46 @@ export async function openUrl(url: string): Promise<void> {
 
 // ---- Runtime HTTP API ----
 
-export type AuthType = "oauth2" | "api_key" | "custom" | "no_auth" | string;
+export type AuthType =
+  | "oauth2"
+  | "api_key"
+  | "custom_credential"
+  | "no_auth"
+  | string;
 
-export interface ProviderAuthApiKeyField {
-  type: "api_key" | "custom";
-  label?: string;
+/** A single credential input field, as described by the runtime auth schema. */
+export interface CredentialField {
+  key: string;
+  label: string;
+  inputType: "text" | "password" | "textarea" | "json";
+  required: boolean;
+  secret: boolean;
   placeholder?: string;
   description?: string;
 }
 
+/** Auth definition for a provider, mirroring the runtime `/api/providers` schema. */
+export type AuthDefinition =
+  | { type: "no_auth" }
+  | {
+      type: "api_key";
+      label?: string;
+      placeholder?: string;
+      description?: string;
+      extraFields?: CredentialField[];
+    }
+  | { type: "custom_credential"; fields: CredentialField[] }
+  | {
+      type: "oauth2";
+      scopes?: string[];
+      authorizationUrl?: string;
+      tokenUrl?: string;
+      tokenEndpointAuthMethod?: string;
+      clientConfigFields?: CredentialField[];
+      [key: string]: unknown;
+    };
+
+/** OAuth2 config record shape returned by `/api/oauth/configs`. */
 export interface ProviderAuthOAuth2 {
   type: "oauth2";
   authorizationUrl?: string;
@@ -81,7 +112,31 @@ export interface ProviderAuthOAuth2 {
   tokenEndpointAuthMethod?: string;
 }
 
-export type ProviderAuth = ProviderAuthApiKeyField | ProviderAuthOAuth2;
+export type ProviderAuth = AuthDefinition;
+
+/**
+ * Resolve the concrete credential input fields for an auth definition, matching
+ * the upstream web console. `api_key` yields a single password field plus any
+ * extra fields; `custom_credential` uses its declared fields verbatim.
+ */
+export function credentialFieldsFor(auth: AuthDefinition): CredentialField[] {
+  if (auth.type === "api_key") {
+    return [
+      {
+        key: "apiKey",
+        label: auth.label ?? "API key",
+        inputType: "password",
+        required: true,
+        secret: true,
+        placeholder: auth.placeholder,
+        description: auth.description,
+      },
+      ...(auth.extraFields ?? []),
+    ];
+  }
+  if (auth.type === "custom_credential") return auth.fields;
+  return [];
+}
 
 export interface ProviderSummary {
   service: string;

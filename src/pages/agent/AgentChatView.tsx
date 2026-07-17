@@ -129,7 +129,7 @@ import {
   onBrowserLoading,
 } from "@/lib/browser";
 import { cn, isTauri, uid } from "@/lib/utils";
-import { isLiveRequestSupported } from "@/lib/http";
+import { isLiveRequestSupported, isAbortError } from "@/lib/http";
 import { getAdapter } from "@/lib/providers";
 import {
   isImageGenerationModel,
@@ -216,7 +216,7 @@ const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
 
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
-const STREAM_CONTENT_FLUSH_MS = 50;
+const STREAM_CONTENT_FLUSH_MS = 33;
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
@@ -1737,7 +1737,7 @@ export function AgentChatView() {
         status: "complete",
       });
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") return;
+      if (isAbortError(e)) return;
       const msg = e instanceof Error ? e.message : t("agent_request_failed");
       await chat.updateMessage(message.id, {
         status: "error",
@@ -1747,6 +1747,23 @@ export function AgentChatView() {
       videoPollingRef.current.delete(pollingKey);
     }
   };
+
+  // When the user navigates to a different conversation while a generation is
+  // still streaming, abort it. The app renders a single active conversation
+  // through a shared chat store, abort controller and agent runtime, so letting
+  // the previous run continue would stream its output — or its cancellation
+  // error — into the now-visible conversation ("crossed" messages).
+  useEffect(() => {
+    const active = chat.activeSessionId;
+    const running = runStatusSessionRef.current;
+    if (sending && running && running !== active) {
+      abortRef.current?.abort();
+      agentRuntimeRef.current?.abort();
+      cancelActiveCheckpoint();
+      cancelActiveAsk();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chat.activeSessionId]);
 
   useEffect(() => {
     if (!loaded) return;
@@ -1778,9 +1795,8 @@ export function AgentChatView() {
   }, [loaded, chat.messages, provider, settings?.connKey]);
 
   const handleGenerationError = async (e: unknown) => {
-    const aborted =
-      e instanceof Error && (e.name === "AbortError" || e.name === "DOMException");
-    if (!aborted) runErroredRef.current = true;
+    if (isAbortError(e)) return;
+    runErroredRef.current = true;
     if (e instanceof GatewayUnavailableError) {
       return setError(e.message || t("agent_gateway_unavailable"));
     }

@@ -3,6 +3,8 @@ import { useTranslation } from "react-i18next";
 import {
   Activity,
   Boxes,
+  Check,
+  ChevronRight,
   ExternalLink,
   KeyRound,
   Loader2,
@@ -13,12 +15,13 @@ import {
   ShieldCheck,
   Square,
 } from "lucide-react";
-import { Reveal } from "@/components/common/Reveal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SegmentedControl } from "@/components/ui/segmented-control";
 import {
   Dialog,
   DialogContent,
@@ -35,6 +38,7 @@ import {
 import { useConnectorStore } from "@/store/connector";
 import {
   consoleUrl,
+  credentialFieldsFor,
   executeAction,
   getAction,
   getProvider,
@@ -49,8 +53,10 @@ import {
   startOAuthAuthorization,
   type ActionDefinition,
   type ActionExecuteResult,
+  type AuthDefinition,
   type ConnectionRecord,
   type ConnectorStatus,
+  type CredentialField,
   type OAuthConfigRecord,
   type ProviderDetail,
   type ProviderSummary,
@@ -74,6 +80,76 @@ function Metric({
       </div>
       <p className="mt-1 text-heading-24 tabular-nums text-foreground">{value}</p>
     </div>
+  );
+}
+
+function CopyTokenButton({ token }: { token: string }) {
+  const { t } = useTranslation("pages");
+  const [copied, setCopied] = useState(false);
+  return (
+    <Button
+      variant="ghost"
+      onClick={async () => {
+        try {
+          await navigator.clipboard.writeText(token);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch {
+          /* ignore */
+        }
+      }}
+      title={t("connector_copy_token_hint")}
+    >
+      {copied ? (
+        <Check className="h-4 w-4 text-success" />
+      ) : (
+        <KeyRound className="h-4 w-4" />
+      )}
+      <span>{copied ? t("connector_token_copied") : t("connector_copy_token")}</span>
+    </Button>
+  );
+}
+
+function providerHostname(url?: string): string | null {
+  if (!url) return null;
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return null;
+  }
+}
+
+function providerInitials(name: string): string {
+  return (
+    name
+      .split(/\s+/)
+      .map((part) => part[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase() || "?"
+  );
+}
+
+function ProviderIcon({ provider }: { provider: ProviderSummary }) {
+  const host = providerHostname(provider.homepageUrl);
+  const [failed, setFailed] = useState(false);
+  const initials = providerInitials(provider.displayName || provider.service);
+  const base =
+    "flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-md border border-border bg-background-secondary text-label-12 font-medium text-muted-foreground";
+  if (!host || failed) {
+    return <span className={base}>{initials}</span>;
+  }
+  return (
+    <span className={base}>
+      <img
+        alt=""
+        loading="lazy"
+        referrerPolicy="no-referrer"
+        className="h-5 w-5 object-contain"
+        src={`https://www.google.com/s2/favicons?sz=64&domain=${encodeURIComponent(host)}`}
+        onError={() => setFailed(true)}
+      />
+    </span>
   );
 }
 
@@ -151,6 +227,9 @@ export function ConnectorsPage() {
                   <ExternalLink className="h-4 w-4" />
                   <span>{t("connector_open_console")}</span>
                 </Button>
+              )}
+              {running && status && (
+                <CopyTokenButton token={status.adminToken} />
               )}
             </div>
           </div>
@@ -254,23 +333,32 @@ function ConnectorWorkspace({ status }: { status: ConnectorStatus }) {
 // Providers tab
 // ---------------------------------------------------------------------------
 
+type ProviderFilter = "all" | "connected" | "not_connected" | "oauth_needs_config";
+
+const PROVIDER_PAGE_SIZE = 60;
+
 function ProvidersTab({ status }: { status: ConnectorStatus }) {
   const { t } = useTranslation("pages");
   const [providers, setProviders] = useState<ProviderSummary[]>([]);
   const [connections, setConnections] = useState<ConnectionRecord[]>([]);
+  const [oauthConfigs, setOAuthConfigs] = useState<OAuthConfigRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState<ProviderFilter>("all");
+  const [limit, setLimit] = useState(PROVIDER_PAGE_SIZE);
   const [selected, setSelected] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const [ps, cs] = await Promise.all([
+      const [ps, cs, os] = await Promise.all([
         listProviders(status),
         listConnections(status).catch(() => [] as ConnectionRecord[]),
+        listOAuthConfigs(status).catch(() => [] as OAuthConfigRecord[]),
       ]);
       setProviders(ps);
       setConnections(cs);
+      setOAuthConfigs(os);
     } finally {
       setLoading(false);
     }
@@ -284,19 +372,93 @@ function ProvidersTab({ status }: { status: ConnectorStatus }) {
     () => new Set(connections.filter((c) => c.configured).map((c) => c.service)),
     [connections]
   );
+  const oauthConfiguredServices = useMemo(
+    () => new Set(oauthConfigs.filter((c) => c.configured).map((c) => c.service)),
+    [oauthConfigs]
+  );
 
-  const filtered = useMemo(() => {
+  const isConnected = useCallback(
+    (p: ProviderSummary) => connectedServices.has(p.service),
+    [connectedServices]
+  );
+  const needsOAuthConfig = useCallback(
+    (p: ProviderSummary) =>
+      p.authTypes.includes("oauth2") && !oauthConfiguredServices.has(p.service),
+    [oauthConfiguredServices]
+  );
+
+  const searched = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return providers.slice(0, 120);
-    return providers
-      .filter(
-        (p) =>
-          p.service.toLowerCase().includes(q) ||
-          p.displayName.toLowerCase().includes(q) ||
-          p.categories.some((c) => c.toLowerCase().includes(q))
-      )
-      .slice(0, 120);
+    if (!q) return providers;
+    return providers.filter(
+      (p) =>
+        p.service.toLowerCase().includes(q) ||
+        p.displayName.toLowerCase().includes(q) ||
+        p.categories.some((c) => c.toLowerCase().includes(q))
+    );
   }, [providers, query]);
+
+  const counts = useMemo(
+    () => ({
+      all: searched.length,
+      connected: searched.filter(isConnected).length,
+      not_connected: searched.filter((p) => !isConnected(p)).length,
+      oauth_needs_config: searched.filter(needsOAuthConfig).length,
+    }),
+    [searched, isConnected, needsOAuthConfig]
+  );
+
+  const visible = useMemo(() => {
+    switch (filter) {
+      case "connected":
+        return searched.filter(isConnected);
+      case "not_connected":
+        return searched.filter((p) => !isConnected(p));
+      case "oauth_needs_config":
+        return searched.filter(needsOAuthConfig);
+      default:
+        return searched;
+    }
+  }, [searched, filter, isConnected, needsOAuthConfig]);
+
+  useEffect(() => {
+    setLimit(PROVIDER_PAGE_SIZE);
+  }, [query, filter]);
+
+  const rendered = visible.slice(0, limit);
+  const hasMore = visible.length > limit;
+
+  const filterOptions = useMemo(
+    () => [
+      { value: "all" as const, labelKey: "connector_filter_all", count: counts.all },
+      {
+        value: "connected" as const,
+        labelKey: "connector_connected",
+        count: counts.connected,
+      },
+      {
+        value: "not_connected" as const,
+        labelKey: "connector_filter_not_connected",
+        count: counts.not_connected,
+      },
+      {
+        value: "oauth_needs_config" as const,
+        labelKey: "connector_filter_oauth_needs_config",
+        count: counts.oauth_needs_config,
+      },
+    ],
+    [counts]
+  );
+
+  const actionLabel = useCallback(
+    (p: ProviderSummary) =>
+      isConnected(p)
+        ? t("connector_manage")
+        : needsOAuthConfig(p)
+          ? t("connector_configure_oauth")
+          : t("connector_connect_action"),
+    [isConnected, needsOAuthConfig, t]
+  );
 
   return (
     <div className="space-y-4">
@@ -315,41 +477,82 @@ function ProvidersTab({ status }: { status: ConnectorStatus }) {
         </Button>
       </div>
 
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SegmentedControl<ProviderFilter>
+          size="sm"
+          value={filter}
+          onChange={setFilter}
+          options={filterOptions.map((o) => ({
+            value: o.value,
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                {t(o.labelKey)}
+                <span className="tabular-nums text-muted-foreground">
+                  {o.count}
+                </span>
+              </span>
+            ),
+          }))}
+        />
+        <span className="text-label-12 text-muted-foreground tabular-nums">
+          {t("connector_result_count", {
+            shown: visible.length,
+            total: providers.length,
+          })}
+        </span>
+      </div>
+
       {loading ? (
         <div className="flex items-center gap-2 p-8 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           {t("connector_loading")}
         </div>
+      ) : visible.length === 0 ? (
+        <div className="rounded-md border border-border bg-background-secondary/40 p-8 text-center text-copy-14 text-muted-foreground">
+          {t("connector_no_providers")}
+        </div>
       ) : (
-        <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
-          {filtered.map((p, i) => (
-            <Reveal key={p.service} index={i}>
+        <>
+          <div className="grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-3">
+            {rendered.map((p) => (
               <button
+                key={p.service}
                 type="button"
                 onClick={() => setSelected(p.service)}
-                className="flex w-full flex-col gap-2 rounded-md border border-border bg-card p-3 text-left transition-colors hover:border-primary/50"
+                className="group flex w-full items-center gap-3 rounded-md border border-border bg-card p-3 text-left transition-colors hover:border-primary/50 hover:bg-background-secondary/40"
               >
-                <div className="flex items-center justify-between gap-2">
+                <ProviderIcon provider={p} />
+                <span className="flex min-w-0 flex-1 items-center gap-2">
                   <span className="truncate text-copy-14 font-medium text-foreground">
-                    {p.displayName}
+                    {p.displayName || p.service}
                   </span>
-                  {connectedServices.has(p.service) && (
+                  {isConnected(p) && (
                     <Badge variant="accent" className="shrink-0">
                       {t("connector_connected")}
                     </Badge>
                   )}
-                </div>
-                <div className="flex flex-wrap gap-1">
-                  {p.authTypes.map((a) => (
-                    <Badge key={a} variant="outline" className="text-label-12">
-                      {a}
-                    </Badge>
-                  ))}
-                </div>
+                </span>
+                <span className="flex shrink-0 items-center gap-0.5 text-label-12 text-muted-foreground transition-colors group-hover:text-foreground">
+                  <span className="hidden sm:inline">{actionLabel(p)}</span>
+                  <ChevronRight className="h-4 w-4" />
+                </span>
               </button>
-            </Reveal>
-          ))}
-        </div>
+            ))}
+          </div>
+          {hasMore && (
+            <div className="flex justify-center">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() =>
+                  setLimit((n) => Math.min(n + PROVIDER_PAGE_SIZE, visible.length))
+                }
+              >
+                {t("connector_show_more")}
+              </Button>
+            </div>
+          )}
+        </>
       )}
 
       {selected && (
@@ -367,6 +570,43 @@ function ProvidersTab({ status }: { status: ConnectorStatus }) {
 // ---------------------------------------------------------------------------
 // Provider detail dialog: credential config + OAuth client + actions overview
 // ---------------------------------------------------------------------------
+
+function CredentialInput({
+  field,
+  value,
+  onChange,
+}: {
+  field: CredentialField;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1">
+      <label className="text-label-12 font-medium text-foreground">
+        {field.label}
+        {field.required && <span className="text-destructive"> *</span>}
+      </label>
+      {field.inputType === "textarea" || field.inputType === "json" ? (
+        <Textarea
+          placeholder={field.placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="font-mono text-copy-13"
+        />
+      ) : (
+        <Input
+          type={field.inputType === "password" ? "password" : "text"}
+          placeholder={field.placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
+      )}
+      {field.description && (
+        <p className="text-label-12 text-muted-foreground">{field.description}</p>
+      )}
+    </div>
+  );
+}
 
 function ProviderDialog({
   status,
@@ -386,7 +626,7 @@ function ProviderDialog({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const [apiKey, setApiKey] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
 
@@ -410,19 +650,41 @@ function ProviderDialog({
     void load();
   }, [load]);
 
-  const authTypes = detail?.authTypes ?? [];
-  const supportsApiKey =
-    authTypes.includes("api_key") || authTypes.includes("custom");
-  const supportsOAuth = authTypes.includes("oauth2");
+  const setField = (key: string, value: string) =>
+    setValues((cur) => ({ ...cur, [key]: value }));
 
-  const saveApiKey = async () => {
-    if (!apiKey.trim()) return;
+  const saveCredential = async (auth: AuthDefinition) => {
+    const fields = credentialFieldsFor(auth);
+    const missing = fields.find((f) => f.required && !(values[f.key] ?? "").trim());
+    if (missing) {
+      setMsg(t("connector_field_required", { field: missing.label }));
+      return;
+    }
+    const payload: Record<string, string> = {};
+    for (const f of fields) {
+      const v = values[f.key];
+      if (v != null && v !== "") payload[f.key] = v;
+    }
     setSaving(true);
     setMsg(null);
     try {
-      await putConnection(status, service, "api_key", { apiKey: apiKey.trim() });
+      await putConnection(status, service, auth.type, payload);
       setMsg(t("connector_saved"));
-      setApiKey("");
+      for (const f of fields) if (f.secret) setField(f.key, "");
+      onChanged();
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const connectNoAuth = async () => {
+    setSaving(true);
+    setMsg(null);
+    try {
+      await putConnection(status, service, "no_auth", {});
+      setMsg(t("connector_saved"));
       onChanged();
     } catch (e) {
       setMsg(e instanceof Error ? e.message : String(e));
@@ -470,8 +732,15 @@ function ProviderDialog({
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[85vh] max-w-lg overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>{detail?.displayName ?? service}</DialogTitle>
-          <DialogDescription>{service}</DialogDescription>
+          <div className="flex items-center gap-3">
+            <ProviderIcon
+              provider={detail ?? ({ service, displayName: service } as ProviderSummary)}
+            />
+            <div className="min-w-0">
+              <DialogTitle>{detail?.displayName ?? service}</DialogTitle>
+              <DialogDescription>{service}</DialogDescription>
+            </div>
+          </div>
         </DialogHeader>
 
         {loading ? (
@@ -481,71 +750,102 @@ function ProviderDialog({
           </div>
         ) : (
           <div className="space-y-5">
-            {supportsApiKey && (
-              <section className="space-y-2">
-                <div className="flex items-center gap-2 text-copy-14 font-medium">
-                  <KeyRound className="h-4 w-4" />
-                  {t("connector_api_key")}
-                </div>
-                <Input
-                  type="password"
-                  placeholder={t("connector_api_key_placeholder")}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                />
-                <Button
-                  size="sm"
-                  disabled={saving || !apiKey.trim()}
-                  onClick={() => void saveApiKey()}
-                >
-                  {t("connector_save_credentials")}
-                </Button>
-              </section>
-            )}
-
-            {supportsOAuth && (
-              <section className="space-y-2 border-t border-border pt-4">
-                <div className="flex items-center gap-2 text-copy-14 font-medium">
-                  <ShieldCheck className="h-4 w-4" />
-                  {t("connector_oauth_client")}
-                </div>
-                {oauth && (
-                  <p className="text-label-12 text-muted-foreground">
-                    {t("connector_redirect_uri")}:{" "}
-                    <code className="break-all">{oauth.expectedRedirectUri}</code>
-                  </p>
-                )}
-                <Input
-                  placeholder="Client ID"
-                  value={clientId}
-                  onChange={(e) => setClientId(e.target.value)}
-                />
-                <Input
-                  type="password"
-                  placeholder="Client Secret"
-                  value={clientSecret}
-                  onChange={(e) => setClientSecret(e.target.value)}
-                />
-                <div className="flex gap-2">
+            {(detail?.auth ?? []).map((auth, idx) => {
+              const border = idx > 0 ? "border-t border-border pt-4" : "";
+              if (auth.type === "no_auth") {
+                return (
+                  <section key={`auth-${idx}`} className={`space-y-2 ${border}`}>
+                    <div className="flex items-center gap-2 text-copy-14 font-medium">
+                      <ShieldCheck className="h-4 w-4" />
+                      {t("connector_auth_no_auth")}
+                    </div>
+                    <p className="text-label-12 text-muted-foreground">
+                      {t("connector_no_auth_desc")}
+                    </p>
+                    <Button
+                      size="sm"
+                      disabled={saving}
+                      onClick={() => void connectNoAuth()}
+                    >
+                      {t("connector_connect")}
+                    </Button>
+                  </section>
+                );
+              }
+              if (auth.type === "oauth2") {
+                return (
+                  <section key={`auth-${idx}`} className={`space-y-2 ${border}`}>
+                    <div className="flex items-center gap-2 text-copy-14 font-medium">
+                      <ShieldCheck className="h-4 w-4" />
+                      {t("connector_oauth_client")}
+                    </div>
+                    {oauth && (
+                      <p className="text-label-12 text-muted-foreground">
+                        {t("connector_redirect_uri")}:{" "}
+                        <code className="break-all">{oauth.expectedRedirectUri}</code>
+                      </p>
+                    )}
+                    <Input
+                      placeholder="Client ID"
+                      value={clientId}
+                      onChange={(e) => setClientId(e.target.value)}
+                    />
+                    <Input
+                      type="password"
+                      placeholder="Client Secret"
+                      value={clientSecret}
+                      onChange={(e) => setClientSecret(e.target.value)}
+                    />
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        disabled={saving || !clientId.trim() || !clientSecret.trim()}
+                        onClick={() => void saveOAuthClient()}
+                      >
+                        {t("connector_save_oauth_client")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={saving || !oauth?.configured}
+                        onClick={() => void authorize()}
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        {t("connector_authorize")}
+                      </Button>
+                    </div>
+                  </section>
+                );
+              }
+              const fields = credentialFieldsFor(auth);
+              const title =
+                auth.type === "custom_credential"
+                  ? t("connector_auth_custom")
+                  : t("connector_api_key");
+              return (
+                <section key={`auth-${idx}`} className={`space-y-2 ${border}`}>
+                  <div className="flex items-center gap-2 text-copy-14 font-medium">
+                    <KeyRound className="h-4 w-4" />
+                    {title}
+                  </div>
+                  {fields.map((f) => (
+                    <CredentialInput
+                      key={f.key}
+                      field={f}
+                      value={values[f.key] ?? ""}
+                      onChange={(v) => setField(f.key, v)}
+                    />
+                  ))}
                   <Button
                     size="sm"
-                    variant="secondary"
-                    disabled={saving || !clientId.trim() || !clientSecret.trim()}
-                    onClick={() => void saveOAuthClient()}
+                    disabled={saving}
+                    onClick={() => void saveCredential(auth)}
                   >
-                    {t("connector_save_oauth_client")}
+                    {t("connector_save_credentials")}
                   </Button>
-                  <Button
-                    size="sm"
-                    disabled={saving || !oauth?.configured}
-                    onClick={() => void authorize()}
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    {t("connector_authorize")}
-                  </Button>
-                </div>
-              </section>
-            )}
+                </section>
+              );
+            })}
 
             <section className="space-y-1 border-t border-border pt-4">
               <div className="text-copy-14 font-medium">

@@ -44,3 +44,22 @@ export async function httpFetch(
 export function isLiveRequestSupported(): boolean {
   return isTauri();
 }
+
+/**
+ * True when an error represents a caller-initiated request cancellation.
+ *
+ * Covers the standard `AbortError` DOMException thrown by native fetch as well
+ * as `@tauri-apps/plugin-http`, which rejects an aborted request with a plain
+ * `Error("Request cancelled")` (no `name === "AbortError"`). Without the latter
+ * case, aborting an in-flight generation (e.g. when starting a new session)
+ * leaks a red "Request cancelled" bubble into the chat.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  if (error instanceof Error) {
+    if (error.name === "AbortError") return true;
+    if (error.message === "Request cancelled") return true;
+  }
+  return false;
+}
+
