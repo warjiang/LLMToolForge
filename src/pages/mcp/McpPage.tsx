@@ -227,61 +227,47 @@ export function McpPage() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between gap-2 border-t border-border pt-3">
-                  {installed ? (
-                    <>
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => setInspecting(item)}
-                        aria-label={t("mcp_inspect")}
-                      >
-                        <Radar className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">
-                          {t("mcp_inspect")}
-                        </span>
-                      </Button>
-                      <RowMenu
-                        installed
-                        onInspect={() => setInspecting(item)}
-                        onEdit={() => {
-                          setEditing(item);
-                          setDialogOpen(true);
-                        }}
-                        onUninstall={() => uninstallServer(item)}
-                        onDelete={() => setDeleting(item)}
-                      />
-                    </>
-                  ) : (
-                    <>
+                  <div className="min-w-0">
+                    {!installed && (
                       <span className="text-label-12 text-muted-foreground">
                         {t("mcp_install_hint")}
                       </span>
-                      <div className="flex items-center gap-2">
-                        <Button
-                          size="sm"
-                          onClick={() => installServer(item)}
-                          disabled={busy}
-                        >
-                          {busy ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Package className="h-3.5 w-3.5" />
-                          )}
-                          {busy ? t("mcp_installing") : t("mcp_install")}
-                        </Button>
-                        <RowMenu
-                          installed={false}
-                          onInspect={() => setInspecting(item)}
-                          onEdit={() => {
-                            setEditing(item);
-                            setDialogOpen(true);
-                          }}
-                          onUninstall={() => uninstallServer(item)}
-                          onDelete={() => setDeleting(item)}
-                        />
-                      </div>
-                    </>
-                  )}
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {installed ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => uninstallServer(item)}
+                      >
+                        <PackageMinus className="h-3.5 w-3.5" />
+                        {t("mcp_uninstall")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => installServer(item)}
+                        disabled={busy}
+                      >
+                        {busy ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Package className="h-3.5 w-3.5" />
+                        )}
+                        {busy ? t("mcp_installing") : t("mcp_install")}
+                      </Button>
+                    )}
+                    <RowMenu
+                      installed={installed}
+                      onInspect={() => setInspecting(item)}
+                      onEdit={() => {
+                        setEditing(item);
+                        setDialogOpen(true);
+                      }}
+                      onDelete={() => setDeleting(item)}
+                    />
+                  </div>
                 </div>
               </article>
             </Reveal>
@@ -445,13 +431,11 @@ function RowMenu({
   installed,
   onInspect,
   onEdit,
-  onUninstall,
   onDelete,
 }: {
   installed: boolean;
   onInspect: () => void;
   onEdit: () => void;
-  onUninstall: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation("pages");
@@ -473,13 +457,9 @@ function RowMenu({
               <Pencil className="h-4 w-4" />
               {t("edit", { ns: "common" })}
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={onUninstall}>
-              <PackageMinus className="h-4 w-4" />
-              {t("mcp_uninstall")}
-            </DropdownMenuItem>
+            <DropdownMenuSeparator />
           </>
         )}
-        <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
           {t("delete", { ns: "common" })}

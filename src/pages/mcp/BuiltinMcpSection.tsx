@@ -4,6 +4,7 @@ import {
   Loader2,
   MoreHorizontal,
   Package,
+  PackageMinus,
   Pencil,
   RotateCcw,
   Search,
@@ -248,7 +249,7 @@ function BuiltinCard({
                 onClick={onUninstall}
                 disabled={installing}
               >
-                <Trash2 className="h-3.5 w-3.5" />
+                <PackageMinus className="h-3.5 w-3.5" />
                 {t("mcp_builtin_uninstall")}
               </Button>
             ) : (
