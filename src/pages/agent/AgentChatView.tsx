@@ -12,6 +12,7 @@ import {
   Bug,
   Check,
   ChevronRight,
+  ChevronDown,
   ChevronsDownUp,
   ChevronsUpDown,
   CircleAlert,
@@ -30,6 +31,7 @@ import {
   FileVideo,
   FolderOpen,
   Globe,
+  Hand,
   Code2,
   Lightbulb,
   ListChecks,
@@ -208,11 +210,37 @@ const WIRE_FORMATS: { value: WireFormat; label: string }[] = [
   { value: "openai-responses", label: "Responses" },
 ];
 
-const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
-  { value: "read-only", label: "Read only" },
-  { value: "workspace-write", label: "Execution write" },
-  { value: "danger-full-access", label: "Full access" },
+const SANDBOX_MODES: {
+  value: SandboxMode;
+  labelKey: string;
+  descKey: string;
+  icon: ComponentType<{ className?: string }>;
+}[] = [
+  {
+    value: "read-only",
+    labelKey: "agent_sandbox_read_only",
+    descKey: "agent_sandbox_read_only_desc",
+    icon: Hand,
+  },
+  {
+    value: "workspace-write",
+    labelKey: "agent_sandbox_workspace_write",
+    descKey: "agent_sandbox_workspace_write_desc",
+    icon: ShieldIcon,
+  },
+  {
+    value: "danger-full-access",
+    labelKey: "agent_sandbox_full_access",
+    descKey: "agent_sandbox_full_access_desc",
+    icon: CircleAlert,
+  },
 ];
+
+function getSandboxModeMeta(value: SandboxMode) {
+  return (
+    SANDBOX_MODES.find((mode) => mode.value === value) ?? SANDBOX_MODES[0]
+  );
+}
 
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
@@ -2929,7 +2957,7 @@ export function AgentChatView() {
                   }
                 }}
               />
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/60 px-2.5 pb-2 pt-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 pb-2 pt-2">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                   <Button
                     size="icon-sm"
@@ -2961,7 +2989,7 @@ export function AgentChatView() {
                     <SandboxModeSelect
                       value={settings.sandboxMode}
                       onChange={(sandboxMode) => updateSettings({ sandboxMode })}
-                      triggerClassName="h-7 w-[142px] shrink-0 gap-1.5 rounded-md px-2 text-label-12 font-normal text-muted-foreground"
+                      triggerClassName="h-7 w-auto max-w-[160px] shrink-0 gap-1.5 rounded-md border-transparent bg-transparent px-2 text-label-12 font-normal text-muted-foreground shadow-none hover:border-transparent focus-visible:border-transparent"
                       title={t("agent_current_sandbox")}
                       showIcon
                     />
@@ -3756,7 +3784,7 @@ function ComposerToolMenu<T extends { id: string; name: string; description?: st
       <DropdownMenuTrigger asChild>
         <Button
           size="sm"
-          variant={activeCount > 0 ? "secondary" : "ghost"}
+          variant="ghost"
           className="h-7 px-2"
         >
           <Icon className="h-3.5 w-3.5" />
@@ -3828,23 +3856,87 @@ function SandboxModeSelect({
   title?: string;
   showIcon?: boolean;
 }) {
+  const { t } = useTranslation("pages");
+  const current = getSandboxModeMeta(value);
+  const CurrentIcon = current.icon;
+  const isDanger = current.value === "danger-full-access";
+  // The compact composer trigger passes a custom className and hides the
+  // chevron; the config rail uses the default full-width bordered look.
+  const compact = !!triggerClassName;
+
   return (
-    <Select
-      value={value}
-      onValueChange={(sandboxMode) => onChange(sandboxMode as SandboxMode)}
-    >
-      <SelectTrigger className={triggerClassName} title={title}>
-        {showIcon && <ShieldIcon className="h-3.5 w-3.5 shrink-0" />}
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {SANDBOX_MODES.map((m) => (
-          <SelectItem key={m.value} value={m.value}>
-            {m.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          title={title}
+          className={cn(
+            "flex items-center justify-between rounded-sm text-label-14 outline-none transition-colors focus-visible:shadow-[0_0_0_1px_var(--ring)]",
+            compact
+              ? triggerClassName
+              : "h-9 w-full border border-input bg-background px-3",
+            isDanger
+              ? cn(
+                  "text-destructive hover:bg-secondary",
+                  !compact && "border-destructive/40"
+                )
+              : compact
+                ? "text-foreground hover:bg-secondary"
+                : "text-foreground hover:border-muted-foreground/40 hover:bg-secondary"
+          )}
+        >
+          <span className="flex min-w-0 items-center gap-1.5">
+            {showIcon && (
+              <CurrentIcon
+                className={cn(
+                  "h-3.5 w-3.5 shrink-0",
+                  isDanger ? "text-destructive" : "text-muted-foreground"
+                )}
+              />
+            )}
+            <span
+              className={cn(
+                "truncate",
+                isDanger && "font-medium text-destructive"
+              )}
+            >
+              {t(current.labelKey)}
+            </span>
+          </span>
+          <span className="flex shrink-0 items-center gap-1">
+            {!compact && (
+              <ChevronDown className="h-4 w-4 shrink-0 opacity-60" />
+            )}
+          </span>
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" className="w-72">
+        {SANDBOX_MODES.map((m) => {
+          const ItemIcon = m.icon;
+          const active = m.value === value;
+          return (
+            <DropdownMenuItem
+              key={m.value}
+              onSelect={() => onChange(m.value)}
+              className="items-start gap-2 py-2"
+            >
+              <ItemIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <span className="flex min-w-0 flex-col gap-0.5">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-label-13 font-medium">
+                    {t(m.labelKey)}
+                  </span>
+                  {active && <Check className="h-3.5 w-3.5 text-foreground" />}
+                </span>
+                <span className="text-label-12 font-normal leading-snug text-muted-foreground">
+                  {t(m.descKey)}
+                </span>
+              </span>
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -4523,7 +4615,7 @@ function ChatBubble({
                   ? "rounded-tr-sm bg-muted text-foreground"
                   : isTool
                     ? "rounded-tl-sm border border-border bg-secondary text-foreground"
-                    : "rounded-tl-sm border border-border bg-card text-foreground shadow-geist-sm")
+                    : "rounded-tl-sm bg-card text-foreground")
             )}
           >
             {generatedImages.length > 0 && (
@@ -4626,7 +4718,7 @@ function ChatBubble({
           />
         )}
         {hasToolCalls && toolsOpen && (
-          <div className="grid w-full min-w-0 gap-1 border-l border-border pl-3 ml-3">
+          <div className="ml-3 grid w-fit max-w-full min-w-0 gap-0.5 border-l border-border pl-3">
             {toolCalls!.map((call) => (
               <ToolCallCard key={call.id} call={call} />
             ))}
@@ -4964,7 +5056,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   return (
     <div
       className={cn(
-        "w-full overflow-hidden rounded-sm border border-border/70 bg-card",
+        "max-w-full overflow-hidden rounded-sm border border-border/70 bg-card",
         (isRunning || isPending) && "border-accent/25 bg-background"
       )}
     >
@@ -4974,7 +5066,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           onClick={() => expandable && setOpen((v) => !v)}
           disabled={!expandable}
           className={cn(
-            "relative flex min-w-0 flex-1 overflow-hidden px-2.5 py-1.5 text-left",
+            "relative flex min-w-0 flex-1 overflow-hidden px-2 py-1.5 text-left",
             expandable && "cursor-pointer hover:bg-muted/40"
           )}
         >
@@ -4990,8 +5082,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               }}
             />
           )}
-          <span className="flex w-full min-w-0 items-center gap-2">
-            <Wrench className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+          <span className="flex w-full min-w-0 items-center gap-1.5">
             {isRunning ? (
               <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" />
             ) : isPending ? (
@@ -5004,7 +5095,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
               <span
                 className={cn(
-                  "max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground",
+                  "max-w-[10rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground",
                   isRunning && !reduce && SHIMMER_TEXT_CLASS
                 )}
               >
@@ -5015,16 +5106,6 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                   <Server className="h-3 w-3" />
                   {parsed.server}
                 </span>
-              )}
-              {goal && (
-                <>
-                  <span className="shrink-0 text-label-12 text-muted-foreground/50">
-                    ·
-                  </span>
-                  <span className="min-w-0 flex-1 truncate text-label-12 text-muted-foreground">
-                    {goal}
-                  </span>
-                </>
               )}
             </span>
             {typeof call.durationMs === "number" && call.durationMs > 0 && (
@@ -5062,6 +5143,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
       </div>
       {expandable && open && (
         <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
+          {goal && <ToolCallSection label={t("agent_tool_goal")} body={goal} />}
           {hasArgs && (
             <ToolCallSection label={t("agent_tool_arguments")} body={args} />
           )}
