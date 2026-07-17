@@ -189,6 +189,11 @@ function BuiltinCard({
                     ? t("mcp_builtin_local")
                     : def.transport}
                 </Badge>
+                {!needsInstall && (
+                  <Badge variant="outline" className="rounded-sm">
+                    {t("mcp_builtin_ready")}
+                  </Badge>
+                )}
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-label-12 text-muted-foreground">
                 <span
@@ -264,11 +269,7 @@ function BuiltinCard({
                   : t("mcp_builtin_install")}
               </Button>
             )
-          ) : (
-            <Badge variant="outline" className="rounded-sm">
-              {t("mcp_builtin_ready")}
-            </Badge>
-          )}
+          ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
