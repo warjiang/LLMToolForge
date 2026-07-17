@@ -83,7 +83,7 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
   const userMcpServers = useMcpStore((s) => s.items);
   const builtinStates = useBuiltinMcpStore((s) => s.states);
   const mcpServers = [
-    ...userMcpServers,
+    ...userMcpServers.filter((s) => s.installed !== false),
     ...builtinServers(builtinStates).filter((s) => s.installed),
   ];
   const unifiedModels = useUnifiedStore((s) => s.models);

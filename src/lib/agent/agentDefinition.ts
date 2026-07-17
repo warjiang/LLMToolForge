@@ -46,8 +46,10 @@ function activeMcpServers(def: AgentDefinition, all: McpServer[]): McpServer[] {
     (s) =>
       s.enabled !== false &&
       enabled.has(s.id) &&
-      // Builtins that require install must be installed to activate.
-      (s.builtin === undefined || s.installed !== false)
+      // Every server must be installed to activate. Legacy servers created
+      // before the install lifecycle have `installed === undefined`, which we
+      // treat as installed so they keep working.
+      s.installed !== false
   );
 }
 

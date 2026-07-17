@@ -10,10 +10,21 @@ import { isTauri } from "@/lib/agent/tools/shared";
 
 const STATE_KEY = "llmtoolforge.mcp.builtins";
 
+/** User customizations layered on top of a builtin's shipped defaults. */
+export interface BuiltinOverrides {
+  description?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+}
+
 /** Persisted mutable state for one builtin. */
 interface BuiltinState {
   enabled: boolean;
   installed: boolean;
+  /** Present once the user has edited the shipped config. */
+  overrides?: BuiltinOverrides;
 }
 
 type BuiltinStateMap = Record<string, BuiltinState>;
@@ -56,6 +67,10 @@ interface BuiltinMcpStore {
   setEnabled: (id: string, enabled: boolean) => void;
   install: (id: string) => Promise<void>;
   uninstall: (id: string) => void;
+  /** Save user edits (command/args/env/description/url) for a builtin. */
+  setOverrides: (id: string, overrides: BuiltinOverrides) => void;
+  /** Discard user edits and revert to the shipped defaults. */
+  resetOverrides: (id: string) => void;
 }
 
 export const useBuiltinMcpStore = create<BuiltinMcpStore>((set, get) => ({
@@ -120,25 +135,65 @@ export const useBuiltinMcpStore = create<BuiltinMcpStore>((set, get) => ({
     writePersisted(states);
     set({ states, errors: { ...get().errors, [id]: undefined } });
   },
+
+  setOverrides: (id, overrides) => {
+    const def = getBuiltinDef(id);
+    if (!def) return;
+    const cur = get().states[id] ?? defaultState(def);
+    // Drop empty keys so an untouched builtin has no overrides object.
+    const cleaned: BuiltinOverrides = {};
+    if (overrides.description !== undefined)
+      cleaned.description = overrides.description;
+    if (overrides.command !== undefined) cleaned.command = overrides.command;
+    if (overrides.args !== undefined) cleaned.args = overrides.args;
+    if (overrides.env !== undefined) cleaned.env = overrides.env;
+    if (overrides.url !== undefined) cleaned.url = overrides.url;
+    const states = {
+      ...get().states,
+      [id]: { ...cur, overrides: cleaned },
+    };
+    writePersisted(states);
+    set({ states });
+  },
+
+  resetOverrides: (id) => {
+    const def = getBuiltinDef(id);
+    if (!def) return;
+    const cur = get().states[id] ?? defaultState(def);
+    const next = { ...cur };
+    delete next.overrides;
+    const states = { ...get().states, [id]: next };
+    writePersisted(states);
+    set({ states });
+  },
 }));
 
 /** Build the `McpServer` view of a builtin, merging its persisted state. */
 function toServer(def: BuiltinMcpDef, state: BuiltinState): McpServer {
+  const o = state.overrides ?? {};
   return {
     id: def.id,
     name: def.name,
-    description: def.description,
+    description: o.description ?? def.description,
     transport: def.transport,
-    command: def.command,
-    args: def.args,
-    url: undefined,
-    env: {},
+    command: o.command ?? def.command,
+    args: o.args ?? def.args,
+    url: o.url ?? undefined,
+    env: o.env ?? {},
     enabled: state.enabled,
     builtin: def.kind,
     installed: state.installed,
     createdAt: "",
     updatedAt: "",
   };
+}
+
+/** Whether the user has customized this builtin away from its defaults. */
+export function builtinHasOverrides(
+  states: Record<string, { overrides?: unknown }>,
+  id: string
+): boolean {
+  return states[id]?.overrides !== undefined;
 }
 
 /** All builtins as `McpServer` objects (regardless of enabled/installed). */

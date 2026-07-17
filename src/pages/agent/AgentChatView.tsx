@@ -307,7 +307,7 @@ function buildResearchAgentDef(
   // non-disabled MCP server so the agent always has its search/extract tools,
   // even if the session composer didn't explicitly toggle them on.
   const allMcpServerIds = [
-    ...useMcpStore.getState().items,
+    ...useMcpStore.getState().items.filter((s) => s.installed !== false),
     ...getAllBuiltinServers().filter((s) => s.installed),
   ]
     .filter((s) => s.enabled !== false)
@@ -644,9 +644,10 @@ export function AgentChatView() {
   const mcp = useMcpStore();
   const builtinMcp = useBuiltinMcpStore();
   // User-defined MCP servers plus installed built-ins, both selectable per agent.
+  // Only installed servers are offered (legacy servers have installed===undefined).
   const mcpItems = useMemo(
     () => [
-      ...mcp.items,
+      ...mcp.items.filter((s) => s.installed !== false),
       ...builtinServers(builtinMcp.states).filter((s) => s.installed),
     ],
     [mcp.items, builtinMcp.states]

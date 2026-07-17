@@ -1,10 +1,28 @@
 import { useState } from "react";
-import { Globe2, Loader2, Package, Search, Terminal, Trash2 } from "lucide-react";
+import {
+  Globe2,
+  Loader2,
+  MoreHorizontal,
+  Package,
+  Pencil,
+  RotateCcw,
+  Search,
+  Terminal,
+  Trash2,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { useBuiltinMcpStore } from "@/store";
+import { builtinServers, builtinHasOverrides } from "@/store/builtinMcp";
+import type { McpServer } from "@/types";
 import {
   BUILTIN_MCP_DEFS,
   builtinNeedsInstall,
@@ -25,10 +43,24 @@ function iconFor(def: BuiltinMcpDef) {
   }
 }
 
-export function BuiltinMcpSection() {
+export function BuiltinMcpSection({
+  onEdit,
+}: {
+  onEdit: (server: McpServer) => void;
+}) {
   const { t } = useTranslation("pages");
-  const { states, installing, errors, setEnabled, install, uninstall } =
-    useBuiltinMcpStore();
+  const {
+    states,
+    installing,
+    errors,
+    setEnabled,
+    install,
+    uninstall,
+    resetOverrides,
+  } = useBuiltinMcpStore();
+
+  const servers = builtinServers(states);
+  const serverById = new Map(servers.map((s) => [s.id, s]));
 
   return (
     <section className="space-y-3">
@@ -54,9 +86,15 @@ export function BuiltinMcpSection() {
             enabled={states[def.id]?.enabled ?? false}
             installing={installing[def.id] ?? false}
             error={errors[def.id]}
+            customized={builtinHasOverrides(states, def.id)}
             onToggle={(v) => setEnabled(def.id, v)}
             onInstall={() => install(def.id).catch(() => {})}
             onUninstall={() => uninstall(def.id)}
+            onEdit={() => {
+              const server = serverById.get(def.id);
+              if (server) onEdit(server);
+            }}
+            onReset={() => resetOverrides(def.id)}
           />
         ))}
       </div>
@@ -70,18 +108,24 @@ function BuiltinCard({
   enabled,
   installing,
   error,
+  customized,
   onToggle,
   onInstall,
   onUninstall,
+  onEdit,
+  onReset,
 }: {
   def: BuiltinMcpDef;
   installed: boolean;
   enabled: boolean;
   installing: boolean;
   error?: string;
+  customized: boolean;
   onToggle: (v: boolean) => void;
   onInstall: () => void;
   onUninstall: () => void;
+  onEdit: () => void;
+  onReset: () => void;
 }) {
   const { t } = useTranslation("pages");
   const [showLog, setShowLog] = useState(false);
@@ -149,35 +193,67 @@ function BuiltinCard({
         )}
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
-        {needsInstall ? (
-          installed ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={onUninstall}
-              disabled={installing}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              {t("mcp_builtin_uninstall")}
-            </Button>
+      <div className="mt-4 flex items-center justify-between gap-2 border-t border-border pt-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {customized && (
+            <Badge variant="default" className="rounded-sm">
+              {t("mcp_builtin_customized")}
+            </Badge>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {needsInstall ? (
+            installed ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={onUninstall}
+                disabled={installing}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                {t("mcp_builtin_uninstall")}
+              </Button>
+            ) : (
+              <Button size="sm" onClick={onInstall} disabled={installing}>
+                {installing ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Package className="h-3.5 w-3.5" />
+                )}
+                {installing
+                  ? t("mcp_builtin_installing")
+                  : t("mcp_builtin_install")}
+              </Button>
+            )
           ) : (
-            <Button size="sm" onClick={onInstall} disabled={installing}>
-              {installing ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              ) : (
-                <Package className="h-3.5 w-3.5" />
+            <span className="text-label-12 text-muted-foreground">
+              {t("mcp_builtin_ready")}
+            </span>
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("mcp_edit_title")}
+              >
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={onEdit}>
+                <Pencil className="h-4 w-4" />
+                {t("edit", { ns: "common" })}
+              </DropdownMenuItem>
+              {customized && (
+                <DropdownMenuItem onClick={onReset}>
+                  <RotateCcw className="h-4 w-4" />
+                  {t("mcp_builtin_reset")}
+                </DropdownMenuItem>
               )}
-              {installing
-                ? t("mcp_builtin_installing")
-                : t("mcp_builtin_install")}
-            </Button>
-          )
-        ) : (
-          <span className="text-label-12 text-muted-foreground">
-            {t("mcp_builtin_ready")}
-          </span>
-        )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
     </article>
   );
