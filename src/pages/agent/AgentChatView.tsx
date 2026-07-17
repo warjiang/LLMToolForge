@@ -118,7 +118,12 @@ import {
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { openSessionWorkspace, resolveSessionWorkspace } from "@/lib/agent/workspace";
-import { registerPreview } from "@/lib/preview";
+import {
+  mediaKindForPath,
+  registerPreview,
+  registerPreviewMedia,
+  type PreviewMediaKind,
+} from "@/lib/preview";
 import { exportReportHtml, exportReportPdf } from "@/lib/reportExport";
 import {
   usePreviewStore,
@@ -650,16 +655,106 @@ function videoContentForStatus(taskId: string, status?: string, attempt?: number
   return lines.join("\n");
 }
 
-async function openArtifactPreview(
-  dir: string,
-  title?: string,
-  file?: string
-): Promise<void> {
+type BrowserArtifact = {
+  kind: "browser";
+  dir: string;
+  title?: string;
+  file?: string;
+};
+
+type MediaArtifact = {
+  kind: "media";
+  path: string;
+  mediaKind: PreviewMediaKind;
+  title?: string;
+};
+
+type PreviewArtifact = BrowserArtifact | MediaArtifact;
+
+function fileNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const idx = normalized.lastIndexOf("/");
+  return idx >= 0 ? normalized.slice(idx + 1) : normalized;
+}
+
+function dirNameFromPath(path: string): string {
+  const normalized = path.replace(/\\/g, "/");
+  const idx = normalized.lastIndexOf("/");
+  return idx > 0 ? normalized.slice(0, idx) : "";
+}
+
+function parseJsonObject(value: string | undefined): Record<string, unknown> | null {
+  if (!value) return null;
   try {
-    const reg = await registerPreview(dir);
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function gatherPathCandidates(value: unknown, out: string[], depth = 0): void {
+  if (depth > 4 || out.length > 40 || value == null) return;
+  if (typeof value === "string") {
+    out.push(value);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) gatherPathCandidates(item, out, depth + 1);
+    return;
+  }
+  if (typeof value === "object") {
+    for (const [key, nested] of Object.entries(value as Record<string, unknown>)) {
+      if (
+        typeof nested === "string" &&
+        /(path|file|output)/i.test(key) &&
+        !/^https?:\/\//i.test(nested) &&
+        !nested.startsWith("data:")
+      ) {
+        out.push(nested);
+      } else {
+        gatherPathCandidates(nested, out, depth + 1);
+      }
+    }
+  }
+}
+
+const MEDIA_PATH_IN_TEXT_RE =
+  /(?:^|[\s"'`])((?:\/|\.{1,2}\/|~\/|[A-Za-z]:\\)[^"'`\s]+\.(?:png|jpe?g|webp|gif|bmp|svg|mp4|mov|webm|m4v|mpeg|mpg|mp3|wav|ogg|m4a|aac|flac|pdf))(?=$|[\s"'`])/gi;
+
+function mediaPathFromText(text: string | undefined): string | null {
+  if (!text) return null;
+  let match: RegExpExecArray | null = null;
+  let last: string | null = null;
+  while ((match = MEDIA_PATH_IN_TEXT_RE.exec(text)) != null) {
+    last = match[1];
+  }
+  return last;
+}
+
+function mediaArtifactFromPath(path: string): MediaArtifact | null {
+  const mediaKind = mediaKindForPath(path);
+  if (!mediaKind) return null;
+  return {
+    kind: "media",
+    path,
+    mediaKind,
+    title: fileNameFromPath(path),
+  };
+}
+
+async function openArtifactPreview(artifact: PreviewArtifact): Promise<void> {
+  try {
+    if (artifact.kind === "media") {
+      const url = await registerPreviewMedia(artifact.path);
+      if (!url) return;
+      usePreviewStore.getState().openPreview(url, artifact.title);
+      return;
+    }
+    const reg = await registerPreview(artifact.dir);
     if (reg) {
-      const url = file ? reg.url + encodeURIComponent(file) : reg.url;
-      usePreviewStore.getState().openPreview(url, title, dir);
+      const url = artifact.file ? reg.url + encodeURIComponent(artifact.file) : reg.url;
+      usePreviewStore.getState().openPreview(url, artifact.title, artifact.dir);
     }
   } catch (e) {
     console.error("Failed to open DataAgent preview", e);
@@ -669,8 +764,10 @@ async function openArtifactPreview(
 /** Output dir (+ optional file/title) for a previewable tool result, if any. */
 function dataArtifact(
   toolName: string | undefined,
-  resultJson: unknown
-): { dir: string; title?: string; file?: string } | null {
+  resultJson: unknown,
+  argumentsJson?: string,
+  resultText?: string
+): PreviewArtifact | null {
   if (toolName === "data_chart_html" || toolName === "data_report_html") {
     const details = resultJson as
       | { outputDir?: string; title?: string }
@@ -678,7 +775,7 @@ function dataArtifact(
       | undefined;
     const dir = details?.outputDir;
     if (!dir) return null;
-    return { dir, title: details?.title };
+    return { kind: "browser", dir, title: details?.title };
   }
   if (
     toolName === "html_artifact_create" ||
@@ -690,33 +787,51 @@ function dataArtifact(
       | undefined;
     const dir = details?.outputDir;
     if (!dir) return null;
-    return { dir, title: details?.title };
+   return { kind: "browser", dir, title: details?.title };
   }
-  // Safety net: an HTML file written via the `write` tool is still previewable.
+  // Safety net: an HTML/media file written via the `write` tool is still previewable.
   if (toolName === "write") {
     const details = resultJson as { path?: string } | null | undefined;
     const path = details?.path;
-    if (!path || !/\.html?$/i.test(path)) return null;
-    const sep = path.lastIndexOf("/") >= 0 ? "/" : "\\";
-    const idx = path.lastIndexOf(sep);
-    if (idx <= 0) return null;
-    const dir = path.slice(0, idx);
-    const file = path.slice(idx + 1);
-    // index.html is served at the directory root; name others explicitly.
-    return file.toLowerCase() === "index.html"
-      ? { dir, title: file }
-      : { dir, title: file, file };
+   if (path) {
+     if (/\.html?$/i.test(path)) {
+       const dir = dirNameFromPath(path);
+       const file = fileNameFromPath(path);
+       if (dir) {
+         return file.toLowerCase() === "index.html"
+           ? { kind: "browser", dir, title: file }
+           : { kind: "browser", dir, title: file, file };
+       }
+     }
+     const media = mediaArtifactFromPath(path);
+     if (media) return media;
+   }
+  }
+
+  const pathCandidates: string[] = [];
+  gatherPathCandidates(resultJson, pathCandidates);
+  const args = parseJsonObject(argumentsJson);
+  const bashCommand =
+   toolName === "bash" && typeof args?.command === "string" ? args.command : undefined;
+  const bashPath = mediaPathFromText(`${bashCommand ?? ""}\n${resultText ?? ""}`);
+  if (bashPath) pathCandidates.push(bashPath);
+
+  for (let i = pathCandidates.length - 1; i >= 0; i -= 1) {
+   const media = mediaArtifactFromPath(pathCandidates[i]);
+   if (media) return media;
   }
   return null;
 }
 
 async function maybeOpenPreview(
   toolName: string | undefined,
-  resultJson: unknown
+  resultJson: unknown,
+  argumentsJson?: string,
+  resultText?: string
 ): Promise<void> {
-  const artifact = dataArtifact(toolName, resultJson);
-  if (!artifact) return;
-  await openArtifactPreview(artifact.dir, artifact.title, artifact.file);
+  const artifact = dataArtifact(toolName, resultJson, argumentsJson, resultText);
+  if (!artifact || artifact.kind !== "browser") return;
+  await openArtifactPreview(artifact);
 }
 
 export function AgentChatView() {
@@ -2251,7 +2366,12 @@ export function AgentChatView() {
         });
         st.toolRecords.delete(toolCallId);
         if (!isError) {
-          void maybeOpenPreview(startedRec?.toolName, resultJson);
+          void maybeOpenPreview(
+            startedRec?.toolName,
+            resultJson,
+            startedRec?.argumentsJson,
+            resultText
+          );
         }
       },
       onError: async (raw) => {
@@ -4747,7 +4867,7 @@ function ChatBubble({
                     key={attachment.id}
                     src={attachmentSrc(attachment)}
                     alt={attachment.name}
-                    className="h-auto max-w-full rounded-sm border border-border bg-background"
+                    className="mx-auto h-auto max-h-[32rem] w-auto max-w-full rounded-sm border border-border bg-background object-contain"
                   />
                 ))}
               </div>
@@ -5156,6 +5276,25 @@ function toolCallGoal(argumentsJson: string | undefined): string | null {
   }
 }
 
+function artifactButtonVisual(artifact: PreviewArtifact): {
+  Icon: ComponentType<{ className?: string }>;
+  labelKey: "agent_open_in_browser" | "agent_preview_media";
+} {
+  if (artifact.kind === "browser") {
+    return { Icon: Globe, labelKey: "agent_open_in_browser" };
+  }
+  if (artifact.mediaKind === "video") {
+    return { Icon: FileVideo, labelKey: "agent_preview_media" };
+  }
+  if (artifact.mediaKind === "audio") {
+    return { Icon: FileAudio, labelKey: "agent_preview_media" };
+  }
+  if (artifact.mediaKind === "pdf") {
+    return { Icon: FileText, labelKey: "agent_preview_media" };
+  }
+  return { Icon: FileImage, labelKey: "agent_preview_media" };
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
@@ -5179,7 +5318,16 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const expandable = hasArgs || hasResult || hasError;
   const goal = toolCallGoal(call.argumentsJson);
   const artifact =
-    call.status === "success" ? dataArtifact(call.toolName, call.resultJson) : null;
+    call.status === "success"
+      ? dataArtifact(
+          call.toolName,
+          call.resultJson,
+          call.argumentsJson,
+          call.resultText ?? undefined
+        )
+      : null;
+  const artifactVisual = artifact ? artifactButtonVisual(artifact) : null;
+  const ArtifactIcon = artifactVisual?.Icon ?? Globe;
 
   return (
     <div
@@ -5256,15 +5404,13 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
         {artifact && (
           <button
             type="button"
-            title={t("agent_open_in_browser")}
-            onClick={() =>
-              void openArtifactPreview(artifact.dir, artifact.title, artifact.file)
-            }
+            title={t(artifactVisual?.labelKey ?? "agent_open_in_browser")}
+            onClick={() => void openArtifactPreview(artifact)}
             className="mr-1.5 inline-flex h-6 shrink-0 items-center gap-1 rounded-sm bg-accent/10 px-1.5 font-medium text-accent transition-colors hover:bg-accent/20"
           >
-            <Globe className="h-3.5 w-3.5" />
+            <ArtifactIcon className="h-3.5 w-3.5" />
             <span className="hidden text-label-12 sm:inline">
-              {t("agent_open_in_browser")}
+              {t(artifactVisual?.labelKey ?? "agent_open_in_browser")}
             </span>
           </button>
         )}

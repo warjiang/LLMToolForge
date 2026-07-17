@@ -19,7 +19,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::fs::File;
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
 /// Bundled ECharts runtime, served at `/_vendor/echarts.min.js`.
@@ -169,6 +170,15 @@ async fn handle_conn(
     let mut parts = request_line.split_whitespace();
     let method = parts.next().unwrap_or("GET").to_string();
     let raw_path = parts.next().unwrap_or("/").to_string();
+    let range_header = head.lines().find_map(|line| {
+        line.split_once(':').and_then(|(name, value)| {
+            if name.trim().eq_ignore_ascii_case("range") {
+                Some(value.trim().to_string())
+            } else {
+                None
+            }
+        })
+    });
 
     // POST sink: render-mode webview delivers the page snapshot here.
     if method.eq_ignore_ascii_case("POST") {
@@ -201,30 +211,85 @@ async fn handle_conn(
         }
     }
 
-    let (status, ctype, body) = route(&raw_path, &state);
-    let header = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n",
-        len = body.len()
+    let resp = route(&raw_path, &state, range_header.as_deref());
+    let mut header = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {len}\r\nAccess-Control-Allow-Origin: *\r\nCache-Control: no-cache\r\nConnection: close\r\n",
+        status = resp.status,
+        ctype = resp.ctype,
+        len = resp.content_length
     );
+    for (name, value) in resp.extra_headers {
+        header.push_str(name);
+        header.push_str(": ");
+        header.push_str(&value);
+        header.push_str("\r\n");
+    }
+    header.push_str("\r\n");
     stream.write_all(header.as_bytes()).await?;
-    stream.write_all(&body).await?;
+    match resp.body {
+        PreviewBody::Bytes(bytes) => {
+            stream.write_all(&bytes).await?;
+        }
+        PreviewBody::FileRange {
+            path,
+            start,
+            length,
+        } => {
+            if length > 0 {
+                let mut file = File::open(path).await?;
+                file.seek(std::io::SeekFrom::Start(start)).await?;
+                let mut remain = length;
+                let mut chunk = [0u8; 8192];
+                while remain > 0 {
+                    let want = chunk.len().min(remain as usize);
+                    let n = file.read(&mut chunk[..want]).await?;
+                    if n == 0 {
+                        break;
+                    }
+                    stream.write_all(&chunk[..n]).await?;
+                    remain = remain.saturating_sub(n as u64);
+                }
+            }
+        }
+    }
     stream.flush().await?;
     Ok(())
+}
+
+enum PreviewBody {
+    Bytes(Vec<u8>),
+    FileRange {
+        path: PathBuf,
+        start: u64,
+        length: u64,
+    },
+}
+
+struct PreviewHttpResponse {
+    status: &'static str,
+    ctype: &'static str,
+    content_length: u64,
+    body: PreviewBody,
+    extra_headers: Vec<(&'static str, String)>,
 }
 
 fn route(
     raw_path: &str,
     state: &Arc<Mutex<PreviewInner>>,
-) -> (&'static str, &'static str, Vec<u8>) {
-    let path = raw_path.split(['?', '#']).next().unwrap_or("/");
+    range: Option<&str>,
+) -> PreviewHttpResponse {
+    let no_hash = raw_path.split('#').next().unwrap_or("/");
+    let (path, query) = no_hash.split_once('?').unwrap_or((no_hash, ""));
     let path = path.trim_start_matches('/');
 
     if path == "_vendor/echarts.min.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            ECHARTS_JS.to_vec(),
-        );
+        return PreviewHttpResponse {
+            status: "200 OK",
+            ctype: "application/javascript; charset=utf-8",
+            content_length: ECHARTS_JS.len() as u64,
+            body: PreviewBody::Bytes(ECHARTS_JS.to_vec()),
+            extra_headers: Vec::new(),
+        };
     }
 
     let (token, rest) = match path.split_once('/') {
@@ -232,10 +297,6 @@ fn route(
         None => (path, ""),
     };
     if token.is_empty() {
-        return not_found();
-    }
-    let rest = if rest.is_empty() { "index.html" } else { rest };
-    if rest.contains("..") {
         return not_found();
     }
 
@@ -247,26 +308,241 @@ fn route(
         }
     };
 
-    let candidate = dir.join(rest);
-    let canon = match candidate.canonicalize() {
-        Ok(p) => p,
+    // HTML wrapper for non-HTML artifacts (image/video/audio/pdf).
+    if rest == "__view" {
+        let Some((file, kind)) = parse_view_query(query) else {
+            return not_found();
+        };
+        let Some(_canon) = resolve_mounted_file(&dir, &file) else {
+            return not_found();
+        };
+        if !matches!(kind.as_str(), "image" | "video" | "audio" | "pdf") {
+            return not_found();
+        }
+        let encoded_path = percent_encode_path(&file);
+        let escaped_name = html_escape(&file);
+        let media_src = format!("/{token}/{encoded_path}");
+        let body = build_viewer_html(&media_src, &kind, &escaped_name).into_bytes();
+        return PreviewHttpResponse {
+            status: "200 OK",
+            ctype: "text/html; charset=utf-8",
+            content_length: body.len() as u64,
+            body: PreviewBody::Bytes(body),
+            extra_headers: Vec::new(),
+        };
+    }
+
+    let rest = if rest.is_empty() { "index.html" } else { rest };
+    let Some(canon) = resolve_mounted_file(&dir, rest) else {
+        return not_found();
+    };
+    let file_len = match canon.metadata() {
+        Ok(m) => m.len(),
         Err(_) => return not_found(),
     };
-    if !canon.starts_with(&dir) || !canon.is_file() {
-        return not_found();
-    }
-    match std::fs::read(&canon) {
-        Ok(bytes) => ("200 OK", content_type(&canon), bytes),
-        Err(_) => not_found(),
+    let mut extra_headers = vec![("Accept-Ranges", "bytes".to_string())];
+    match apply_range(range, file_len as usize) {
+        Ok(Some((start, end))) => {
+            extra_headers.push(("Content-Range", format!("bytes {start}-{end}/{file_len}")));
+            PreviewHttpResponse {
+                status: "206 Partial Content",
+                ctype: content_type(&canon),
+                content_length: (end - start + 1) as u64,
+                body: PreviewBody::FileRange {
+                    path: canon,
+                    start: start as u64,
+                    length: (end - start + 1) as u64,
+                },
+                extra_headers,
+            }
+        }
+        Ok(None) => PreviewHttpResponse {
+            status: "200 OK",
+            ctype: content_type(&canon),
+            content_length: file_len,
+            body: PreviewBody::FileRange {
+                path: canon,
+                start: 0,
+                length: file_len,
+            },
+            extra_headers,
+        },
+        Err(()) => PreviewHttpResponse {
+            status: "416 Range Not Satisfiable",
+            ctype: "text/plain; charset=utf-8",
+            content_length: 21,
+            body: PreviewBody::Bytes(b"Range Not Satisfiable".to_vec()),
+            extra_headers,
+        },
     }
 }
 
-fn not_found() -> (&'static str, &'static str, Vec<u8>) {
-    (
-        "404 Not Found",
-        "text/plain; charset=utf-8",
-        b"Not Found".to_vec(),
+fn parse_view_query(query: &str) -> Option<(String, String)> {
+    let mut file = None;
+    let mut kind = None;
+    for pair in query.split('&') {
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode(raw_key)?;
+        let value = percent_decode(raw_value)?;
+        if key == "f" {
+            file = Some(value);
+        } else if key == "kind" {
+            kind = Some(value);
+        }
+    }
+    Some((file?, kind?))
+}
+
+fn resolve_mounted_file(dir: &Path, rel: &str) -> Option<PathBuf> {
+    if rel.contains("..") {
+        return None;
+    }
+    let candidate = dir.join(rel);
+    let canon = candidate.canonicalize().ok()?;
+    if !canon.starts_with(dir) || !canon.is_file() {
+        return None;
+    }
+    Some(canon)
+}
+
+fn apply_range(range: Option<&str>, len: usize) -> Result<Option<(usize, usize)>, ()> {
+    let Some(range_header) = range else {
+        return Ok(None);
+    };
+    let Some((start, end)) = parse_range(range_header, len)? else {
+        return Ok(None);
+    };
+    Ok(Some((start, end)))
+}
+
+fn parse_range(range_header: &str, len: usize) -> Result<Option<(usize, usize)>, ()> {
+    if !range_header.starts_with("bytes=") {
+        return Ok(None);
+    }
+    if len == 0 {
+        return Err(());
+    }
+    let spec = range_header
+        .trim_start_matches("bytes=")
+        .split(',')
+        .next()
+        .unwrap_or("");
+    let (start_raw, end_raw) = spec.split_once('-').ok_or(())?;
+    if start_raw.is_empty() {
+        let suffix = end_raw.parse::<usize>().map_err(|_| ())?;
+        if suffix == 0 {
+            return Err(());
+        }
+        let start = len.saturating_sub(suffix);
+        return Ok(Some((start, len - 1)));
+    }
+    let start = start_raw.parse::<usize>().map_err(|_| ())?;
+    if start >= len {
+        return Err(());
+    }
+    let end = if end_raw.is_empty() {
+        len - 1
+    } else {
+        let parsed = end_raw.parse::<usize>().map_err(|_| ())?;
+        parsed.min(len - 1)
+    };
+    if end < start {
+        return Err(());
+    }
+    Ok(Some((start, end)))
+}
+
+fn percent_decode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] == b'%' {
+            if i + 2 >= bytes.len() {
+                return None;
+            }
+            let hex = std::str::from_utf8(&bytes[i + 1..i + 3]).ok()?;
+            let val = u8::from_str_radix(hex, 16).ok()?;
+            out.push(val);
+            i += 3;
+            continue;
+        }
+        out.push(bytes[i]);
+        i += 1;
+    }
+    String::from_utf8(out).ok()
+}
+
+fn percent_encode_path(input: &str) -> String {
+    const HEX: &[u8; 16] = b"0123456789ABCDEF";
+    let mut out = String::with_capacity(input.len());
+    for b in input.as_bytes() {
+        let safe = b.is_ascii_alphanumeric() || matches!(*b, b'-' | b'_' | b'.' | b'~' | b'/');
+        if safe {
+            out.push(char::from(*b));
+        } else {
+            out.push('%');
+            out.push(char::from(HEX[(b >> 4) as usize]));
+            out.push(char::from(HEX[(b & 0x0F) as usize]));
+        }
+    }
+    out
+}
+
+fn html_escape(input: &str) -> String {
+    input
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn build_viewer_html(src: &str, kind: &str, name: &str) -> String {
+    let media = match kind {
+        "image" => format!(
+            r#"<img src="{src}" alt="{name}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;" />"#
+        ),
+        "video" => format!(
+            r#"<video src="{src}" controls style="max-width:100%;max-height:100%;display:block;background:#000;"></video>"#
+        ),
+        "audio" => {
+            format!(r#"<audio src="{src}" controls style="width:min(960px,96vw);"></audio>"#)
+        }
+        "pdf" => format!(
+            r#"<iframe src="{src}" title="{name}" style="width:100%;height:100%;border:0;background:#fff;"></iframe>"#
+        ),
+        _ => "<div>Unsupported preview kind</div>".to_string(),
+    };
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>{name}</title>
+    <style>
+      html,body{{height:100%;margin:0}}
+      body{{background:#0b0f14;color:#e8edf2;display:flex;flex-direction:column;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}}
+      header{{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:#9fb0c3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
+      main{{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;min-height:0}}
+    </style>
+  </head>
+  <body>
+    <header>{name}</header>
+    <main>{media}</main>
+  </body>
+</html>"#
     )
+}
+
+fn not_found() -> PreviewHttpResponse {
+    PreviewHttpResponse {
+        status: "404 Not Found",
+        ctype: "text/plain; charset=utf-8",
+        content_length: 9,
+        body: PreviewBody::Bytes(b"Not Found".to_vec()),
+        extra_headers: Vec::new(),
+    }
 }
 
 fn content_type(path: &Path) -> &'static str {
@@ -280,6 +556,21 @@ fn content_type(path: &Path) -> &'static str {
         "jpg" | "jpeg" => "image/jpeg",
         "gif" => "image/gif",
         "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "mp4" => "video/mp4",
+        "mov" => "video/quicktime",
+        "webm" => "video/webm",
+        "m4v" => "video/x-m4v",
+        "mpeg" | "mpg" => "video/mpeg",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "ogg" => "audio/ogg",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        "flac" => "audio/flac",
+        "pdf" => "application/pdf",
+        "txt" => "text/plain; charset=utf-8",
+        "md" => "text/markdown; charset=utf-8",
         "woff2" => "font/woff2",
         "woff" => "font/woff",
         "csv" => "text/csv; charset=utf-8",
@@ -290,6 +581,7 @@ fn content_type(path: &Path) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Seek, SeekFrom};
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(tag: &str) -> PathBuf {
@@ -310,14 +602,31 @@ mod tests {
         Arc::new(Mutex::new(inner))
     }
 
+    fn read_resp_body(resp: &PreviewHttpResponse) -> Vec<u8> {
+        match &resp.body {
+            PreviewBody::Bytes(bytes) => bytes.clone(),
+            PreviewBody::FileRange {
+                path,
+                start,
+                length,
+            } => {
+                let mut file = std::fs::File::open(path).unwrap();
+                file.seek(SeekFrom::Start(*start)).unwrap();
+                let mut chunk = vec![0u8; *length as usize];
+                file.read_exact(&mut chunk).unwrap();
+                chunk
+            }
+        }
+    }
+
     #[test]
     fn serves_vendor_echarts() {
         let dir = temp_dir("vendor");
         let state = state_with("tok", &dir);
-        let (status, ctype, body) = route("/_vendor/echarts.min.js", &state);
-        assert_eq!(status, "200 OK");
-        assert!(ctype.starts_with("application/javascript"));
-        assert!(!body.is_empty());
+        let resp = route("/_vendor/echarts.min.js", &state, None);
+        assert_eq!(resp.status, "200 OK");
+        assert!(resp.ctype.starts_with("application/javascript"));
+        assert!(!read_resp_body(&resp).is_empty());
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -326,10 +635,10 @@ mod tests {
         let dir = temp_dir("index");
         std::fs::write(dir.join("index.html"), b"<h1>hi</h1>").unwrap();
         let state = state_with("tok", &dir);
-        let (status, ctype, body) = route("/tok/", &state);
-        assert_eq!(status, "200 OK");
-        assert!(ctype.starts_with("text/html"));
-        assert_eq!(body, b"<h1>hi</h1>");
+        let resp = route("/tok/", &state, None);
+        assert_eq!(resp.status, "200 OK");
+        assert!(resp.ctype.starts_with("text/html"));
+        assert_eq!(read_resp_body(&resp), b"<h1>hi</h1>");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -338,10 +647,10 @@ mod tests {
         let dir = temp_dir("asset");
         std::fs::write(dir.join("main.js"), b"console.log(1)").unwrap();
         let state = state_with("tok", &dir);
-        let (status, ctype, body) = route("/tok/main.js?v=2", &state);
-        assert_eq!(status, "200 OK");
-        assert!(ctype.starts_with("application/javascript"));
-        assert_eq!(body, b"console.log(1)");
+        let resp = route("/tok/main.js?v=2", &state, None);
+        assert_eq!(resp.status, "200 OK");
+        assert!(resp.ctype.starts_with("application/javascript"));
+        assert_eq!(read_resp_body(&resp), b"console.log(1)");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -350,8 +659,8 @@ mod tests {
         let dir = temp_dir("trav");
         std::fs::write(dir.join("index.html"), b"ok").unwrap();
         let state = state_with("tok", &dir);
-        let (status, _, _) = route("/tok/../../etc/passwd", &state);
-        assert_eq!(status, "404 Not Found");
+        let resp = route("/tok/../../etc/passwd", &state, None);
+        assert_eq!(resp.status, "404 Not Found");
         let _ = std::fs::remove_dir_all(dir);
     }
 
@@ -359,8 +668,44 @@ mod tests {
     fn unknown_token_is_404() {
         let dir = temp_dir("unknown");
         let state = state_with("tok", &dir);
-        let (status, _, _) = route("/nope/index.html", &state);
-        assert_eq!(status, "404 Not Found");
+        let resp = route("/nope/index.html", &state, None);
+        assert_eq!(resp.status, "404 Not Found");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn serves_media_content_types() {
+        assert_eq!(content_type(Path::new("a.mp4")), "video/mp4");
+        assert_eq!(content_type(Path::new("a.mp3")), "audio/mpeg");
+        assert_eq!(content_type(Path::new("a.pdf")), "application/pdf");
+    }
+
+    #[test]
+    fn serves_partial_content_with_range() {
+        let dir = temp_dir("range");
+        std::fs::write(dir.join("sample.mp4"), b"0123456789").unwrap();
+        let state = state_with("tok", &dir);
+        let resp = route("/tok/sample.mp4", &state, Some("bytes=2-5"));
+        assert_eq!(resp.status, "206 Partial Content");
+        assert_eq!(read_resp_body(&resp), b"2345");
+        assert!(resp
+            .extra_headers
+            .iter()
+            .any(|(k, v)| *k == "Content-Range" && v == "bytes 2-5/10"));
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn serves_viewer_page() {
+        let dir = temp_dir("viewer");
+        std::fs::write(dir.join("clip.mp4"), b"video").unwrap();
+        let state = state_with("tok", &dir);
+        let resp = route("/tok/__view?f=clip.mp4&kind=video", &state, None);
+        assert_eq!(resp.status, "200 OK");
+        assert!(resp.ctype.starts_with("text/html"));
+        let html = String::from_utf8(read_resp_body(&resp)).unwrap();
+        assert!(html.contains("<video"));
+        assert!(html.contains("/tok/clip.mp4"));
         let _ = std::fs::remove_dir_all(dir);
     }
 }
