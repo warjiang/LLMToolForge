@@ -14,6 +14,7 @@
 //! command lookup resolves the same binaries the user sees in their terminal.
 
 use std::sync::OnceLock;
+#[cfg(unix)]
 use std::time::Duration;
 
 /// Cached, login-shell-augmented `PATH`. Computed lazily on first use.
