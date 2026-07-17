@@ -99,6 +99,7 @@ import {
 } from "@/store";
 import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
+import { useMessageActionsStore } from "@/store/messageActions";
 import { useUnifiedStore } from "@/store/unified";
 import {
   createAgentRuntime,
@@ -116,7 +117,7 @@ import {
   type SeedHistoryMessage,
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
-import { resolveSessionWorkspace } from "@/lib/agent/workspace";
+import { openSessionWorkspace, resolveSessionWorkspace } from "@/lib/agent/workspace";
 import { registerPreview } from "@/lib/preview";
 import { exportReportHtml, exportReportPdf } from "@/lib/reportExport";
 import {
@@ -2723,6 +2724,27 @@ export function AgentChatView() {
           <div className="flex items-center gap-2">
             <Button
               size="icon-sm"
+              variant="ghost"
+              disabled={!activeSession}
+              onClick={() => {
+                if (!activeSession) return;
+                void (async () => {
+                  try {
+                    await openSessionWorkspace(
+                      activeSession.id,
+                      settings?.workspacePath ?? ""
+                    );
+                  } catch (e) {
+                    console.error("Failed to open workspace folder", e);
+                  }
+                })();
+              }}
+              title={t("open_workspace_folder", { ns: "common" })}
+            >
+              <FolderOpen className="h-4 w-4" />
+            </Button>
+            <Button
+              size="icon-sm"
               variant={configOpen ? "secondary" : "ghost"}
               onClick={() => setConfigOpen((open) => !open)}
               title={configOpen ? t("agent_hide_config") : t("agent_show_config")}
@@ -2777,7 +2799,6 @@ export function AgentChatView() {
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
                         editing={editingThisMessage}
-                        debug={debug}
                         editingDraft={editingThisMessage ? editingDraft : ""}
                         onEditDraftChange={setEditingDraft}
                         onStartEdit={() => startEditingMessage(m)}
@@ -3363,8 +3384,12 @@ function ConfigRail({
   onClose: () => void;
 }) {
   const { t } = useTranslation("pages");
-  const debug = useDebugStore((s) => s.debug);
-  const setDebug = useDebugStore((s) => s.setDebug);
+  const msgShowTimestamp = useMessageActionsStore((s) => s.showTimestamp);
+  const msgAllowCopy = useMessageActionsStore((s) => s.allowCopy);
+  const msgAllowModify = useMessageActionsStore((s) => s.allowModify);
+  const setMsgShowTimestamp = useMessageActionsStore((s) => s.setShowTimestamp);
+  const setMsgAllowCopy = useMessageActionsStore((s) => s.setAllowCopy);
+  const setMsgAllowModify = useMessageActionsStore((s) => s.setAllowModify);
   // Backfill the effective working directory: when the user hasn't set an
   // explicit path, resolve the managed per-session default so the field shows
   // the real directory instead of an empty placeholder.
@@ -3508,9 +3533,6 @@ function ConfigRail({
 
       <RailSection icon={FolderOpen} title={t("agents_workspace_label")}>
         <div className="grid gap-1.5">
-          <Label htmlFor="agent-chat-workspace">
-            {t("agents_workspace_label")}
-          </Label>
           <div className="relative">
             <Input
               id="agent-chat-workspace"
@@ -3547,11 +3569,19 @@ function ConfigRail({
 
       <Separator className="my-4" />
 
-      <RailSection icon={ShieldIcon} title={t("agent_sandbox_section")}>
-        <SandboxModeSelect
-          value={settings.sandboxMode}
-          onChange={(sandboxMode) => onSettings({ sandboxMode })}
-        />
+      <div className="grid gap-3">
+        <div className="flex items-center gap-3">
+          <div className="flex shrink-0 items-center gap-2 text-label-12 font-medium uppercase tracking-wide text-muted-foreground">
+            <ShieldIcon className="h-3.5 w-3.5" />
+            {t("agent_sandbox_section")}
+          </div>
+          <div className="min-w-0 flex-1">
+            <SandboxModeSelect
+              value={settings.sandboxMode}
+              onChange={(sandboxMode) => onSettings({ sandboxMode })}
+            />
+          </div>
+        </div>
         {isResearchAgent && (
           <>
             <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
@@ -3572,20 +3602,42 @@ function ConfigRail({
             </div>
           </>
         )}
-      </RailSection>
+      </div>
 
       <Separator className="my-4" />
 
       <RailSection icon={Bug} title={t("agent_debug_section")}>
-        <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
-          <Label className="cursor-pointer" htmlFor="agent-debug-edit">
-            {t("agent_debug_edit_agent")}
-          </Label>
-          <Switch
-            id="agent-debug-edit"
-            checked={debug}
-            onCheckedChange={(value) => setDebug(value)}
-          />
+        <div className="grid gap-2">
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-timestamp">
+              {t("agent_message_show_timestamp")}
+            </Label>
+            <Switch
+              id="agent-msg-timestamp"
+              checked={msgShowTimestamp}
+              onCheckedChange={setMsgShowTimestamp}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-copy">
+              {t("agent_message_allow_copy")}
+            </Label>
+            <Switch
+              id="agent-msg-copy"
+              checked={msgAllowCopy}
+              onCheckedChange={setMsgAllowCopy}
+            />
+          </div>
+          <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
+            <Label className="cursor-pointer" htmlFor="agent-msg-modify">
+              {t("agent_message_allow_modify")}
+            </Label>
+            <Switch
+              id="agent-msg-modify"
+              checked={msgAllowModify}
+              onCheckedChange={setMsgAllowModify}
+            />
+          </div>
         </div>
       </RailSection>
 
@@ -3599,30 +3651,96 @@ function ConfigRail({
         ) : (
           <div className="grid gap-2">
             {toolCalls.slice(0, 5).map((call) => (
-              <div key={call.id} className="rounded-md border border-border bg-card p-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-label-12 font-medium">
-                    {call.title}
-                  </span>
-                  <Badge
-                    variant={call.status === "success" ? "success" : "warning"}
-                    className="rounded-sm"
-                  >
-                    {call.status}
-                  </Badge>
-                </div>
-                {call.resultText && (
-                  <div className="mt-1.5 line-clamp-2 text-label-12 text-muted-foreground">
-                    {call.resultText}
-                  </div>
-                )}
-              </div>
+              <ToolRecordItem key={call.id} call={call} />
             ))}
           </div>
         )}
       </RailSection>
       </div>
     </aside>
+  );
+}
+
+function ToolRecordItem({ call }: { call: ToolCallRecord }) {
+  const [open, setOpen] = useState(false);
+  const parsed = parseToolName(call.toolName || call.title);
+  const goal = toolCallGoal(call.argumentsJson);
+  const resultRaw =
+    call.resultText && call.resultText.trim().length > 0
+      ? call.resultText
+      : call.resultJson != null
+        ? JSON.stringify(call.resultJson, null, 2)
+        : "";
+  const result = formatMaybeJson(resultRaw);
+  const hasResult = result.length > 0;
+  const hasError = !!call.error && call.error.trim().length > 0;
+  const expandable = hasResult || hasError || !!goal;
+  const preview = goal || result || call.error || "";
+  return (
+    <div className="overflow-hidden rounded-md border border-border bg-card">
+      <button
+        type="button"
+        onClick={() => expandable && setOpen((v) => !v)}
+        disabled={!expandable}
+        className={cn(
+          "flex w-full items-center gap-2 px-2.5 py-2 text-left",
+          expandable && "cursor-pointer hover:bg-muted/40"
+        )}
+      >
+        <ChevronRight
+          className={cn(
+            "h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform",
+            !expandable && "opacity-0",
+            open && "rotate-90"
+          )}
+        />
+        <span className="min-w-0 flex-1 truncate font-mono text-label-12 font-medium">
+          {parsed.name}
+        </span>
+        {parsed.server && (
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground">
+            <Server className="h-3 w-3" />
+            {parsed.server}
+          </span>
+        )}
+        <Badge
+          variant={
+            call.status === "success"
+              ? "success"
+              : call.status === "error"
+                ? "destructive"
+                : "warning"
+          }
+          className="shrink-0 rounded-sm"
+        >
+          {call.status}
+        </Badge>
+      </button>
+      {!open && preview && (
+        <div className="line-clamp-2 px-2.5 pb-2 text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
+          {preview}
+        </div>
+      )}
+      {open && (
+        <div className="grid gap-2 border-t border-border/60 px-2.5 py-2">
+          {goal && (
+            <div className="text-label-12 text-foreground [overflow-wrap:anywhere]">
+              {goal}
+            </div>
+          )}
+          {hasResult && (
+            <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-words rounded-sm bg-muted/40 p-2 font-mono text-label-12 text-muted-foreground [overflow-wrap:anywhere]">
+              {result}
+            </pre>
+          )}
+          {hasError && (
+            <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 p-2 text-label-12 text-destructive [overflow-wrap:anywhere]">
+              {call.error}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -4430,7 +4548,6 @@ function ChatBubble({
   typing,
   streaming,
   editing,
-  debug,
   editingDraft,
   actionsDisabled,
   onEditDraftChange,
@@ -4446,7 +4563,6 @@ function ChatBubble({
   typing?: boolean;
   streaming?: boolean;
   editing?: boolean;
-  debug?: boolean;
   editingDraft: string;
   actionsDisabled?: boolean;
   onEditDraftChange: (value: string) => void;
@@ -4458,6 +4574,9 @@ function ChatBubble({
 }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const showTimestamp = useMessageActionsStore((s) => s.showTimestamp);
+  const allowCopy = useMessageActionsStore((s) => s.allowCopy);
+  const allowModify = useMessageActionsStore((s) => s.allowModify);
   const editTextareaRef = useRef<HTMLTextAreaElement>(null);
   const isUser = message.role === "user";
   const isTool = message.role === "tool";
@@ -4548,6 +4667,7 @@ function ChatBubble({
   const toolsOpen = toolsUserOpen ?? toolsActive;
 
   const [copied, setCopied] = useState(false);
+  const [hovered, setHovered] = useState(false);
   const copyMessage = async () => {
     const text = visibleContent.trim() || message.content;
     if (!text) return;
@@ -4591,6 +4711,8 @@ function ChatBubble({
           "group relative flex w-fit min-w-[8.5rem] max-w-[90%] flex-col gap-1.5",
           isUser && "items-end"
         )}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       >
         {showReasoning && (
           <ReasoningTrace
@@ -4727,19 +4849,25 @@ function ChatBubble({
         {!typing && !actionOnly && (
           <div
             className={cn(
-              "flex items-center gap-2 opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100",
+              "flex items-center gap-2 transition-opacity duration-150",
+              hovered ? "opacity-100" : "pointer-events-none opacity-0",
               isUser && "flex-row-reverse"
             )}
           >
-            <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
-              {formatMessageTime(message.createdAt)}
-            </span>
-            {hasVisibleContent && !editing && (
+            {showTimestamp && (
+              <span className="select-none whitespace-nowrap px-0.5 text-label-12 tabular-nums text-muted-foreground">
+                {formatMessageTime(message.createdAt)}
+              </span>
+            )}
+            {allowCopy && hasVisibleContent && !editing && (
               <Button
                 size="icon-sm"
                 variant="ghost"
                 title={copied ? t("agent_copied") : t("agent_copy_message")}
-                onClick={copyMessage}
+                onClick={(e) => {
+                  copyMessage();
+                  e.currentTarget.blur();
+                }}
               >
                 {copied ? (
                   <Check className="h-3.5 w-3.5 text-success" />
@@ -4748,7 +4876,7 @@ function ChatBubble({
                 )}
               </Button>
             )}
-            {debug && !editing && !actionsDisabled && (
+            {!editing && !actionsDisabled && allowModify && (
               <div
                 className={cn(
                   "flex gap-1",
