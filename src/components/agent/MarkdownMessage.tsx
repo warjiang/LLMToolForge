@@ -2,10 +2,19 @@ import { memo, useState, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Check, Copy } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, isTauri } from "@/lib/utils";
 
-function openExternal(href?: string) {
+async function openExternal(href?: string) {
   if (!href) return;
+  if (isTauri()) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("open_external_url", { url: href });
+    } catch (e) {
+      console.error("Failed to open external link", e);
+    }
+    return;
+  }
   try {
     window.open(href, "_blank", "noopener,noreferrer");
   } catch {
@@ -65,10 +74,13 @@ const components: Components = {
   a: ({ href, children }) => (
     <a
       href={href}
+      target="_blank"
+      rel="noreferrer"
       onClick={(e) => {
         e.preventDefault();
-        openExternal(href);
+        void openExternal(href);
       }}
+      onContextMenu={(e) => e.preventDefault()}
       className="font-medium text-accent underline decoration-accent/40 underline-offset-2 transition-colors hover:decoration-accent"
     >
       {children}
