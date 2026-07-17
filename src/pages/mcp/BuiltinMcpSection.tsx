@@ -265,9 +265,9 @@ function BuiltinCard({
               </Button>
             )
           ) : (
-            <span className="text-label-12 text-muted-foreground">
+            <Badge variant="outline" className="rounded-sm">
               {t("mcp_builtin_ready")}
-            </span>
+            </Badge>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
