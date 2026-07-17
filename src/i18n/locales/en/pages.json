@@ -240,6 +240,7 @@
   "mcp_install_hint": "Install to enable, edit and debug",
   "mcp_builtin_title": "Built-in tools",
   "mcp_builtin_badge": "Ready to use",
+  "mcp_builtin_tag": "Built-in",
   "mcp_builtin_desc": "Tools that ship with the app. Install Playwright once to enable it; Web Search and Web Fetch run locally with no install. Enabled tools can be selected per agent.",
   "mcp_builtin_local": "Local",
   "mcp_builtin_ready": "No install required",

@@ -184,6 +184,9 @@ function BuiltinCard({
                 <h3 className="truncate text-heading-16 text-foreground">
                   {def.name}
                 </h3>
+                <Badge variant="accent" className="rounded-sm uppercase">
+                  {t("mcp_builtin_tag")}
+                </Badge>
                 <Badge variant="outline" className="rounded-sm uppercase">
                   {def.runtime === "local"
                     ? t("mcp_builtin_local")
