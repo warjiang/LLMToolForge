@@ -221,9 +221,7 @@ impl StdioSession {
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let mut child = cmd
-            .spawn()
-            .map_err(|e| spawn_error_message(command, &e))?;
+        let mut child = cmd.spawn().map_err(|e| spawn_error_message(command, &e))?;
         let stdin = child
             .stdin
             .take()
@@ -319,9 +317,7 @@ impl StdioSession {
         match timeout(REQUEST_TIMEOUT, read).await {
             Ok(Ok(value)) => Ok(value),
             Ok(Err(e)) => Err(self.error_with_stderr(e).await),
-            Err(_) => Err(self
-                .error_with_stderr(format!("请求 {method} 超时"))
-                .await),
+            Err(_) => Err(self.error_with_stderr(format!("请求 {method} 超时")).await),
         }
     }
 
@@ -968,7 +964,14 @@ pub async fn mcp_install(manager: String, args: Vec<String>) -> Result<String, S
 
     if !output.status.success() {
         let code = output.status.code().unwrap_or(-1);
-        let tail: String = log.chars().rev().take(2000).collect::<String>().chars().rev().collect();
+        let tail: String = log
+            .chars()
+            .rev()
+            .take(2000)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
         return Err(format!("安装失败（退出码 {code}）:\n{tail}"));
     }
 

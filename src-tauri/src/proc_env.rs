@@ -98,10 +98,7 @@ fn query_login_shell_path() -> Option<String> {
 
     // Bound the wait so a misbehaving rc file cannot stall the app.
     let timeout = Duration::from_secs(5);
-    let waited = child
-        .wait_timeout(timeout)
-        .ok()
-        .flatten();
+    let waited = child.wait_timeout(timeout).ok().flatten();
     if waited.is_none() {
         let _ = child.kill();
         let _ = child.wait();

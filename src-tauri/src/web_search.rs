@@ -81,7 +81,11 @@ fn parse_results(body: &str, limit: usize) -> Vec<WebSearchItem> {
             .next()
             .map(|s| s.text().collect::<String>().trim().to_string())
             .unwrap_or_default();
-        out.push(WebSearchItem { title, url, snippet });
+        out.push(WebSearchItem {
+            title,
+            url,
+            snippet,
+        });
         if out.len() >= limit {
             break;
         }
