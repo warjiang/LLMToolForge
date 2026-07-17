@@ -34,6 +34,8 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(30);
 const CLIENT_NAME: &str = "LLMToolForge Inspector";
 /// Idle lifetime after which a pooled session is closed and reopened on demand.
 const SESSION_TTL: Duration = Duration::from_secs(300);
+/// Max bytes of a stdio child's stderr retained for error diagnostics.
+const STDERR_CAPTURE_LIMIT: usize = 16 * 1024;
 
 /// Subset of the persisted MCP server record the inspector needs to connect.
 #[derive(Debug, Clone, Deserialize)]
@@ -149,7 +151,49 @@ struct StdioSession {
     _child: Child,
     stdin: ChildStdin,
     stdout: BufReader<ChildStdout>,
+    /// Rolling capture of the child's stderr, surfaced in error messages so a
+    /// crash / bad config shows the real cause instead of just "连接已关闭".
+    stderr: Arc<std::sync::Mutex<String>>,
     id: i64,
+}
+
+/// Build a helpful error when a stdio command fails to launch. When the command
+/// binary is missing from `PATH`, guide the user to install the toolchain it
+/// belongs to (Node.js for `npx`/`node`/`npm`, uv for `uvx`/`uv`).
+fn spawn_error_message(command: &str, err: &std::io::Error) -> String {
+    if err.kind() != std::io::ErrorKind::NotFound {
+        return format!("启动命令失败: {err}");
+    }
+
+    // Normalize to the bare binary name (strip any directory / extension).
+    let base = std::path::Path::new(command)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or(command)
+        .to_ascii_lowercase();
+
+    let hint = match base.as_str() {
+        "npx" | "node" | "npm" => Some(
+            "未找到 `npx`（Node.js 工具链）。请先安装 Node.js（自带 npx），\
+             推荐用 nvm 安装：`curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | bash` \
+             然后 `nvm install --lts`；或从 https://nodejs.org 下载安装。\
+             安装后请重启本应用以加载新的 PATH。",
+        ),
+        "uvx" | "uv" => Some(
+            "未找到 `uvx`（uv 工具链）。请先安装 uv：`curl -LsSf https://astral.sh/uv/install.sh | sh`，\
+             或用 Homebrew：`brew install uv`（uvx 会随 uv 一起安装）。\
+             安装后请重启本应用以加载新的 PATH。",
+        ),
+        _ => None,
+    };
+
+    match hint {
+        Some(h) => format!("找不到命令 `{command}`：{h}"),
+        None => format!(
+            "找不到命令 `{command}`，请确认它已安装并在 PATH 中。\
+             若是从图形界面启动本应用，安装后可能需要重启应用以加载最新的 PATH。"
+        ),
+    }
 }
 
 impl StdioSession {
@@ -168,15 +212,16 @@ impl StdioSession {
 
         let mut cmd = tokio::process::Command::new(command);
         cmd.args(&cfg.args);
+        crate::proc_env::apply_to_tokio_command(&mut cmd);
         for (k, v) in &cfg.env {
             cmd.env(k, v);
         }
         cmd.stdin(std::process::Stdio::piped())
             .stdout(std::process::Stdio::piped())
-            .stderr(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
 
-        let mut child = cmd.spawn().map_err(|e| format!("启动命令失败: {e}"))?;
+        let mut child = cmd.spawn().map_err(|e| spawn_error_message(command, &e))?;
         let stdin = child
             .stdin
             .take()
@@ -186,12 +231,57 @@ impl StdioSession {
             .take()
             .ok_or_else(|| "无法获取 stdout".to_string())?;
 
+        // Drain the child's stderr into a bounded buffer in the background so we
+        // can attach it to error messages (the real failure usually lands here).
+        let stderr_buf = Arc::new(std::sync::Mutex::new(String::new()));
+        if let Some(stderr) = child.stderr.take() {
+            let buf = stderr_buf.clone();
+            tokio::spawn(async move {
+                let mut reader = BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line).await {
+                        Ok(0) | Err(_) => break,
+                        Ok(_) => {
+                            if let Ok(mut b) = buf.lock() {
+                                if b.len() < STDERR_CAPTURE_LIMIT {
+                                    b.push_str(&line);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
         Ok(StdioSession {
             _child: child,
             stdin,
             stdout: BufReader::new(stdout),
+            stderr: stderr_buf,
             id: 0,
         })
+    }
+
+    /// Snapshot of the captured stderr, trimmed. Empty when nothing was logged.
+    fn stderr_tail(&self) -> String {
+        self.stderr
+            .lock()
+            .map(|b| b.trim().to_string())
+            .unwrap_or_default()
+    }
+
+    /// Wait briefly for stderr to flush (the process usually just crashed), then
+    /// append any captured child logs to `msg`.
+    async fn error_with_stderr(&self, msg: String) -> String {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let tail = self.stderr_tail();
+        if tail.is_empty() {
+            msg
+        } else {
+            format!("{msg}\n\n子进程日志（stderr）：\n{tail}")
+        }
     }
 
     async fn rpc(&mut self, id: i64, method: &str, params: Value) -> Result<Value, String> {
@@ -224,9 +314,11 @@ impl StdioSession {
             }
         };
 
-        timeout(REQUEST_TIMEOUT, read)
-            .await
-            .map_err(|_| format!("请求 {method} 超时"))?
+        match timeout(REQUEST_TIMEOUT, read).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(e)) => Err(self.error_with_stderr(e).await),
+            Err(_) => Err(self.error_with_stderr(format!("请求 {method} 超时")).await),
+        }
     }
 
     async fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
@@ -828,4 +920,68 @@ pub async fn mcp_get_prompt(
         }
     })
     .await
+}
+
+/// One-shot install / warm-up for a built-in stdio MCP tool.
+///
+/// Runs the package manager (`npx` / `uvx`) a single time with the given args
+/// so its cache is primed (e.g. `npx -y @playwright/mcp@latest --help`). We do
+/// not manage a persistent install; success simply means the runner could be
+/// found and executed. Combined stdout+stderr is returned as a log, and a
+/// missing runner yields the same friendly install hint as a failed spawn.
+#[tauri::command]
+pub async fn mcp_install(manager: String, args: Vec<String>) -> Result<String, String> {
+    let manager = manager.trim();
+    if manager != "npx" && manager != "uvx" {
+        return Err(format!("不支持的安装器: {manager}"));
+    }
+
+    let mut cmd = tokio::process::Command::new(manager);
+    cmd.args(&args);
+    crate::proc_env::apply_to_tokio_command(&mut cmd);
+    cmd.stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+
+    let child = cmd.spawn().map_err(|e| spawn_error_message(manager, &e))?;
+
+    // Allow generous time for a cold download of the package.
+    let output = match timeout(Duration::from_secs(300), child.wait_with_output()).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(format!("安装执行失败: {e}")),
+        Err(_) => return Err("安装超时（>5 分钟），请检查网络后重试".into()),
+    };
+
+    let mut log = String::new();
+    log.push_str(&String::from_utf8_lossy(&output.stdout));
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if !stderr.trim().is_empty() {
+        if !log.is_empty() {
+            log.push('\n');
+        }
+        log.push_str(&stderr);
+    }
+
+    if !output.status.success() {
+        let code = output.status.code().unwrap_or(-1);
+        let tail: String = log
+            .chars()
+            .rev()
+            .take(2000)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect();
+        return Err(format!("安装失败（退出码 {code}）:\n{tail}"));
+    }
+
+    Ok(log)
+}
+
+/// Uninstall is intentionally state-only on the frontend (npx/uvx caches are
+/// shared and messy to remove). This command exists so the UI has a symmetric
+/// call and can be extended later; it is a no-op that always succeeds.
+#[tauri::command]
+pub async fn mcp_uninstall(_manager: String) -> Result<(), String> {
+    Ok(())
 }

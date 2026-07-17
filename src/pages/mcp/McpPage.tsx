@@ -4,7 +4,10 @@ import {
   Boxes,
   Download,
   Globe2,
+  Loader2,
   MoreHorizontal,
+  Package,
+  PackageMinus,
   Pencil,
   Plus,
   Radar,
@@ -13,7 +16,6 @@ import {
   Trash2,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { Reveal } from "@/components/common/Reveal";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,10 +28,13 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMcpStore } from "@/store";
+import { prewarmMcpServers } from "@/lib/agent/tools/mcp";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import type { McpServer } from "@/types";
 import { McpDialog } from "./McpDialog";
 import { McpImportDialog } from "./McpImportDialog";
 import { McpInspectorDialog } from "./inspector/McpInspectorDialog";
+import { BuiltinMcpSection } from "./BuiltinMcpSection";
 
 export function McpPage() {
   const { t } = useTranslation("pages");
@@ -37,8 +42,9 @@ export function McpPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [editing, setEditing] = useState<McpServer | null>(null);
-  const [deleting, setDeleting] = useState<McpServer | null>(null);
   const [inspecting, setInspecting] = useState<McpServer | null>(null);
+  const [deleting, setDeleting] = useState<McpServer | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loaded) load();
@@ -51,6 +57,24 @@ export function McpPage() {
   const openCreate = () => {
     setEditing(null);
     setDialogOpen(true);
+  };
+
+  // Install = flip the gate on, then warm the server once in the background
+  // (a single connect attempt that also primes the npx/uvx cache).
+  const installServer = async (item: McpServer) => {
+    setBusyId(item.id);
+    try {
+      await edit(item.id, { installed: true });
+      prewarmMcpServers([{ ...item, installed: true }]);
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Uninstall is reversible: keep the config, just mark it not installed and
+  // switch it off so it stops activating.
+  const uninstallServer = async (item: McpServer) => {
+    await edit(item.id, { installed: false, enabled: false });
   };
 
   return (
@@ -102,6 +126,13 @@ export function McpPage() {
         </div>
       </section>
 
+      <BuiltinMcpSection
+        onEdit={(server) => {
+          setEditing(server);
+          setDialogOpen(true);
+        }}
+      />
+
       {!loaded ? (
         <McpSkeleton />
       ) : items.length === 0 ? (
@@ -111,7 +142,10 @@ export function McpPage() {
         />
       ) : (
         <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-          {items.map((item, i) => (
+          {items.map((item, i) => {
+            const installed = item.installed !== false;
+            const busy = busyId === item.id;
+            return (
             <Reveal
               key={item.id}
               index={i}
@@ -140,17 +174,22 @@ export function McpPage() {
                         <p className="mt-1 flex items-center gap-1.5 text-label-12 text-muted-foreground">
                           <span
                             className={`h-1.5 w-1.5 rounded-full ${
-                              item.enabled ? "bg-success" : "bg-muted-foreground"
+                              item.enabled && installed
+                                ? "bg-success"
+                                : "bg-muted-foreground"
                             }`}
                           />
-                          {item.enabled
-                            ? t("mcp_status_enabled")
-                            : t("mcp_status_disabled")}
+                          {!installed
+                            ? t("mcp_not_installed")
+                            : item.enabled
+                              ? t("mcp_status_enabled")
+                              : t("mcp_status_disabled")}
                         </p>
                       </div>
                     </div>
                     <Switch
-                      checked={item.enabled}
+                      checked={item.enabled && installed}
+                      disabled={!installed}
                       onCheckedChange={(v) => edit(item.id, { enabled: v })}
                     />
                   </div>
@@ -188,27 +227,52 @@ export function McpPage() {
                 </div>
 
                 <div className="mt-4 flex items-center justify-between gap-2 border-t border-border pt-3">
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => setInspecting(item)}
-                    aria-label={t("mcp_inspect")}
-                  >
-                    <Radar className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">{t("mcp_inspect")}</span>
-                  </Button>
-                  <RowMenu
-                    onInspect={() => setInspecting(item)}
-                    onEdit={() => {
-                      setEditing(item);
-                      setDialogOpen(true);
-                    }}
-                    onDelete={() => setDeleting(item)}
-                  />
+                  <div className="min-w-0">
+                    {!installed && (
+                      <span className="text-label-12 text-muted-foreground">
+                        {t("mcp_install_hint")}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {installed ? (
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => uninstallServer(item)}
+                      >
+                        <PackageMinus className="h-3.5 w-3.5" />
+                        {t("mcp_uninstall")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => installServer(item)}
+                        disabled={busy}
+                      >
+                        {busy ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Package className="h-3.5 w-3.5" />
+                        )}
+                        {busy ? t("mcp_installing") : t("mcp_install")}
+                      </Button>
+                    )}
+                    <RowMenu
+                      installed={installed}
+                      onInspect={() => setInspecting(item)}
+                      onEdit={() => {
+                        setEditing(item);
+                        setDialogOpen(true);
+                      }}
+                      onDelete={() => setDeleting(item)}
+                    />
+                  </div>
                 </div>
               </article>
             </Reveal>
-          ))}
+            );
+          })}
         </div>
       )}
 
@@ -226,7 +290,10 @@ export function McpPage() {
       <ConfirmDialog
         open={!!deleting}
         onOpenChange={(o) => !o && setDeleting(null)}
-        description={t("confirm_delete_named", { ns: "common", name: deleting?.name ?? "" })}
+        description={t("confirm_delete_named", {
+          ns: "common",
+          name: deleting?.name ?? "",
+        })}
         onConfirm={() => {
           if (deleting) remove(deleting.id);
           setDeleting(null);
@@ -361,10 +428,12 @@ function McpSkeleton() {
 }
 
 function RowMenu({
+  installed,
   onInspect,
   onEdit,
   onDelete,
 }: {
+  installed: boolean;
   onInspect: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -378,15 +447,19 @@ function RowMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end">
-        <DropdownMenuItem onClick={onInspect}>
-          <Radar className="h-4 w-4" />
-          {t("mcp_inspect")}
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={onEdit}>
-          <Pencil className="h-4 w-4" />
-          {t("edit", { ns: "common" })}
-        </DropdownMenuItem>
-        <DropdownMenuSeparator />
+        {installed && (
+          <>
+            <DropdownMenuItem onClick={onInspect}>
+              <Radar className="h-4 w-4" />
+              {t("mcp_inspect")}
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={onEdit}>
+              <Pencil className="h-4 w-4" />
+              {t("edit", { ns: "common" })}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuItem variant="destructive" onClick={onDelete}>
           <Trash2 className="h-4 w-4" />
           {t("delete", { ns: "common" })}

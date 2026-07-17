@@ -42,7 +42,15 @@ function activeSkills(def: AgentDefinition, all: Skill[]): Skill[] {
 
 function activeMcpServers(def: AgentDefinition, all: McpServer[]): McpServer[] {
   const enabled = new Set(def.enabledMcpServerIds);
-  return all.filter((s) => s.enabled !== false && enabled.has(s.id));
+  return all.filter(
+    (s) =>
+      s.enabled !== false &&
+      enabled.has(s.id) &&
+      // Every server must be installed to activate. Legacy servers created
+      // before the install lifecycle have `installed === undefined`, which we
+      // treat as installed so they keep working.
+      s.installed !== false
+  );
 }
 
 export function resolveSystemPrompt(

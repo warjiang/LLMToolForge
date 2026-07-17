@@ -11,7 +11,15 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import type { TSchema } from "@earendil-works/pi-ai";
 import type { McpServer } from "@/types";
 import { callTool, inspectServer, type McpToolDef, type McpInspectSnapshot } from "@/lib/mcpInspector";
-import { text } from "./shared";
+import { text, stripAnsi } from "./shared";
+import { buildLocalBuiltinTools } from "./builtinLocal";
+
+/** Local builtins run in-process — no subprocess to inspect/warm. */
+function isLocalServer(server: McpServer): boolean {
+  return (
+    server.builtin === "web-search" || server.builtin === "web-fetch"
+  );
+}
 
 /** Separator between the server slug and the tool name in the exposed name. */
 const NAME_SEP = "__";
@@ -26,6 +34,10 @@ function emptySchema(): TSchema {
 
 /** Best-effort flatten of an MCP tool result into readable text. */
 function formatMcpResult(result: unknown): string {
+  return stripAnsi(rawFormatMcpResult(result));
+}
+
+function rawFormatMcpResult(result: unknown): string {
   if (result == null) return "(无返回)";
   if (typeof result === "string") return result;
   if (typeof result === "object") {
@@ -221,6 +233,7 @@ function warmServer(server: McpServer): WarmEntry {
  */
 export function prewarmMcpServers(servers: McpServer[]): void {
   for (const server of servers) {
+    if (isLocalServer(server)) continue; // nothing to warm
     try {
       warmServer(server);
     } catch {
@@ -256,7 +269,17 @@ export async function buildMcpTools(
   const errors: { server: string; error: string }[] = [];
   const pending: string[] = [];
 
-  const entries = servers.map((server) => ({ server, entry: warmServer(server) }));
+  // Local builtins resolve immediately in-process; keep them out of warming.
+  const localServers = servers.filter(isLocalServer);
+  const remoteServers = servers.filter((s) => !isLocalServer(s));
+  for (const server of localServers) {
+    tools.push(...buildLocalBuiltinTools(server));
+  }
+
+  const entries = remoteServers.map((server) => ({
+    server,
+    entry: warmServer(server),
+  }));
 
   // Give not-yet-ready servers a brief, shared grace window to settle.
   await Promise.all(

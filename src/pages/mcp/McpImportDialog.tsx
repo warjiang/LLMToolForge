@@ -86,7 +86,7 @@ export function McpImportDialog({ open, onOpenChange }: Props) {
     setError(null);
     try {
       for (const server of importable) {
-        await add(server);
+        await add({ ...server, installed: false });
       }
       onOpenChange(false);
     } catch (e) {

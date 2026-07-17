@@ -15,7 +15,7 @@ import type {
 } from "@earendil-works/pi-agent-core";
 import type { AgentDefinition } from "@/types";
 import { useUnifiedStore } from "@/store/unified";
-import { useSkillStore, useMcpStore } from "@/store";
+import { useSkillStore, getEffectiveMcpServers } from "@/store";
 import { buildPiModel } from "./model";
 import { createUnifiedRuntime } from "./provider";
 import { resolveAgent } from "./agentDefinition";
@@ -277,7 +277,7 @@ export async function createAgentRuntime(
 
   const resolved = await resolveAgent(def, {
     skills: useSkillStore.getState().items,
-    mcpServers: useMcpStore.getState().items,
+    mcpServers: getEffectiveMcpServers(),
     workspacePath: options.workspacePath,
     requestCheckpoint: options.requestCheckpoint,
     requestAsk: options.requestAsk,

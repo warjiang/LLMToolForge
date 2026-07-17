@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronRight } from "lucide-react";
 import type { JsonSchema } from "@/lib/mcpInspector";
+import { stripAnsi } from "@/lib/utils";
 
 /**
  * Render clamped text with a show more/less toggle that only appears when the
@@ -100,7 +101,7 @@ export function ContentBlocks({ blocks }: { blocks: ContentBlock[] }) {
               key={i}
               className="max-h-80 overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-background-secondary p-3 text-label-12 leading-relaxed font-mono"
             >
-              {block.text}
+              {stripAnsi(block.text)}
             </pre>
           );
         }

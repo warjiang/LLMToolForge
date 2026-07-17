@@ -98,6 +98,7 @@ pub async fn agent_spawn(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    crate::proc_env::apply_to_command(&mut cmd);
     if let Some(cwd) = &spec.cwd {
         if !cwd.trim().is_empty() {
             cmd.current_dir(cwd);

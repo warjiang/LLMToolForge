@@ -14,7 +14,7 @@
 import type { AgentDefinition, ExternalAgentSpec } from "@/types";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import { useUnifiedStore } from "@/store/unified";
-import { useSkillStore, useMcpStore } from "@/store";
+import { useSkillStore, getEffectiveMcpServers } from "@/store";
 import { resolveAgent } from "./agentDefinition";
 import {
   GatewayUnavailableError,
@@ -151,7 +151,7 @@ export async function createExternalAgentRuntime(
   // path. Tool execution reuses each tool's `.execute`, so no logic is copied.
   const resolved = await resolveAgent(def, {
     skills: useSkillStore.getState().items,
-    mcpServers: useMcpStore.getState().items,
+    mcpServers: getEffectiveMcpServers(),
     workspacePath: options.workspacePath,
     requestCheckpoint: options.requestCheckpoint,
     requestAsk: options.requestAsk,

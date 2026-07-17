@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Braces, Loader2, Play, Search, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/common/EmptyState";
+import { stripAnsi } from "@/lib/utils";
 import type { McpToolDef } from "@/lib/mcpInspector";
 import {
   buildArguments,
@@ -243,7 +244,7 @@ function ToolDetail({
           </span>
           {error && (
             <p className="whitespace-pre-wrap rounded-sm bg-destructive/10 p-3 text-label-12 text-destructive">
-              {error}
+              {stripAnsi(error)}
             </p>
           )}
           {result !== undefined && <ResultView result={result} />}
