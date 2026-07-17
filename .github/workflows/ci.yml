@@ -99,7 +99,7 @@ jobs:
           bun-version: latest
 
       - name: Build gateway sidecar
-        working-directory: sidecar
+        working-directory: sidecar/gateway
         run: bun run build.ts
 
       - name: Build connector sidecar

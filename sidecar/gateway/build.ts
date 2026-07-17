@@ -20,7 +20,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(here, '..');
+const repoRoot = resolve(here, '..', '..');
 
 /** Map a Rust target triple to the matching `bun build --compile --target`. */
 const RUST_TO_BUN: Record<string, string> = {

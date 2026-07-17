@@ -59,7 +59,7 @@ Config file shape:
 ## Build
 
 `build.ts` compiles a self-contained binary named for Tauri's `externalBin`
-convention into `../src-tauri/binaries/`:
+convention into `../../src-tauri/binaries/`:
 
 ```sh
 bun run build.ts                          # host target triple

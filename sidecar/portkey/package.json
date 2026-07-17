@@ -1,7 +1,0 @@
-{
-  "name": "@portkey-ai/gateway-vendored",
-  "version": "1.15.2",
-  "private": true,
-  "type": "module",
-  "description": "Vendored Portkey AI Gateway source (v1.15.2), MIT licensed. See ../NOTICE. Dependencies are installed from sidecar/package.json one level up."
-}

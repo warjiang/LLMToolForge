@@ -97,7 +97,7 @@ jobs:
           bun-version: latest
 
       - name: Build gateway sidecar
-        working-directory: sidecar
+        working-directory: sidecar/gateway
         shell: bash
         run: |
           if [ -n "${{ matrix.rust-target }}" ]; then
