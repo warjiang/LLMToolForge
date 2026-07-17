@@ -76,15 +76,8 @@ export function BuiltinMcpSection({
 
   return (
     <section className="space-y-3">
-      <div className="flex items-center gap-2">
-        <Package className="h-4 w-4 text-muted-foreground" />
-        <h2 className="text-heading-16 text-foreground">
-          {t("mcp_builtin_title")}
-        </h2>
-        <Badge variant="outline" className="rounded-sm uppercase">
-          {t("mcp_builtin_badge")}
-        </Badge>
-        {removedIds.size > 0 && (
+      {removedIds.size > 0 && (
+        <div className="flex items-center">
           <Button
             variant="ghost"
             size="sm"
@@ -94,11 +87,8 @@ export function BuiltinMcpSection({
             <RotateCcw className="h-3.5 w-3.5" />
             {t("mcp_builtin_restore", { count: removedIds.size })}
           </Button>
-        )}
-      </div>
-      <p className="max-w-[62ch] text-copy-13 text-muted-foreground">
-        {t("mcp_builtin_desc")}
-      </p>
+        </div>
+      )}
 
       <div className="grid min-w-0 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         {visibleDefs.map((def) => (
