@@ -119,6 +119,14 @@ function applyPatches(): void {
     throw new Error("[connector] 未找到 migrations 目录定义，上游代码可能已变化，请更新补丁。");
   }
   writeFileSync(storePath, store);
+
+  // The upstream web console styles with Tailwind v4 via `@tailwindcss/vite`
+  // and ships no PostCSS config. Vite's PostCSS config search would otherwise
+  // walk up out of the vendored tree and load this repo's root
+  // `postcss.config.js` (Tailwind v3 + autoprefixer), which is wrong here and
+  // fails to resolve `tailwindcss` from the nested build on Windows. Drop an
+  // empty local config so the search stops at the web directory.
+  writeFileSync(join(upstreamDir, "web", "postcss.config.js"), "export default {};\n");
 }
 
 function main(): void {

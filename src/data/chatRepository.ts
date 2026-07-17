@@ -81,6 +81,7 @@ function settingsForNewSession(
     enabledSkillIds: [...normalized.enabledSkillIds],
     enabledMcpServerIds: [...normalized.enabledMcpServerIds],
     sandboxMode: normalized.sandboxMode,
+    connectorEnabled: normalized.connectorEnabled,
     autoApproveCheckpoints: normalized.autoApproveCheckpoints,
     workspacePath: normalized.workspacePath,
     sessionId,

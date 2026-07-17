@@ -100,7 +100,6 @@ jobs:
         working-directory: sidecar
         shell: bash
         run: |
-          bun install --frozen-lockfile
           if [ -n "${{ matrix.rust-target }}" ]; then
             bun run build.ts --target=${{ matrix.rust-target }}
           else
