@@ -217,6 +217,56 @@ const SANDBOX_MODES: { value: SandboxMode; label: string }[] = [
 const VIDEO_POLL_INTERVAL_MS = 5_000;
 const VIDEO_POLL_MAX_ATTEMPTS = 120;
 const STREAM_CONTENT_FLUSH_MS = 33;
+
+// Resizable right-hand config rail. Width persists across sessions.
+const CONFIG_DEFAULT_WIDTH = 300;
+const CONFIG_MIN_WIDTH = 260;
+const CONFIG_MAX_WIDTH = 560;
+const CONFIG_WIDTH_KEY = "llmtoolforge.config.width";
+function clampConfigWidth(width: number): number {
+  return Math.min(
+    CONFIG_MAX_WIDTH,
+    Math.max(CONFIG_MIN_WIDTH, Math.round(width))
+  );
+}
+function getInitialConfigWidth(): number {
+  if (typeof window === "undefined") return CONFIG_DEFAULT_WIDTH;
+  const raw = Number(localStorage.getItem(CONFIG_WIDTH_KEY));
+  return Number.isFinite(raw) && raw > 0
+    ? clampConfigWidth(raw)
+    : CONFIG_DEFAULT_WIDTH;
+}
+function persistConfigWidth(width: number): number {
+  const next = clampConfigWidth(width);
+  if (typeof window !== "undefined") {
+    localStorage.setItem(CONFIG_WIDTH_KEY, String(next));
+  }
+  return next;
+}
+// Shared "扫光" (light-sweep) shimmer applied to text in running/executing
+// states. Backed by the `.shimmer-text` CSS class in index.css (uses webkit
+// background-clip so it renders in Tauri's WKWebView). Reduced-motion is
+// handled in CSS, so it's safe to apply unconditionally.
+const SHIMMER_TEXT_CLASS = "shimmer-text";
+
+// Agent runtimes/SDKs sometimes surface errors as a quote-wrapped JSON string
+// (e.g. `"Request cancelled"`). Strip the surrounding quotes and localize the
+// known user-cancellation message so the chat never shows a raw, quoted string.
+function normalizeAgentErrorMessage(
+  raw: string,
+  t: (key: string) => string
+): string {
+  let msg = (raw ?? "").trim();
+  if (msg.length >= 2) {
+    const first = msg[0];
+    const last = msg[msg.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      msg = msg.slice(1, -1).trim();
+    }
+  }
+  if (/^request cancell?ed$/i.test(msg)) return t("agent_request_cancelled");
+  return msg;
+}
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
@@ -664,6 +714,11 @@ export function AgentChatView() {
 
   const [previewResizing, setPreviewResizing] = useState(false);
   const previewResizeBaseRef = useRef(PREVIEW_DEFAULT_WIDTH);
+  const [configWidth, setConfigWidth] = useState<number>(getInitialConfigWidth);
+  const configResizeBaseRef = useRef(configWidth);
+  const configResizeReleaseRef = useRef<(() => void) | null>(null);
+  const applyConfigWidth = (width: number) =>
+    setConfigWidth(persistConfigWidth(width));
   const previewResizeReleaseRef = useRef<(() => void) | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [exportingHtml, setExportingHtml] = useState(false);
@@ -2170,16 +2225,18 @@ export function AgentChatView() {
           void maybeOpenPreview(startedRec?.toolName, resultJson);
         }
       },
-      onError: async (message) => {
+      onError: async (raw) => {
         const st = agentTurnRef.current;
+        const message = normalizeAgentErrorMessage(raw, t);
         if (st?.assistantId) {
           await chat.updateMessage(st.assistantId, {
             status: "error",
             error: message,
           });
           st.assistantId = null;
+        } else {
+          setError(message);
         }
-        setError(message);
       },
     };
 
@@ -2712,16 +2769,31 @@ export function AgentChatView() {
                     );
                   })}
                   {(() => {
-                    // While the agent keeps working but the last visible turn
-                    // already settled (intermediate text/tools completed), the
-                    // per-message typing indicator is gone — show a persistent
-                    // footer so it never looks finished mid-run.
+                    // A single, stable working indicator for the whole run. It
+                    // stays mounted for the entire `sending` window (keyed inside
+                    // AnimatePresence) so it never looks like a brand-new
+                    // "执行中" is appended on every intermediate turn. It only
+                    // steps aside while the last bubble is actively streaming
+                    // visible text, where the streaming caret already signals work.
                     const last = chat.messages[chat.messages.length - 1];
-                    const showRunningFooter =
-                      sending && !!last && last.status !== "pending";
-                    return showRunningFooter ? (
-                      <AssistantWorkingStatus label={t("agent_running")} />
-                    ) : null;
+                    const lastStreamingText =
+                      last?.status === "pending" && !!last?.content?.trim();
+                    const showRunningFooter = sending && !lastStreamingText;
+                    return (
+                      <AnimatePresence>
+                        {showRunningFooter && (
+                          <motion.div
+                            key="agent-working-footer"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                          >
+                            <AssistantWorkingStatus label={t("agent_running")} />
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    );
                   })()}
                 </div>
               )}
@@ -2968,18 +3040,39 @@ export function AgentChatView() {
         </section>
 
         {configOpen && (
-          <div className="hidden h-full w-[300px] shrink-0 border-l border-border lg:flex">
-            <ConfigRail
-              settings={settings}
-              isResearchAgent={isResearchAgent}
-              isVolc={isVolc}
-              usableKeys={usableKeys}
-              toolCalls={chat.toolCalls}
-              onSettings={updateSettings}
-              onAutoApproveCheckpoints={updateAutoApproveCheckpoints}
-              onClose={() => setConfigOpen(false)}
+          <>
+            <ResizeHandle
+              title={t("agent_resize_preview")}
+              onStart={() => {
+                configResizeBaseRef.current = configWidth;
+                configResizeReleaseRef.current = suppressBrowser();
+              }}
+              onDrag={(dx) =>
+                applyConfigWidth(configResizeBaseRef.current - dx)
+              }
+              onEnd={() => {
+                configResizeReleaseRef.current?.();
+                configResizeReleaseRef.current = null;
+              }}
+              onReset={() => applyConfigWidth(CONFIG_DEFAULT_WIDTH)}
+              className="hidden lg:flex"
             />
-          </div>
+            <div
+              style={{ width: configWidth }}
+              className="hidden h-full shrink-0 border-l border-border lg:flex"
+            >
+              <ConfigRail
+                settings={settings}
+                isResearchAgent={isResearchAgent}
+                isVolc={isVolc}
+                usableKeys={usableKeys}
+                toolCalls={chat.toolCalls}
+                onSettings={updateSettings}
+                onAutoApproveCheckpoints={updateAutoApproveCheckpoints}
+                onClose={() => setConfigOpen(false)}
+              />
+            </div>
+          </>
         )}
 
         {preview.open && isTauri() && (
@@ -3244,6 +3337,44 @@ function ConfigRail({
   const { t } = useTranslation("pages");
   const debug = useDebugStore((s) => s.debug);
   const setDebug = useDebugStore((s) => s.setDebug);
+  // Backfill the effective working directory: when the user hasn't set an
+  // explicit path, resolve the managed per-session default so the field shows
+  // the real directory instead of an empty placeholder.
+  const [defaultWorkspaceDir, setDefaultWorkspaceDir] = useState("");
+  const sessionId = settings?.sessionId ?? "";
+  useEffect(() => {
+    let alive = true;
+    if (!sessionId) {
+      setDefaultWorkspaceDir("");
+      return;
+    }
+    void resolveSessionWorkspace(sessionId, "")
+      .then((dir) => {
+        if (alive) setDefaultWorkspaceDir(dir);
+      })
+      .catch(() => {
+        /* best-effort: leave placeholder */
+      });
+    return () => {
+      alive = false;
+    };
+  }, [sessionId]);
+
+  const chooseWorkspaceDir = async () => {
+    try {
+      const { open: openDialog } = await import("@tauri-apps/plugin-dialog");
+      const picked = await openDialog({
+        directory: true,
+        multiple: false,
+        defaultPath: settings?.workspacePath || defaultWorkspaceDir || undefined,
+        title: t("agents_workspace_choose"),
+      });
+      const dir = Array.isArray(picked) ? picked[0] : picked;
+      if (dir) onSettings({ workspacePath: dir });
+    } catch {
+      /* dialog unavailable outside the desktop runtime */
+    }
+  };
   if (!settings) {
     return (
       <aside className="flex h-full w-full items-center justify-center bg-card-elevated p-5 text-label-13 text-muted-foreground">
@@ -3262,10 +3393,7 @@ function ConfigRail({
         </Button>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
-      <RailSection icon={Settings2} title={t("agent_request_section")}>
-        <div className="rounded-md border border-border bg-secondary/50 p-3 text-label-12 text-muted-foreground">
-          {t("agent_conn_model_hint")}
-        </div>
+      <div className="grid gap-3">
         {isVolc && (
           <>
             <div className="grid gap-1.5">
@@ -3306,7 +3434,7 @@ function ConfigRail({
             </div>
           </>
         )}
-      </RailSection>
+      </div>
 
       <Separator className="my-4" />
 
@@ -3355,15 +3483,37 @@ function ConfigRail({
           <Label htmlFor="agent-chat-workspace">
             {t("agents_workspace_label")}
           </Label>
-          <Input
-            id="agent-chat-workspace"
-            placeholder={t("agents_workspace_placeholder")}
-            value={settings.workspacePath}
-            onChange={(e) => onSettings({ workspacePath: e.target.value })}
-          />
-        </div>
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agents_workspace_hint")}
+          <div className="relative">
+            <Input
+              id="agent-chat-workspace"
+              readOnly
+              title={t("agents_workspace_choose")}
+              placeholder={t("agents_workspace_placeholder")}
+              value={settings.workspacePath || defaultWorkspaceDir}
+              onClick={chooseWorkspaceDir}
+              className={cn(
+                "cursor-pointer pr-9",
+                !settings.workspacePath && "text-muted-foreground"
+              )}
+            />
+            <button
+              type="button"
+              onClick={chooseWorkspaceDir}
+              title={t("agents_workspace_choose")}
+              className="absolute right-1.5 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-sm text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <FolderOpen className="h-4 w-4" />
+            </button>
+          </div>
+          {settings.workspacePath && (
+            <button
+              type="button"
+              onClick={() => onSettings({ workspacePath: "" })}
+              className="w-fit text-label-12 text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {t("agents_workspace_reset")}
+            </button>
+          )}
         </div>
       </RailSection>
 
@@ -3394,9 +3544,6 @@ function ConfigRail({
             </div>
           </>
         )}
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agent_sandbox_hint")}
-        </div>
       </RailSection>
 
       <Separator className="my-4" />
@@ -3411,9 +3558,6 @@ function ConfigRail({
             checked={debug}
             onCheckedChange={(value) => setDebug(value)}
           />
-        </div>
-        <div className="rounded-md border border-border p-3 text-label-12 text-muted-foreground">
-          {t("agent_debug_edit_agent_hint")}
         </div>
       </RailSection>
 
@@ -4278,6 +4422,16 @@ function ChatBubble({
     pillAttachments.length > 0 ||
     hasVisibleContent ||
     !!message.error;
+  // When a turn produced nothing but an error (e.g. "Request cancelled"), the
+  // inner error box already carries its own border/background — so skip the
+  // bubble chrome to avoid a doubled border.
+  const errorOnlyBubble =
+    !!message.error &&
+    !editing &&
+    !hasVisibleContent &&
+    generatedImages.length === 0 &&
+    generatedVideos.length === 0 &&
+    pillAttachments.length === 0;
   const actionOnly =
     (hasToolCalls || showReasoning) && !hasMessageBubble && !typing;
   // An assistant/tool turn that produced no bubble, no reasoning, no tool calls
@@ -4360,8 +4514,11 @@ function ChatBubble({
                 "text-copy-14",
                 editing
                 ? "rounded-lg border border-input bg-card p-2 text-foreground shadow-[0_10px_28px_rgba(0,0,0,0.08),0_2px_8px_rgba(0,0,0,0.04)]"
-                : "rounded-md px-3.5 py-2.5",
+                : errorOnlyBubble
+                  ? ""
+                  : "rounded-md px-3.5 py-2.5",
               !editing &&
+                !errorOnlyBubble &&
                 (isUser
                   ? "rounded-tr-sm bg-muted text-foreground"
                   : isTool
@@ -4475,7 +4632,6 @@ function ChatBubble({
             ))}
           </div>
         )}
-        {!isUser && typing && !hasToolCalls && <AssistantWorkingStatus />}
         {!typing && !actionOnly && (
           <div
             className={cn(
@@ -4560,6 +4716,7 @@ function parseToolName(raw: string): { name: string; server?: string } {
 function AssistantWorkingStatus({ label }: { label?: string }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
+  const text = label ?? t("agent_execution_starting");
 
   return (
     <div
@@ -4568,22 +4725,11 @@ function AssistantWorkingStatus({ label }: { label?: string }) {
       aria-live="polite"
     >
       <Bot className="h-3.5 w-3.5 shrink-0" />
-      <span className="relative h-1.5 w-16 overflow-hidden rounded-full bg-muted">
-        {reduce ? (
-          <span className="block h-full w-1/3 rounded-full bg-muted-foreground/55" />
-        ) : (
-          <motion.span
-            className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-foreground/60"
-            animate={{ x: ["-120%", "320%"] }}
-            transition={{
-              duration: 1.15,
-              repeat: Infinity,
-              ease: [0.16, 1, 0.3, 1],
-            }}
-          />
-        )}
-      </span>
-      <span>{label ?? t("agent_execution_starting")}</span>
+      {reduce ? (
+        <span>{text}</span>
+      ) : (
+        <span className={cn(SHIMMER_TEXT_CLASS, "font-medium")}>{text}</span>
+      )}
     </div>
   );
 }
@@ -4619,6 +4765,7 @@ function ToolCallsTrace({
   onToggle: () => void;
 }) {
   const { t } = useTranslation("pages");
+  const reduce = useReducedMotion();
   const label = active
     ? t("agent_actions_running")
     : t("agent_actions_done", { count });
@@ -4629,7 +4776,11 @@ function ToolCallsTrace({
       className="flex w-fit items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
     >
       <Wrench className={cn("h-3.5 w-3.5", active && "animate-pulse")} />
-      <span>{label}</span>
+      <span
+        className={cn(active && !reduce && SHIMMER_TEXT_CLASS)}
+      >
+        {label}
+      </span>
       <ChevronRight
         className={cn(
           "h-3.5 w-3.5 transition-transform duration-200",
@@ -4673,7 +4824,7 @@ function ReasoningTrace({
         className="flex items-center gap-1.5 text-label-12 font-medium text-muted-foreground transition-colors hover:text-foreground"
       >
         <Lightbulb className="h-3.5 w-3.5" />
-        <span>{label}</span>
+        <span className={cn(streaming && SHIMMER_TEXT_CLASS)}>{label}</span>
         <ChevronRight
           className={cn(
             "h-3.5 w-3.5 transition-transform duration-200",
@@ -4851,7 +5002,12 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
               <Check className="h-3.5 w-3.5 shrink-0 text-success" />
             )}
             <span className="flex min-w-0 flex-1 items-center gap-1.5">
-              <span className="max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground">
+              <span
+                className={cn(
+                  "max-w-[12rem] shrink-0 truncate font-mono text-label-12 font-medium text-foreground",
+                  isRunning && !reduce && SHIMMER_TEXT_CLASS
+                )}
+              >
                 {parsed.name}
               </span>
               {parsed.server && (

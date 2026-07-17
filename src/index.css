@@ -50,6 +50,11 @@
     --border: #ebebeb;
     --input: #ebebeb;
     --ring: rgba(23, 23, 23, 0.32);
+
+    /* Light-sweep (扫光) for running/thinking states: dim readable base with a
+       brighter glint that sweeps across. */
+    --shimmer-base: #545454;
+    --shimmer-glint: #d0d0d0;
   }
 
   .dark {
@@ -96,6 +101,9 @@
     --border: #2e2e2e;
     --input: #2e2e2e;
     --ring: rgba(237, 237, 237, 0.34);
+
+    --shimmer-base: #7c7c7c;
+    --shimmer-glint: #ffffff;
   }
 }
 
@@ -166,5 +174,47 @@
 @media (prefers-reduced-motion: reduce) {
   .md-body .md-block {
     animation: none;
+  }
+}
+
+/* "扫光" light-sweep for running / thinking states. A brighter glint travels
+   across dimmed text. Background-position stays within 0%–100% so the 200%-wide
+   gradient always fully covers the glyphs (outside that range the text would
+   lose its background and vanish). -webkit- prefixes for Tauri's WKWebView. */
+@keyframes shimmer-sweep {
+  0% {
+    background-position: 100% center;
+  }
+  60% {
+    background-position: 0% center;
+  }
+  100% {
+    background-position: 0% center;
+  }
+}
+
+.shimmer-text {
+  background-image: linear-gradient(
+    100deg,
+    var(--shimmer-base) 0%,
+    var(--shimmer-base) 40%,
+    var(--shimmer-glint) 50%,
+    var(--shimmer-base) 60%,
+    var(--shimmer-base) 100%
+  );
+  background-size: 200% 100%;
+  background-repeat: no-repeat;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: shimmer-sweep 2.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none;
+    -webkit-text-fill-color: var(--shimmer-base);
+    color: var(--shimmer-base);
   }
 }

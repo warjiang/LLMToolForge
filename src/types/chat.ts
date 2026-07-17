@@ -152,7 +152,7 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   enabledSkillIds: [],
   enabledMcpServerIds: [],
   connectorEnabled: false,
-  sandboxMode: "read-only",
+  sandboxMode: "workspace-write",
   autoApproveCheckpoints: false,
   workspacePath: "",
 };
