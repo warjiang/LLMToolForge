@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{Manager, Url};
 use wait_timeout::ChildExt;
 
 mod agent_host;
@@ -484,6 +484,41 @@ fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
     cmd.spawn()
         .map(|_| ())
         .map_err(|e| format!("打开文件夹失败: {e}"))
+}
+
+fn external_url_arg(url: &str) -> Result<String, String> {
+    let trimmed = url.trim();
+    let parsed = Url::parse(trimmed).map_err(|e| format!("无效链接: {e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(parsed.to_string()),
+        scheme => Err(format!("不支持打开 {scheme}: 链接")),
+    }
+}
+
+#[tauri::command]
+fn open_external_url(url: String) -> Result<(), String> {
+    let url = external_url_arg(&url)?;
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut c = Command::new("open");
+        c.arg(&url);
+        c
+    };
+    #[cfg(target_os = "windows")]
+    let mut cmd = {
+        let mut c = Command::new("explorer");
+        c.arg(&url);
+        c
+    };
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    let mut cmd = {
+        let mut c = Command::new("xdg-open");
+        c.arg(&url);
+        c
+    };
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("打开链接失败: {e}"))
 }
 
 fn sanitize_file_name(name: &str) -> String {
@@ -1004,6 +1039,7 @@ pub fn run() {
             browser::browser_hide,
             browser::browser_close,
             browser::browser_status,
+            open_external_url,
             web_fetch::web_fetch,
             web_search::web_search,
             config_io::model_config_export,
@@ -1116,5 +1152,35 @@ mod session_workspace_tests {
     fn empty_when_all_chars_unsafe() {
         // Used by callers to reject empty/blank ids before touching the fs.
         assert!(sanitize_session_id("").is_empty());
+    }
+}
+
+#[cfg(test)]
+mod external_link_tests {
+    use super::external_url_arg;
+
+    #[test]
+    fn accepts_http_and_https_urls_for_external_opening() {
+        assert_eq!(
+            external_url_arg("https://platform.kimi.com/docs/guide").unwrap(),
+            "https://platform.kimi.com/docs/guide"
+        );
+        assert_eq!(
+            external_url_arg(" http://localhost:5173/docs ").unwrap(),
+            "http://localhost:5173/docs"
+        );
+    }
+
+    #[test]
+    fn rejects_non_web_url_schemes_for_external_opening() {
+        for input in [
+            "",
+            "   ",
+            "javascript:alert(1)",
+            "file:///etc/passwd",
+            "mailto:hello@example.com",
+        ] {
+            assert!(external_url_arg(input).is_err(), "accepted {input:?}");
+        }
     }
 }
