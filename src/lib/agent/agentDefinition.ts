@@ -13,6 +13,7 @@ import type { RequestCheckpoint, RequestAsk } from "./tools/internal";
 import { buildMcpTools } from "./tools/mcp";
 import { buildConnectorTools } from "./tools/connector";
 import { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";
+import { makeToolAbortable } from "./tools/shared";
 
 export interface ResolveAgentDeps {
   /** All known skills (filtered to the definition's enabled set). */
@@ -95,7 +96,7 @@ export async function resolveAgent(
     tools.push(buildLoadSkillTool(skills));
   }
 
-  const mcp = await buildMcpTools(servers);
+  const mcp = await buildMcpTools(servers, { screenshotDir: root || undefined });
   tools.push(...mcp.tools);
 
   // OpenConnector discovery/execute tools (opt-in per agent definition).
@@ -105,7 +106,10 @@ export async function resolveAgent(
 
   return {
     systemPrompt: resolveSystemPrompt(def, deps.skills),
-    tools,
+    // Make every tool interruptible: pi's loop only re-checks the abort signal
+    // after `execute` settles, so a tool that ignores the signal would otherwise
+    // freeze the run and make the session impossible to stop mid-tool.
+    tools: tools.map(makeToolAbortable),
     mcpErrors: mcp.errors,
     mcpPending: mcp.pending,
   };
