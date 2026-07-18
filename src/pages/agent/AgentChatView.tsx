@@ -122,6 +122,7 @@ import {
   mediaKindForPath,
   registerPreview,
   registerPreviewMedia,
+  registerRawMedia,
   type PreviewMediaKind,
 } from "@/lib/preview";
 import { exportReportHtml, exportReportPdf } from "@/lib/reportExport";
@@ -743,6 +744,21 @@ function mediaArtifactFromPath(path: string): MediaArtifact | null {
   };
 }
 
+/**
+ * A candidate string is only a previewable local file when it looks like a real
+ * filesystem path. Page image URLs (http/https/data) embedded in tool results
+ * (e.g. Playwright aria snapshots) and multi-line text blobs must NOT be treated
+ * as media, otherwise a dead "preview" button appears that can never resolve to
+ * a local directory.
+ */
+function isLocalMediaCandidate(candidate: string): boolean {
+  const p = candidate?.trim();
+  if (!p || p.length > 1024) return false;
+  if (/[\n\r]/.test(p)) return false;
+  if (/^(https?:|data:|blob:|ftp:|mailto:):?/i.test(p)) return false;
+  return /^(\/|~\/|file:\/\/|[A-Za-z]:[\\/])/.test(p);
+}
+
 async function openArtifactPreview(artifact: PreviewArtifact): Promise<void> {
   try {
     if (artifact.kind === "media") {
@@ -810,14 +826,20 @@ function dataArtifact(
 
   const pathCandidates: string[] = [];
   gatherPathCandidates(resultJson, pathCandidates);
+  // MCP tools (e.g. Playwright browser_take_screenshot) put the saved file path
+  // in their arguments, not the result — scan args too so screenshots surface.
+  gatherPathCandidates(parseJsonObject(argumentsJson), pathCandidates);
+  // Keep only real local filesystem paths. Page image URLs and aria-snapshot
+  // text blobs (e.g. from browser_snapshot) must not masquerade as media.
+  const localCandidates = pathCandidates.filter(isLocalMediaCandidate);
   const args = parseJsonObject(argumentsJson);
   const bashCommand =
    toolName === "bash" && typeof args?.command === "string" ? args.command : undefined;
   const bashPath = mediaPathFromText(`${bashCommand ?? ""}\n${resultText ?? ""}`);
-  if (bashPath) pathCandidates.push(bashPath);
+  if (bashPath) localCandidates.push(bashPath);
 
-  for (let i = pathCandidates.length - 1; i >= 0; i -= 1) {
-   const media = mediaArtifactFromPath(pathCandidates[i]);
+  for (let i = localCandidates.length - 1; i >= 0; i -= 1) {
+   const media = mediaArtifactFromPath(localCandidates[i]);
    if (media) return media;
   }
   return null;
@@ -5304,6 +5326,70 @@ function artifactButtonVisual(artifact: PreviewArtifact): {
   return { Icon: FileImage, labelKey: "agent_preview_media" };
 }
 
+function ToolCallInlineImage({
+  artifact,
+}: {
+  artifact: MediaArtifact;
+}): ReactNode {
+  const { t } = useTranslation("pages");
+  const [url, setUrl] = useState<string | null>(null);
+  // height / width ratio, measured on load to pick a sensible thumbnail shape.
+  const [ratio, setRatio] = useState<number | null>(null);
+  useEffect(() => {
+    let active = true;
+    setUrl(null);
+    setRatio(null);
+    void registerRawMedia(artifact.path).then((u) => {
+      if (active) setUrl(u);
+    });
+    return () => {
+      active = false;
+    };
+  }, [artifact.path]);
+  if (!url) return null;
+  // Tall screenshots (long pages) fill the panel width so content is readable,
+  // clipped to a capped height with a "view full" hint. Normal/wide images are
+  // contained within a max height and centered so they never balloon.
+  const tall = ratio != null && ratio > 1.4;
+  return (
+    <button
+      type="button"
+      onClick={() => void openArtifactPreview(artifact)}
+      className={cn(
+        "group relative block w-full overflow-hidden border-t border-border/60 bg-background/40",
+        tall && "max-h-[26rem]"
+      )}
+      title={artifact.title}
+    >
+      <img
+        src={url}
+        alt={artifact.title ?? "screenshot"}
+        loading="lazy"
+        onLoad={(e) => {
+          const el = e.currentTarget;
+          if (el.naturalWidth > 0) {
+            setRatio(el.naturalHeight / el.naturalWidth);
+          }
+        }}
+        className={cn(
+          "block bg-background/40",
+          tall
+            ? "w-full object-top"
+            : "mx-auto max-h-96 w-auto max-w-full object-contain"
+        )}
+      />
+      {tall && (
+        <>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-background/90 to-transparent" />
+          <span className="pointer-events-none absolute bottom-2 right-3 rounded bg-background/80 px-2 py-0.5 text-copy-12 text-muted-foreground shadow-sm">
+            {t("agent_view_full_image")}
+          </span>
+        </>
+      )}
+    </button>
+  );
+}
+
 function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const { t } = useTranslation("pages");
   const reduce = useReducedMotion();
@@ -5424,6 +5510,9 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
           </button>
         )}
       </div>
+      {artifact && artifact.kind === "media" && artifact.mediaKind === "image" && (
+        <ToolCallInlineImage artifact={artifact} />
+      )}
       {expandable && open && (
         <div className="grid gap-2 border-t border-border/60 bg-background/40 px-2.5 py-2">
           {goal && <ToolCallSection label={t("agent_tool_goal")} body={goal} />}

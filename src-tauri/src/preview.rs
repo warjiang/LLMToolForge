@@ -322,10 +322,35 @@ fn route(
         let encoded_path = percent_encode_path(&file);
         let escaped_name = html_escape(&file);
         let media_src = format!("/{token}/{encoded_path}");
-        let body = build_viewer_html(&media_src, &kind, &escaped_name).into_bytes();
+        let open_url = format!("/{token}/__open?f={encoded_path}");
+        let body = build_viewer_html(&media_src, &kind, &escaped_name, &open_url).into_bytes();
         return PreviewHttpResponse {
             status: "200 OK",
             ctype: "text/html; charset=utf-8",
+            content_length: body.len() as u64,
+            body: PreviewBody::Bytes(body),
+            extra_headers: Vec::new(),
+        };
+    }
+
+    // Open a mounted file with the OS default application (from the viewer's
+    // "open in system" button, invoked via fetch so the page does not navigate).
+    if rest == "__open" {
+        let Some(file) = parse_open_query(query) else {
+            return not_found();
+        };
+        let Some(canon) = resolve_mounted_file(&dir, &file) else {
+            return not_found();
+        };
+        let ok = open_in_system(&canon);
+        let body = if ok { b"ok".to_vec() } else { b"fail".to_vec() };
+        return PreviewHttpResponse {
+            status: if ok {
+                "200 OK"
+            } else {
+                "500 Internal Server Error"
+            },
+            ctype: "text/plain; charset=utf-8",
             content_length: body.len() as u64,
             body: PreviewBody::Bytes(body),
             extra_headers: Vec::new(),
@@ -391,6 +416,41 @@ fn parse_view_query(query: &str) -> Option<(String, String)> {
         }
     }
     Some((file?, kind?))
+}
+
+fn parse_open_query(query: &str) -> Option<String> {
+    for pair in query.split('&') {
+        let (raw_key, raw_value) = pair.split_once('=').unwrap_or((pair, ""));
+        let key = percent_decode(raw_key)?;
+        if key == "f" {
+            return percent_decode(raw_value);
+        }
+    }
+    None
+}
+
+/// Open a file with the operating system's default application. Runs in the raw
+/// preview HTTP server (no Tauri handle), so it shells out to the platform opener.
+fn open_in_system(path: &Path) -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(path).spawn().is_ok()
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", ""])
+            .arg(path)
+            .spawn()
+            .is_ok()
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("xdg-open")
+            .arg(path)
+            .spawn()
+            .is_ok()
+    }
 }
 
 fn resolve_mounted_file(dir: &Path, rel: &str) -> Option<PathBuf> {
@@ -497,21 +557,41 @@ fn html_escape(input: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn build_viewer_html(src: &str, kind: &str, name: &str) -> String {
+fn build_viewer_html(src: &str, kind: &str, name: &str, open_url: &str) -> String {
+    // "Open in system" button markup, shared by all kinds.
+    let sys_btn = format!(
+        r#"<button id="sysopen" data-open="{open_url}" title="在系统中打开 / Open externally">在系统中打开</button>"#
+    );
     let media = match kind {
+        // Image gets an interactive stage: fit-to-width by default, wheel zoom,
+        // drag to pan, double-click to reset. Controls live in a floating bar.
         "image" => format!(
-            r#"<img src="{src}" alt="{name}" style="max-width:100%;max-height:100%;object-fit:contain;display:block;" />"#
+            r#"<div id="stage" data-open="{open_url}"><img id="img" src="{src}" alt="{name}" draggable="false" /></div>
+    <div id="bar">
+      <button id="zoomout" title="缩小">&#8722;</button>
+      <button id="zoomin" title="放大">&#43;</button>
+      <button id="reset" title="复位">&#8635;</button>
+      {sys_btn}
+    </div>"#
         ),
         "video" => format!(
-            r#"<video src="{src}" controls style="max-width:100%;max-height:100%;display:block;background:#000;"></video>"#
+            r#"<video src="{src}" controls style="max-width:100%;max-height:100%;display:block;background:#000;"></video>
+    <div id="bar">{sys_btn}</div>"#
         ),
-        "audio" => {
-            format!(r#"<audio src="{src}" controls style="width:min(960px,96vw);"></audio>"#)
-        }
+        "audio" => format!(
+            r#"<audio src="{src}" controls style="width:min(960px,96vw);"></audio>
+    <div id="bar">{sys_btn}</div>"#
+        ),
         "pdf" => format!(
-            r#"<iframe src="{src}" title="{name}" style="width:100%;height:100%;border:0;background:#fff;"></iframe>"#
+            r#"<iframe src="{src}" title="{name}" style="width:100%;height:100%;border:0;background:#fff;"></iframe>
+    <div id="bar">{sys_btn}</div>"#
         ),
         _ => "<div>Unsupported preview kind</div>".to_string(),
+    };
+    let script = if kind == "image" {
+        IMAGE_VIEWER_SCRIPT
+    } else {
+        OPEN_ONLY_SCRIPT
     };
     format!(
         r#"<!doctype html>
@@ -524,16 +604,87 @@ fn build_viewer_html(src: &str, kind: &str, name: &str) -> String {
       html,body{{height:100%;margin:0}}
       body{{background:#0b0f14;color:#e8edf2;display:flex;flex-direction:column;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}}
       header{{padding:10px 14px;border-bottom:1px solid rgba(255,255,255,.08);font-size:12px;color:#9fb0c3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}}
-      main{{flex:1;display:flex;align-items:center;justify-content:center;padding:16px;min-height:0}}
+      main{{position:relative;flex:1;display:flex;align-items:center;justify-content:center;padding:16px;min-height:0}}
+      body[data-kind="image"] main{{padding:0}}
+      #stage{{position:absolute;inset:0;overflow:hidden;cursor:grab}}
+      #stage.grabbing{{cursor:grabbing}}
+      #stage>img{{position:absolute;top:0;left:0;transform-origin:0 0;user-select:none;-webkit-user-drag:none;will-change:transform}}
+      #bar{{position:absolute;right:12px;bottom:12px;display:flex;gap:6px;align-items:center;background:rgba(20,26,33,.86);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:6px;backdrop-filter:blur(6px)}}
+      #bar button{{all:unset;box-sizing:border-box;cursor:pointer;color:#e8edf2;font-size:13px;line-height:1;padding:7px 10px;border-radius:6px;min-width:16px;text-align:center}}
+      #bar button:hover{{background:rgba(255,255,255,.14)}}
+      #sysopen{{font-size:12px}}
     </style>
   </head>
-  <body>
+  <body data-kind="{kind}">
     <header>{name}</header>
     <main>{media}</main>
+    {script}
   </body>
 </html>"#
     )
 }
+
+/// Wires the "open in system" button for non-image viewers (fetch, no navigate).
+const OPEN_ONLY_SCRIPT: &str = r#"<script>
+(function(){
+  var ob=document.getElementById('sysopen');
+  if(ob)ob.addEventListener('click',function(){
+    var u=ob.getAttribute('data-open');
+    if(u)fetch(u).catch(function(){});
+  });
+})();
+</script>"#;
+
+/// Fit-to-width image viewer with wheel zoom, drag pan, double-click reset, and
+/// the "open in system" button. Self-contained so it runs in the native webview.
+const IMAGE_VIEWER_SCRIPT: &str = r#"<script>
+(function(){
+  var stage=document.getElementById('stage');
+  var img=document.getElementById('img');
+  if(!stage||!img)return;
+  var scale=1, minScale=0.05, maxScale=16, tx=0, ty=0;
+  function apply(){img.style.transform='translate('+tx+'px,'+ty+'px) scale('+scale+')';}
+  function fit(){
+    var cw=stage.clientWidth, ch=stage.clientHeight;
+    var nw=img.naturalWidth, nh=img.naturalHeight;
+    if(!nw||!nh||!cw||!ch)return;
+    scale=cw/nw; tx=0;
+    var sh=nh*scale;
+    ty = sh<ch ? (ch-sh)/2 : 0;
+    apply();
+  }
+  function zoomAt(factor,cx,cy){
+    var ns=Math.min(maxScale,Math.max(minScale,scale*factor));
+    if(ns===scale)return;
+    tx=cx-(cx-tx)*(ns/scale);
+    ty=cy-(cy-ty)*(ns/scale);
+    scale=ns; apply();
+  }
+  function center(){var r=stage.getBoundingClientRect();return [r.width/2,r.height/2];}
+  if(img.complete && img.naturalWidth) fit(); else img.addEventListener('load',fit);
+  stage.addEventListener('wheel',function(e){
+    e.preventDefault();
+    var r=stage.getBoundingClientRect();
+    zoomAt(e.deltaY<0?1.15:1/1.15, e.clientX-r.left, e.clientY-r.top);
+  },{passive:false});
+  var dragging=false,sx=0,sy=0,ox=0,oy=0;
+  stage.addEventListener('mousedown',function(e){
+    dragging=true;sx=e.clientX;sy=e.clientY;ox=tx;oy=ty;stage.classList.add('grabbing');
+  });
+  window.addEventListener('mousemove',function(e){
+    if(!dragging)return;
+    tx=ox+(e.clientX-sx);ty=oy+(e.clientY-sy);apply();
+  });
+  window.addEventListener('mouseup',function(){dragging=false;stage.classList.remove('grabbing');});
+  stage.addEventListener('dblclick',function(){fit();});
+  var zin=document.getElementById('zoomin'),zout=document.getElementById('zoomout'),rst=document.getElementById('reset');
+  if(zin)zin.onclick=function(){var c=center();zoomAt(1.25,c[0],c[1]);};
+  if(zout)zout.onclick=function(){var c=center();zoomAt(0.8,c[0],c[1]);};
+  if(rst)rst.onclick=fit;
+  var ob=document.getElementById('sysopen');
+  if(ob)ob.onclick=function(){var u=ob.getAttribute('data-open');if(u)fetch(u).catch(function(){});};
+})();
+</script>"#;
 
 fn not_found() -> PreviewHttpResponse {
     PreviewHttpResponse {

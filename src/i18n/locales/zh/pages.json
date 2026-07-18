@@ -856,6 +856,7 @@
   "agent_tool_error": "错误",
   "agent_open_in_browser": "打开",
   "agent_preview_media": "预览",
+  "agent_view_full_image": "点击查看完整图",
   "agent_select_model_first_short": "先选择模型",
   "agent_refresh_models_hint": "请到模型接入刷新模型",
   "agent_refresh_conn": "刷新 {{name}}",

@@ -256,6 +256,27 @@ async function awaitSettled(entry: WarmEntry, graceMs: number): Promise<void> {
   ]);
 }
 
+/** Recognize the built-in Playwright server (by id or its npm package arg). */
+function isPlaywrightServer(server: McpServer): boolean {
+  if (server.id === "builtin-playwright") return true;
+  return (server.args ?? []).some((a) => a.includes("@playwright/mcp"));
+}
+
+/**
+ * Ensure the Playwright MCP server writes screenshots/PDFs into a predictable
+ * directory (the session workspace) instead of the OS temp folder. Leaves an
+ * explicit user-provided `--output-dir` untouched and is a no-op when no
+ * directory is available or the server is not Playwright.
+ */
+function withScreenshotDir(server: McpServer, dir: string | undefined): McpServer {
+  if (!dir || !isPlaywrightServer(server)) return server;
+  const args = server.args ?? [];
+  if (args.some((a) => a === "--output-dir" || a.startsWith("--output-dir="))) {
+    return server;
+  }
+  return { ...server, args: [...args, "--output-dir", dir] };
+}
+
 /**
  * Build tools from each enabled MCP server's cached inspection. Servers are
  * warmed in the background; this only waits a short grace period for any that
@@ -263,7 +284,8 @@ async function awaitSettled(entry: WarmEntry, graceMs: number): Promise<void> {
  * an error) so it never blocks the agent turn or the healthy servers.
  */
 export async function buildMcpTools(
-  servers: McpServer[]
+  servers: McpServer[],
+  opts?: { screenshotDir?: string }
 ): Promise<BuildMcpToolsResult> {
   const tools: AgentTool[] = [];
   const errors: { server: string; error: string }[] = [];
@@ -271,7 +293,9 @@ export async function buildMcpTools(
 
   // Local builtins resolve immediately in-process; keep them out of warming.
   const localServers = servers.filter(isLocalServer);
-  const remoteServers = servers.filter((s) => !isLocalServer(s));
+  const remoteServers = servers
+    .filter((s) => !isLocalServer(s))
+    .map((s) => withScreenshotDir(s, opts?.screenshotDir));
   for (const server of localServers) {
     tools.push(...buildLocalBuiltinTools(server));
   }

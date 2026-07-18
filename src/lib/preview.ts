@@ -42,7 +42,8 @@ export function mediaKindForPath(path: string): PreviewMediaKind | null {
 
 /**
  * Register a file's parent directory and return a viewer URL that renders the
- * media through preview.rs `__view`.
+ * media through preview.rs `__view` (an HTML wrapper page). Good for the
+ * embedded browser side panel; NOT usable as an `<img>` `src`.
  */
 export async function registerPreviewMedia(filePath: string): Promise<string | null> {
   const kind = mediaKindForPath(filePath);
@@ -55,4 +56,22 @@ export async function registerPreviewMedia(filePath: string): Promise<string | n
   const reg = await registerPreview(dir);
   if (!reg) return null;
   return `${reg.url}__view?f=${encodeURIComponent(file)}&kind=${kind}`;
+}
+
+/**
+ * Register a file's parent directory and return a *raw* file URL (correct
+ * Content-Type, real bytes) suitable for an `<img>`/`<video>` `src`. Unlike
+ * {@link registerPreviewMedia}, this does not go through the `__view` HTML
+ * wrapper, so it can be embedded directly in the message stream.
+ */
+export async function registerRawMedia(filePath: string): Promise<string | null> {
+  if (!mediaKindForPath(filePath)) return null;
+  const normalized = filePath.replace(/\\/g, "/");
+  const slash = normalized.lastIndexOf("/");
+  if (slash <= 0 || slash >= normalized.length - 1) return null;
+  const dir = normalized.slice(0, slash);
+  const file = normalized.slice(slash + 1);
+  const reg = await registerPreview(dir);
+  if (!reg) return null;
+  return `${reg.url}${encodeURIComponent(file)}`;
 }
