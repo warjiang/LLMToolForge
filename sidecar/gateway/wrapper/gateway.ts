@@ -23,6 +23,8 @@ import { initConfig, getConfig, lookupRoute, type RouteEntry } from './config.ts
 import {
   emitCallLog,
   usageFromJson,
+  truncateBody,
+  MAX_BODY_CHARS,
   UsageParser,
   type CallLog,
 } from './logging.ts';
@@ -109,13 +111,16 @@ interface LogMeta {
   userAgent?: string;
   ts: number;
   started: number;
+  /** Upstream request body (the real model call), captured for the monitor UI. */
+  requestBody?: string;
 }
 
 function finishLog(
   meta: LogMeta,
   status: number,
   tokens: { prompt?: number; completion?: number; total?: number } | undefined,
-  error: string | undefined
+  error: string | undefined,
+  responseBody?: string
 ): void {
   const rec: CallLog = {
     ts: meta.ts,
@@ -131,8 +136,22 @@ function finishLog(
     totalTokens: tokens?.total,
     error,
     userAgent: meta.userAgent,
+    requestBody: truncateBody(meta.requestBody),
+    responseBody: truncateBody(responseBody),
   };
   emitCallLog(rec);
+}
+
+/** Accumulate streamed text up to the body cap without unbounded growth. */
+class BodyAccumulator {
+  private buf = '';
+  push(chunk: string): void {
+    if (this.buf.length >= MAX_BODY_CHARS) return;
+    this.buf += chunk;
+  }
+  value(): string {
+    return this.buf;
+  }
 }
 
 // --- app -------------------------------------------------------------------
@@ -197,6 +216,7 @@ app.post('/v1/messages', async (c) => {
     userAgent: userAgent(c),
     ts: nowMs(),
     started: nowMs(),
+    requestBody: JSON.stringify(openaiBody),
   };
 
   const headers = portkeyHeaders(c, route);
@@ -219,7 +239,7 @@ app.post('/v1/messages', async (c) => {
 
   if (!upstream.ok) {
     const text = await upstream.text();
-    finishLog(meta, upstream.status, undefined, `HTTP ${upstream.status}`);
+    finishLog(meta, upstream.status, undefined, `HTTP ${upstream.status}`, text);
     return new Response(text, {
       status: upstream.status,
       headers: { 'content-type': 'application/json' },
@@ -231,11 +251,12 @@ app.post('/v1/messages', async (c) => {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     const reader = upstream.body.getReader();
+    const respAcc = new BodyAccumulator();
     let logged = false;
     const done = (error?: string) => {
       if (logged) return;
       logged = true;
-      finishLog(meta, 200, translator.tokens(), error);
+      finishLog(meta, 200, translator.tokens(), error, respAcc.value());
     };
     const out = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -249,7 +270,9 @@ app.post('/v1/messages', async (c) => {
               controller.close();
               return;
             }
-            for (const frame of translator.feed(decoder.decode(value, { stream: true })))
+            const chunk = decoder.decode(value, { stream: true });
+            respAcc.push(chunk);
+            for (const frame of translator.feed(chunk))
               controller.enqueue(encoder.encode(frame));
             // Upstream connections (via Portkey) may stay open after `[DONE]`;
             // close as soon as the translator has emitted its terminal frames.
@@ -288,10 +311,10 @@ app.post('/v1/messages', async (c) => {
   try {
     openai = JSON.parse(text);
   } catch (e) {
-    finishLog(meta, 502, undefined, (e as Error).message);
+    finishLog(meta, 502, undefined, (e as Error).message, text);
     return jsonError(502, `上游响应解析失败：${(e as Error).message}`);
   }
-  finishLog(meta, 200, usageFromJson(openai), undefined);
+  finishLog(meta, 200, usageFromJson(openai), undefined, text);
   return new Response(JSON.stringify(openAIToAnthropicMessage(openai, exposedModel)), {
     status: 200,
     headers: { 'content-type': 'application/json' },
@@ -339,6 +362,7 @@ app.post('/v1/*', async (c) => {
     userAgent: userAgent(c),
     ts: nowMs(),
     started: nowMs(),
+    requestBody: JSON.stringify(payload),
   };
 
   const headers = portkeyHeaders(c, route);
@@ -381,11 +405,12 @@ async function instrumentResponse(
     const parser = new UsageParser();
     const decoder = new TextDecoder();
     const reader = upstream.body.getReader();
+    const respAcc = new BodyAccumulator();
     let logged = false;
     const done = (error?: string) => {
       if (logged) return;
       logged = true;
-      finishLog(meta, upstream.status, parser.tokens(), error);
+      finishLog(meta, upstream.status, parser.tokens(), error, respAcc.value());
     };
     const out = new ReadableStream<Uint8Array>({
       async pull(controller) {
@@ -396,7 +421,9 @@ async function instrumentResponse(
             controller.close();
             return;
           }
-          parser.feed(decoder.decode(value, { stream: true }));
+          const chunk = decoder.decode(value, { stream: true });
+          parser.feed(chunk);
+          respAcc.push(chunk);
           controller.enqueue(value);
         } catch (e) {
           done((e as Error).message);
@@ -414,16 +441,17 @@ async function instrumentResponse(
 
   // Non-streaming: read fully, capture usage, then forward verbatim.
   const buf = await upstream.arrayBuffer();
+  const bodyText = new TextDecoder().decode(buf);
   let tokens;
   let error: string | undefined;
   try {
-    const parsed = JSON.parse(new TextDecoder().decode(buf));
+    const parsed = JSON.parse(bodyText);
     tokens = usageFromJson(parsed);
   } catch {
     tokens = undefined;
   }
   if (!upstream.ok) error = `HTTP ${upstream.status}`;
-  finishLog(meta, upstream.status, tokens, error);
+  finishLog(meta, upstream.status, tokens, error, bodyText);
   const headers = new Headers(upstream.headers);
   headers.delete('content-encoding');
   headers.delete('content-length');
@@ -456,6 +484,7 @@ async function handleMultipart(
     userAgent: userAgent(c),
     ts: nowMs(),
     started: nowMs(),
+    requestBody: '[multipart/form-data]',
   };
 
   const headers = portkeyHeaders(c, route);

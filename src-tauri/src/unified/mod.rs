@@ -66,14 +66,16 @@ pub struct SharedState {
 }
 
 impl SharedState {
-    pub fn push_log(&mut self, mut rec: CallLogRecord) -> CallLogRecord {
+    pub fn push_log(&mut self, mut rec: CallLogRecord) -> (CallLogRecord, Option<u64>) {
         self.seq += 1;
         rec.id = self.seq;
-        if self.logs.len() >= LOG_CAPACITY {
-            self.logs.pop_front();
-        }
+        let evicted = if self.logs.len() >= LOG_CAPACITY {
+            self.logs.pop_front().map(|r| r.id)
+        } else {
+            None
+        };
         self.logs.push_back(rec.clone());
-        rec
+        (rec, evicted)
     }
 
     /// Serialize the routing table into the JSON config the sidecar reads.
@@ -117,6 +119,22 @@ pub struct CallLogRecord {
     pub total_tokens: Option<u64>,
     pub error: Option<String>,
     pub user_agent: Option<String>,
+    /// Whether a request body was captured to disk for this call.
+    pub has_request_body: bool,
+    /// Whether a response body was captured to disk for this call.
+    pub has_response_body: bool,
+}
+
+/// Request/response bodies captured for a single call, persisted to disk and
+/// loaded on demand (they can be large, so they never live in the ring buffer
+/// or the logs list response).
+#[derive(Debug, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallBody {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub request_body: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub response_body: Option<String>,
 }
 
 /// Call-log line emitted by the sidecar on stdout (no `id`; we assign it).
@@ -136,11 +154,19 @@ struct SidecarLog {
     total_tokens: Option<u64>,
     error: Option<String>,
     user_agent: Option<String>,
+    #[serde(default)]
+    request_body: Option<String>,
+    #[serde(default)]
+    response_body: Option<String>,
 }
 
 impl SidecarLog {
-    fn into_record(self) -> CallLogRecord {
-        CallLogRecord {
+    /// Split the sidecar log into a lightweight ring-buffer record and the
+    /// (optional) request/response bodies that get persisted separately.
+    fn into_record(self) -> (CallLogRecord, CallBody) {
+        let request_body = self.request_body.filter(|s| !s.is_empty());
+        let response_body = self.response_body.filter(|s| !s.is_empty());
+        let rec = CallLogRecord {
             id: 0,
             ts: self.ts,
             exposed_model: self.exposed_model,
@@ -155,7 +181,16 @@ impl SidecarLog {
             total_tokens: self.total_tokens,
             error: self.error,
             user_agent: self.user_agent,
-        }
+            has_request_body: request_body.is_some(),
+            has_response_body: response_body.is_some(),
+        };
+        (
+            rec,
+            CallBody {
+                request_body,
+                response_body,
+            },
+        )
     }
 }
 
@@ -269,6 +304,17 @@ fn config_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
         .map_err(|e| format!("无法获取应用配置目录：{e}"))?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建配置目录：{e}"))?;
     Ok(dir.join("gateway-config.json"))
+}
+
+/// Resolve (and create) the directory holding per-call request/response bodies.
+fn bodies_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法获取应用配置目录：{e}"))?
+        .join("unified-bodies");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建报文目录：{e}"))?;
+    Ok(dir)
 }
 
 /// Atomically write the routing config the sidecar reads (temp file + rename so
@@ -467,11 +513,33 @@ pub async fn unified_api_logs(
 
 #[tauri::command]
 pub async fn unified_api_clear_logs(
+    app: tauri::AppHandle,
     manager: tauri::State<'_, UnifiedManager>,
 ) -> Result<(), String> {
-    let mut shared = manager.shared.write().await;
-    shared.logs.clear();
+    {
+        let mut shared = manager.shared.write().await;
+        shared.logs.clear();
+    }
+    // Best-effort removal of all persisted bodies.
+    if let Ok(dir) = bodies_dir(&app) {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
     Ok(())
+}
+
+/// Load the captured request/response bodies for a single call, on demand.
+#[tauri::command]
+pub async fn unified_api_call_body(
+    app: tauri::AppHandle,
+    id: u64,
+) -> Result<CallBody, String> {
+    let path = bodies_dir(&app)?.join(format!("{id}.json"));
+    match std::fs::read(&path) {
+        Ok(bytes) => {
+            serde_json::from_slice(&bytes).map_err(|e| format!("解析调用报文失败：{e}"))
+        }
+        Err(_) => Ok(CallBody::default()),
+    }
 }
 
 #[tauri::command]
@@ -493,10 +561,26 @@ async fn handle_stdout_line(shared: &Arc<RwLock<SharedState>>, app: &tauri::AppH
     };
     match serde_json::from_str::<SidecarLog>(rest) {
         Ok(log) => {
-            let stored = {
+            let (rec, body) = log.into_record();
+            let has_body = body.request_body.is_some() || body.response_body.is_some();
+            let (stored, evicted) = {
                 let mut s = shared.write().await;
-                s.push_log(log.into_record())
+                s.push_log(rec)
             };
+            // Persist bodies to disk (loaded lazily by the monitor UI), and drop
+            // the evicted call's body file to keep the store bounded.
+            if has_body || evicted.is_some() {
+                if let Ok(dir) = bodies_dir(app) {
+                    if has_body {
+                        if let Ok(bytes) = serde_json::to_vec(&body) {
+                            let _ = std::fs::write(dir.join(format!("{}.json", stored.id)), bytes);
+                        }
+                    }
+                    if let Some(evicted_id) = evicted {
+                        let _ = std::fs::remove_file(dir.join(format!("{evicted_id}.json")));
+                    }
+                }
+            }
             let _ = app.emit(CALL_LOG_EVENT, &stored);
         }
         Err(e) => eprintln!("[gateway] 无法解析调用日志：{e}"),
