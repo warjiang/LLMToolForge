@@ -152,7 +152,11 @@ fn build_menu(
     )?));
     items.push(Box::new(MenuItem::with_id(
         app,
-        if status.running { "sidecar_stop" } else { "sidecar_start" },
+        if status.running {
+            "sidecar_stop"
+        } else {
+            "sidecar_start"
+        },
         if status.running { l.stop } else { l.start },
         true,
         None::<&str>,
@@ -174,7 +178,11 @@ fn build_menu(
     )?));
     items.push(Box::new(MenuItem::with_id(
         app,
-        if conn_running { "connector_stop" } else { "connector_start" },
+        if conn_running {
+            "connector_stop"
+        } else {
+            "connector_start"
+        },
         if conn_running { l.stop } else { l.start },
         true,
         None::<&str>,
@@ -265,7 +273,10 @@ fn toggle_sidecar(app: &AppHandle, start: bool) {
             crate::unified::unified_api_stop(manager).await
         };
         if let Err(e) = result {
-            eprintln!("[tray] sidecar {} failed: {e}", if start { "start" } else { "stop" });
+            eprintln!(
+                "[tray] sidecar {} failed: {e}",
+                if start { "start" } else { "stop" }
+            );
         }
         refresh(&app).await;
     });
@@ -282,7 +293,10 @@ fn toggle_connector(app: &AppHandle, start: bool) {
             connector_stop(app.clone(), manager).await
         };
         if let Err(e) = result {
-            eprintln!("[tray] connector {} failed: {e}", if start { "start" } else { "stop" });
+            eprintln!(
+                "[tray] connector {} failed: {e}",
+                if start { "start" } else { "stop" }
+            );
         }
         refresh(&app).await;
     });
