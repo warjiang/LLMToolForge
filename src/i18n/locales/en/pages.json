@@ -856,6 +856,7 @@
   "agent_tool_error": "Error",
   "agent_open_in_browser": "Open",
   "agent_preview_media": "Preview",
+  "agent_view_full_image": "Click to view full image",
   "agent_select_model_first_short": "Select a model first",
   "agent_refresh_models_hint": "Go to Model Providers to refresh models",
   "agent_refresh_conn": "Refresh {{name}}",
