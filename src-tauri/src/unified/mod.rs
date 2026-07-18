@@ -529,15 +529,10 @@ pub async fn unified_api_clear_logs(
 
 /// Load the captured request/response bodies for a single call, on demand.
 #[tauri::command]
-pub async fn unified_api_call_body(
-    app: tauri::AppHandle,
-    id: u64,
-) -> Result<CallBody, String> {
+pub async fn unified_api_call_body(app: tauri::AppHandle, id: u64) -> Result<CallBody, String> {
     let path = bodies_dir(&app)?.join(format!("{id}.json"));
     match std::fs::read(&path) {
-        Ok(bytes) => {
-            serde_json::from_slice(&bytes).map_err(|e| format!("解析调用报文失败：{e}"))
-        }
+        Ok(bytes) => serde_json::from_slice(&bytes).map_err(|e| format!("解析调用报文失败：{e}")),
         Err(_) => Ok(CallBody::default()),
     }
 }
