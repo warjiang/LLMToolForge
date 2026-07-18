@@ -2422,9 +2422,18 @@ export function AgentChatView() {
       agentRuntimeMetaRef.current = { signature, sessionId };
       const notices: string[] = [];
       if (runtime.mcpErrors.length > 0) {
+        const detail = runtime.mcpErrors
+          .map((e) => {
+            const reason = (e.error ?? "").trim();
+            if (!reason) return e.server;
+            const clipped =
+              reason.length > 400 ? `${reason.slice(0, 400)}…` : reason;
+            return `${e.server}: ${clipped}`;
+          })
+          .join("\n");
         notices.push(
           t("agent_mcp_errors", {
-            servers: runtime.mcpErrors.map((e) => e.server).join(", "),
+            servers: detail,
           }),
         );
       }
@@ -3040,7 +3049,7 @@ export function AgentChatView() {
                   exit={{ opacity: 0, height: 0 }}
                   className="mx-auto w-full max-w-[760px] overflow-hidden"
                 >
-                  <div className="mb-2 rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive">
+                  <div className="mb-2 whitespace-pre-wrap break-words rounded-sm border border-destructive/30 bg-destructive/10 px-3 py-2 text-label-13 text-destructive [overflow-wrap:anywhere]">
                     {error}
                   </div>
                 </motion.div>

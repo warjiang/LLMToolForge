@@ -747,7 +747,7 @@
   "agent_locked_hint": "对话开始后无法再切换 Agent",
   "agent_research_chat_model_required": "ResearchAgent 需要选择可对话模型，不能使用图片或视频生成模型。",
   "agent_research_selector_desc": "自动切换到 Execution write 权限，可将研究文件保存到 workspace。",
-  "agent_mcp_errors": "部分 MCP Server 无法加载：{{servers}}",
+  "agent_mcp_errors": "部分 MCP Server 无法加载：\n{{servers}}",
   "agent_mcp_pending": "正在连接 MCP Server（本轮已跳过，稍后重试即可）：{{servers}}",
   "agent_tools_need_gateway": "已启用工具（Skill / MCP），但当前模型未通过本地 Unified 网关暴露。请在 Unified 页面启动网关并启用该模型后再试。",
   "agent_gateway_unavailable": "本地 Unified 网关未启动，工具调用不可用。请先在 Unified 页面启动网关。",

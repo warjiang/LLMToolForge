@@ -747,7 +747,7 @@
   "agent_locked_hint": "Agent is locked once the conversation has started",
   "agent_research_chat_model_required": "ResearchAgent needs a chat-capable model, not an image or video generation model.",
   "agent_research_selector_desc": "Auto-switches to Execution write so it can save research files to the workspace.",
-  "agent_mcp_errors": "Some MCP servers failed to load: {{servers}}",
+  "agent_mcp_errors": "Some MCP servers failed to load:\n{{servers}}",
   "agent_mcp_pending": "Still connecting to MCP servers (skipped this turn, retry shortly): {{servers}}",
   "agent_tools_need_gateway": "Tools (skills / MCP) are enabled, but the current model isn't exposed through the local Unified gateway. Start the gateway and enable this model on the Unified page, then try again.",
   "agent_gateway_unavailable": "The local Unified gateway isn't running, so tool calls are unavailable. Start it on the Unified page first.",
