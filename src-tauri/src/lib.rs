@@ -1025,6 +1025,7 @@ pub fn run() {
             unified::unified_api_logs,
             unified::unified_api_clear_logs,
             unified::unified_api_call_body,
+            unified::unified_api_clear_bodies,
             unified::unified_api_stats,
             connector::connector_start,
             connector::connector_stop,

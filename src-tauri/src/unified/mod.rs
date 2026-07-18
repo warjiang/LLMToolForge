@@ -542,6 +542,25 @@ pub async fn unified_api_call_body(
     }
 }
 
+/// Manually purge all persisted request/response bodies from disk while keeping
+/// the call-log metadata and stats intact. Clears the per-record body flags so
+/// the monitor UI stops offering to load them.
+#[tauri::command]
+pub async fn unified_api_clear_bodies(
+    app: tauri::AppHandle,
+    manager: tauri::State<'_, UnifiedManager>,
+) -> Result<(), String> {
+    if let Ok(dir) = bodies_dir(&app) {
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    let mut shared = manager.shared.write().await;
+    for r in shared.logs.iter_mut() {
+        r.has_request_body = false;
+        r.has_response_body = false;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn unified_api_stats(
     manager: tauri::State<'_, UnifiedManager>,

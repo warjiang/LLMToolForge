@@ -386,6 +386,11 @@ export async function getCallBody(id: number): Promise<CallBody> {
   return invoke<CallBody>("unified_api_call_body", { id });
 }
 
+/** Purge all persisted request/response bodies from disk (keeps log metadata). */
+export async function clearCallBodies(): Promise<void> {
+  return invoke<void>("unified_api_clear_bodies");
+}
+
 export async function onCallLog(
   cb: (rec: CallLogRecord) => void
 ): Promise<() => void> {

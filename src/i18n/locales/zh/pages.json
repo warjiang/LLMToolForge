@@ -549,6 +549,7 @@
   "monitor_source_col": "来源",
   "monitor_token_by_model": "Token 消耗（Top 8）",
   "monitor_call_records": "调用记录",
+  "monitor_clear_bodies": "清理报文",
   "monitor_no_calls": "暂无调用记录",
   "monitor_no_data": "暂无调用",
   "monitor_no_tokens": "暂无 token 统计",

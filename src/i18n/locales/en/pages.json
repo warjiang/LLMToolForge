@@ -549,6 +549,7 @@
   "monitor_source_col": "Source",
   "monitor_token_by_model": "Token Usage (Top 8)",
   "monitor_call_records": "Call Records",
+  "monitor_clear_bodies": "Clear bodies",
   "monitor_no_calls": "No call records",
   "monitor_no_data": "No data",
   "monitor_no_tokens": "No token stats",

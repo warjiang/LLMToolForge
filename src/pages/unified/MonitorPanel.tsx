@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Eraser, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -181,6 +181,7 @@ export function MonitorPanel() {
   const logs = useUnifiedStore((s) => s.logs);
   const loadLogs = useUnifiedStore((s) => s.loadLogs);
   const clearLogs = useUnifiedStore((s) => s.clearLogs);
+  const clearBodies = useUnifiedStore((s) => s.clearBodies);
 
   const [sourceFilter, setSourceFilter] = useState<string>(ALL_SOURCES);
   const [selected, setSelected] = useState<CallLogRecord | null>(null);
@@ -333,6 +334,9 @@ export function MonitorPanel() {
               }
             >
               <Download className="h-3.5 w-3.5" /> CSV
+            </Button>
+            <Button variant="secondary" size="sm" onClick={() => void clearBodies()}>
+              <Eraser className="h-3.5 w-3.5" /> {t("monitor_clear_bodies")}
             </Button>
             <Button variant="secondary" size="sm" onClick={() => void clearLogs()}>
               <Trash2 className="h-3.5 w-3.5" /> {t("clear", { ns: "common" })}
