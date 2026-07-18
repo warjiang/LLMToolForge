@@ -1,9 +1,16 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Trash2 } from "lucide-react";
+import { Download, Eraser, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -12,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUnifiedStore } from "@/store/unified";
-import type { CallLogRecord } from "@/lib/unifiedApi";
+import { getCallBody, type CallBody, type CallLogRecord } from "@/lib/unifiedApi";
 
 function isOk(r: CallLogRecord): boolean {
   return !r.error && r.status >= 200 && r.status < 400;
@@ -174,8 +181,10 @@ export function MonitorPanel() {
   const logs = useUnifiedStore((s) => s.logs);
   const loadLogs = useUnifiedStore((s) => s.loadLogs);
   const clearLogs = useUnifiedStore((s) => s.clearLogs);
+  const clearBodies = useUnifiedStore((s) => s.clearBodies);
 
   const [sourceFilter, setSourceFilter] = useState<string>(ALL_SOURCES);
+  const [selected, setSelected] = useState<CallLogRecord | null>(null);
 
   const builtinLabel = t("monitor_source_builtin");
   const unknownLabel = t("monitor_source_unknown");
@@ -326,6 +335,9 @@ export function MonitorPanel() {
             >
               <Download className="h-3.5 w-3.5" /> CSV
             </Button>
+            <Button variant="secondary" size="sm" onClick={() => void clearBodies()}>
+              <Eraser className="h-3.5 w-3.5" /> {t("monitor_clear_bodies")}
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => void clearLogs()}>
               <Trash2 className="h-3.5 w-3.5" /> {t("clear", { ns: "common" })}
             </Button>
@@ -353,7 +365,11 @@ export function MonitorPanel() {
                 </tr>
               ) : (
                 filtered.map((r) => (
-                  <tr key={r.id} className="border-t border-border/60 [&>td]:px-3 [&>td]:py-1.5">
+                  <tr
+                    key={r.id}
+                    onClick={() => setSelected(r)}
+                    className="cursor-pointer border-t border-border/60 transition-colors hover:bg-secondary/40 [&>td]:px-3 [&>td]:py-1.5"
+                  >
                     <td className="tabular-nums text-muted-foreground">
                       {new Date(r.ts).toLocaleTimeString()}
                     </td>
@@ -385,6 +401,180 @@ export function MonitorPanel() {
           </table>
         </div>
       </Card>
+
+      <CallDetailDialog
+        record={selected}
+        onClose={() => setSelected(null)}
+        sourceLabelFor={(r) => sourceLabel(r, builtinLabel, unknownLabel)}
+      />
     </div>
+  );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: ReactNode; mono?: boolean }) {
+  return (
+    <div className="flex items-start justify-between gap-4 border-b border-border/60 py-2 last:border-b-0">
+      <span className="shrink-0 text-label-13 text-muted-foreground">{label}</span>
+      <span className={`text-right text-copy-13 ${mono ? "font-mono break-all" : ""}`}>{value}</span>
+    </div>
+  );
+}
+
+/** Pretty-print JSON bodies; fall back to the raw string when not JSON. */
+function formatBody(raw: string): string {
+  const trimmed = raw.trim();
+  try {
+    return JSON.stringify(JSON.parse(trimmed), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function BodyBlock({ title, body }: { title: string; body: string }) {
+  return (
+    <section>
+      <h4 className="mb-1 text-label-12 uppercase tracking-wide text-muted-foreground">{title}</h4>
+      <pre className="max-h-64 overflow-auto rounded-sm border border-border bg-secondary/40 p-3 text-copy-12 leading-relaxed">
+        <code className="whitespace-pre-wrap break-words font-mono">{formatBody(body)}</code>
+      </pre>
+    </section>
+  );
+}
+
+function CallDetailDialog({
+  record,
+  onClose,
+  sourceLabelFor,
+}: {
+  record: CallLogRecord | null;
+  onClose: () => void;
+  sourceLabelFor: (r: CallLogRecord) => string;
+}) {
+  const { t } = useTranslation("pages");
+  const r = record;
+  const ok = r ? isOk(r) : false;
+
+  const [body, setBody] = useState<CallBody | null>(null);
+  const [loadingBody, setLoadingBody] = useState(false);
+
+  useEffect(() => {
+    if (!r || (!r.hasRequestBody && !r.hasResponseBody)) {
+      setBody(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingBody(true);
+    setBody(null);
+    getCallBody(r.id)
+      .then((b) => {
+        if (!cancelled) setBody(b);
+      })
+      .catch(() => {
+        if (!cancelled) setBody(null);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingBody(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [r]);
+
+  const hasAnyBody = !!r && (r.hasRequestBody || r.hasResponseBody);
+  return (
+    <Dialog open={!!record} onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>{t("monitor_detail_title")}</DialogTitle>
+          {r && (
+            <DialogDescription className="font-mono text-copy-12">
+              {new Date(r.ts).toLocaleString()}
+            </DialogDescription>
+          )}
+        </DialogHeader>
+        {r && (
+          <div className="max-h-[70vh] space-y-5 overflow-auto pr-1">
+            <section>
+              <h4 className="mb-1 text-label-12 uppercase tracking-wide text-muted-foreground">
+                {t("monitor_detail_request")}
+              </h4>
+              <DetailRow label={t("monitor_detail_source")} value={sourceLabelFor(r)} />
+              <DetailRow label={t("monitor_detail_exposed_model")} value={r.exposedModel} mono />
+              <DetailRow label={t("monitor_detail_real_model")} value={r.realModel} mono />
+              <DetailRow label={t("monitor_detail_provider")} value={r.provider} />
+              <DetailRow
+                label={t("monitor_detail_protocol")}
+                value={
+                  <span className="inline-flex items-center gap-1">
+                    <Badge variant="outline">{r.protocol}</Badge>
+                  </span>
+                }
+              />
+              <DetailRow
+                label={t("monitor_detail_stream")}
+                value={r.stream ? t("monitor_detail_yes") : t("monitor_detail_no")}
+              />
+            </section>
+
+            <section>
+              <h4 className="mb-1 text-label-12 uppercase tracking-wide text-muted-foreground">
+                {t("monitor_detail_result")}
+              </h4>
+              <DetailRow
+                label={t("monitor_detail_status")}
+                value={
+                  ok ? (
+                    <Badge variant="success">{r.status}</Badge>
+                  ) : (
+                    <Badge variant="destructive">{r.error ? "err" : r.status}</Badge>
+                  )
+                }
+              />
+              <DetailRow label={t("monitor_detail_duration")} value={`${r.durationMs}ms`} />
+              {r.error && <DetailRow label={t("monitor_detail_error")} value={r.error} mono />}
+            </section>
+
+            <section>
+              <h4 className="mb-1 text-label-12 uppercase tracking-wide text-muted-foreground">
+                {t("monitor_detail_tokens")}
+              </h4>
+              <DetailRow
+                label={t("monitor_detail_prompt_tokens")}
+                value={r.promptTokens?.toLocaleString() ?? "-"}
+              />
+              <DetailRow
+                label={t("monitor_detail_completion_tokens")}
+                value={r.completionTokens?.toLocaleString() ?? "-"}
+              />
+              <DetailRow
+                label={t("monitor_detail_total_tokens")}
+                value={r.totalTokens?.toLocaleString() ?? "-"}
+              />
+            </section>
+
+            {r.userAgent && (
+              <section>
+                <h4 className="mb-1 text-label-12 uppercase tracking-wide text-muted-foreground">
+                  {t("monitor_detail_user_agent")}
+                </h4>
+                <p className="break-all font-mono text-copy-12 text-muted-foreground">
+                  {r.userAgent}
+                </p>
+              </section>
+            )}
+
+            {hasAnyBody && loadingBody && (
+              <p className="text-copy-12 text-muted-foreground">{t("monitor_detail_body_loading")}</p>
+            )}
+            {body?.requestBody && (
+              <BodyBlock title={t("monitor_detail_request_body")} body={body.requestBody} />
+            )}
+            {body?.responseBody && (
+              <BodyBlock title={t("monitor_detail_response_body")} body={body.responseBody} />
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }

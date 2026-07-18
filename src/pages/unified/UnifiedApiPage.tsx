@@ -11,6 +11,7 @@ import {
   type UIEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { useSearchParams } from "react-router-dom";
 import {
   Activity,
   AlertTriangle,
@@ -741,8 +742,27 @@ function ExposedModelsCard({
   );
 }
 
+const TAB_VALUES = ["overview", "integration", "monitor"] as const;
+
 export function UnifiedApiPage() {
   const { t } = useTranslation("pages");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab");
+  const activeTab = TAB_VALUES.includes(tabParam as (typeof TAB_VALUES)[number])
+    ? (tabParam as (typeof TAB_VALUES)[number])
+    : "overview";
+  const handleTabChange = useCallback(
+    (value: string) => {
+      setSearchParams(
+        (prev) => {
+          prev.set("tab", value);
+          return prev;
+        },
+        { replace: true }
+      );
+    },
+    [setSearchParams]
+  );
   const supported = useUnifiedStore((s) => s.supported);
   const config = useUnifiedStore((s) => s.config);
   const status = useUnifiedStore((s) => s.status);
@@ -828,7 +848,7 @@ export function UnifiedApiPage() {
         </div>
       )}
 
-      <Tabs defaultValue="overview">
+      <Tabs value={activeTab} onValueChange={handleTabChange}>
         <TabsList>
           <TabsTrigger value="overview">{t("unified_service_tab")}</TabsTrigger>
           <TabsTrigger value="integration">{t("unified_integration_tab")}</TabsTrigger>

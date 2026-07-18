@@ -2,6 +2,7 @@ import { create } from "zustand";
 import {
   buildExposedModels,
   clearLogs as clearLogsCmd,
+  clearCallBodies as clearCallBodiesCmd,
   DEFAULT_CONFIG,
   getLogs,
   getStats,
@@ -97,6 +98,7 @@ interface UnifiedState {
   refreshStats: () => Promise<void>;
   loadLogs: () => Promise<void>;
   clearLogs: () => Promise<void>;
+  clearBodies: () => Promise<void>;
 }
 
 function currentModels(): ExposedModel[] {
@@ -348,5 +350,17 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
   clearLogs: async () => {
     if (get().supported) await clearLogsCmd();
     set({ logs: [], stats: null });
+  },
+
+  clearBodies: async () => {
+    if (get().supported) await clearCallBodiesCmd();
+    // Drop the per-record body flags locally so the UI reflects the purge.
+    set((s) => ({
+      logs: s.logs.map((r) => ({
+        ...r,
+        hasRequestBody: false,
+        hasResponseBody: false,
+      })),
+    }));
   },
 }));

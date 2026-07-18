@@ -26,6 +26,20 @@ export interface CallLog {
   totalTokens?: number;
   error?: string;
   userAgent?: string;
+  /** Truncated upstream request body (the real model call). */
+  requestBody?: string;
+  /** Truncated upstream response body. */
+  responseBody?: string;
+}
+
+/** Max characters retained per captured request/response body (~1 MB). */
+export const MAX_BODY_CHARS = 1_000_000;
+
+/** Bound a captured body so the ring buffer stays memory-safe. */
+export function truncateBody(s: string | undefined): string | undefined {
+  if (s === undefined) return undefined;
+  if (s.length <= MAX_BODY_CHARS) return s;
+  return `${s.slice(0, MAX_BODY_CHARS)}…[truncated ${s.length - MAX_BODY_CHARS} chars]`;
 }
 
 export function emitCallLog(rec: CallLog): void {

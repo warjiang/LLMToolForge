@@ -1,10 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
+  Activity,
   Boxes,
-  CheckCircle2,
   KeyRound,
   PlayCircle,
   Server,
@@ -15,7 +15,13 @@ import { PageHeader } from "@/components/common/PageHeader";
 import { Reveal } from "@/components/common/Reveal";
 import { Card } from "@/components/ui/card";
 import { useApiKeyStore, useMcpStore, useSkillStore } from "@/store";
+import { useUnifiedStore } from "@/store/unified";
+import type { CallLogRecord } from "@/lib/unifiedApi";
 import { AGENT_ROUTE_PATH } from "@/lib/routes";
+
+function isOk(r: CallLogRecord): boolean {
+  return !r.error && r.status >= 200 && r.status < 400;
+}
 
 export function DashboardPage() {
   const { t } = useTranslation("dashboard");
@@ -24,12 +30,35 @@ export function DashboardPage() {
   const skills = useSkillStore();
   const mcp = useMcpStore();
 
+  const unifiedSupported = useUnifiedStore((s) => s.supported);
+  const unifiedRunning = useUnifiedStore((s) => s.status?.running ?? false);
+  const logs = useUnifiedStore((s) => s.logs);
+  const initUnified = useUnifiedStore((s) => s.init);
+  const loadLogs = useUnifiedStore((s) => s.loadLogs);
+
   useEffect(() => {
     if (!apiKeys.loaded) apiKeys.load();
     if (!skills.loaded) skills.load();
     if (!mcp.loaded) mcp.load();
+    void initUnified();
+    void loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const usage = useMemo(() => {
+    const total = logs.length;
+    const ok = logs.filter(isOk).length;
+    const tokens = logs.reduce((a, r) => a + (r.totalTokens ?? 0), 0);
+    const avg = total
+      ? Math.round(logs.reduce((a, r) => a + r.durationMs, 0) / total)
+      : 0;
+    return {
+      total,
+      successRate: total ? Math.round((ok / total) * 100) : 0,
+      tokens,
+      avg,
+    };
+  }, [logs]);
 
   const activeSkills = skills.items.filter((s) => s.enabled).length;
   const activeMcp = mcp.items.filter((s) => s.enabled).length;
@@ -97,43 +126,33 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1.55fr)_minmax(320px,0.85fr)]">
         <Reveal index={3} className="flex">
-          <Card className="flex min-h-[276px] flex-1 flex-col p-5 md:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <h3 className="text-heading-20">{t("workspace")}</h3>
-                <p className="mt-1 max-w-2xl text-copy-14 text-muted-foreground">
-                  {t("workspace_description")}
-                </p>
+          <Link to="/unified?tab=monitor" className="flex flex-1">
+            <Card className="group flex min-h-[276px] flex-1 flex-col p-5 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:shadow-geist-md md:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="text-heading-20">{t("api_usage")}</h3>
+                  <p className="mt-1 max-w-2xl text-copy-14 text-muted-foreground">
+                    {t("api_usage_desc")}
+                  </p>
+                </div>
+                <div className="hidden h-10 w-10 items-center justify-center rounded-md bg-accent-subtle text-accent sm:flex">
+                  <Activity className="h-5 w-5" />
+                </div>
               </div>
-              <div className="hidden h-10 w-10 items-center justify-center rounded-md bg-accent-subtle text-accent sm:flex">
-                <CheckCircle2 className="h-5 w-5" />
-              </div>
-            </div>
 
-            <div className="mt-5 grid flex-1 grid-cols-1 gap-3 lg:grid-cols-3">
-              <WorkspaceLink
-                to="/providers"
-                icon={KeyRound}
-                title={t("model_integration_card")}
-                description={t("model_integration_desc")}
-                meta={t("keys_count", { count: apiKeys.items.length })}
-              />
-              <WorkspaceLink
-                to="/skills"
-                icon={Boxes}
-                title={t("skills_card")}
-                description={t("skills_desc")}
-                meta={t("skills_enabled", { enabled: activeSkills, total: skills.items.length })}
-              />
-              <WorkspaceLink
-                to="/mcp"
-                icon={Server}
-                title={t("mcp_servers_card")}
-                description={t("mcp_desc")}
-                meta={t("mcp_enabled", { enabled: activeMcp, total: mcp.items.length })}
-              />
-            </div>
-          </Card>
+              <div className="mt-5 grid flex-1 grid-cols-2 gap-3 lg:grid-cols-4">
+                <UsageTile label={t("usage_total_requests")} value={usage.total.toLocaleString()} />
+                <UsageTile label={t("usage_success_rate")} value={`${usage.successRate}%`} />
+                <UsageTile label={t("usage_total_tokens")} value={usage.tokens.toLocaleString()} />
+                <UsageTile label={t("usage_avg_time")} value={`${usage.avg}ms`} />
+              </div>
+
+              <div className="mt-5 inline-flex items-center gap-1.5 text-label-13 text-muted-foreground transition-colors group-hover:text-foreground">
+                {t("usage_view_monitor")}
+                <ArrowRight className="h-3.5 w-3.5" />
+              </div>
+            </Card>
+          </Link>
         </Reveal>
 
         <div className="grid gap-4">
@@ -142,8 +161,16 @@ export function DashboardPage() {
               <h3 className="text-heading-16">{t("local_status")}</h3>
               <div className="mt-4 space-y-3">
                 <StatusRow label={t("data_location")} value={t("local_device")} />
-                <StatusRow label={t("available_skills")} value={`${activeSkills}`} />
-                <StatusRow label={t("available_mcp")} value={`${activeMcp}`} />
+                <StatusRow
+                  label={t("unified_service")}
+                  value={
+                    !unifiedSupported
+                      ? t("service_unsupported")
+                      : unifiedRunning
+                        ? t("service_running")
+                        : t("service_stopped")
+                  }
+                />
               </div>
             </Card>
           </Reveal>
@@ -211,40 +238,12 @@ function StatCard({
   );
 }
 
-function WorkspaceLink({
-  to,
-  icon: Icon,
-  title,
-  description,
-  meta,
-}: {
-  to: string;
-  icon: ComponentType<LucideProps>;
-  title: string;
-  description: string;
-  meta: string;
-}) {
+function UsageTile({ label, value }: { label: string; value: string }) {
   return (
-    <Link
-      to={to}
-      className="group flex min-h-[168px] flex-col rounded-sm border border-border bg-background-secondary p-4 transition-all duration-200 ease-geist hover:-translate-y-0.5 hover:border-muted-foreground/30 hover:bg-card hover:shadow-geist-md"
-    >
-      <div className="flex items-center justify-between">
-        <div className="flex h-9 w-9 items-center justify-center rounded-md bg-card text-muted-foreground shadow-geist-sm">
-          <Icon className="h-4 w-4" />
-        </div>
-        <ArrowRight className="h-4 w-4 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-      </div>
-      <div className="mt-auto pt-6">
-        <div className="text-label-14 font-medium">{title}</div>
-        <p className="mt-1 text-copy-13 text-muted-foreground">
-          {description}
-        </p>
-        <div className="mt-3 font-mono text-label-12 text-muted-foreground">
-          {meta}
-        </div>
-      </div>
-    </Link>
+    <div className="flex flex-col justify-between rounded-sm border border-border bg-background-secondary p-4">
+      <div className="text-label-12 text-muted-foreground">{label}</div>
+      <div className="mt-3 text-heading-24 tabular-nums leading-none">{value}</div>
+    </div>
   );
 }
 
