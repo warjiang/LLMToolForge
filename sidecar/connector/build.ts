@@ -25,7 +25,16 @@
  *   bun run build.ts --target=<rust-triple> # cross-compile for another triple
  */
 import { spawnSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -176,6 +185,16 @@ function main(): void {
     ],
     upstreamDir,
   );
+
+  // `bun build --compile` can still drop a sibling `.js.map` next to the
+  // binary despite `--sourcemap=none`. It is not part of `externalBin` and
+  // only pollutes `git status`, so remove any stray source maps in binDir.
+  for (const entry of readdirSync(binDir)) {
+    if (entry.endsWith(".map")) {
+      unlinkSync(join(binDir, entry));
+      console.error(`[connector] removed stray source map -> ${join(binDir, entry)}`);
+    }
+  }
 
   // Assemble runtime resources (read from cwd by the runtime).
   const resDir = join(repoRoot, "src-tauri", "resources", "connector");

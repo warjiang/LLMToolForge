@@ -55,7 +55,7 @@
 
 ## 开发
 
-前置：Node.js + pnpm，以及 Rust 工具链（用于 Tauri）。
+前置：Node.js + pnpm，以及 Rust 工具链（用于 Tauri）；构建 sidecar 还需 [Bun](https://bun.sh)。
 
 ```bash
 pnpm install
@@ -63,15 +63,24 @@ pnpm install
 # 仅前端（浏览器，数据走 localStorage）
 pnpm dev
 
+# 构建 sidecar 二进制（gateway + connector），桌面端首次运行前必须执行一次
+# connector 会按固定 commit 联网克隆 open-connector 源码并用 bun 编译
+pnpm run sidecar:build
+
 # 桌面应用（Tauri，数据走 tauri-plugin-store）
 pnpm tauri:dev
 ```
+
+> 全新克隆或执行 `pnpm clean` 之后，`src-tauri/binaries/` 下的 sidecar 二进制会缺失（它们被 gitignore，仅在本地/CI 构建时生成）。此时直接 `pnpm tauri:dev` 会报 `resource path ... doesn't exist`，需先跑一次 `pnpm run sidecar:build`。也可单独构建：`pnpm run sidecar:gateway:build` / `pnpm run sidecar:connector:build`。
 
 ## 构建
 
 ```bash
 # 前端产物
 pnpm build
+
+# sidecar 二进制（若尚未构建）
+pnpm run sidecar:build
 
 # 桌面安装包
 pnpm tauri:build
