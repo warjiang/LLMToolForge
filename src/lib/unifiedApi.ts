@@ -401,6 +401,16 @@ export async function onCallLog(
   return unlisten;
 }
 
+/** Sync the current UI language to the native tray menu (Tauri only). */
+export async function setTrayLanguage(language: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke<void>("tray_set_language", { language });
+  } catch {
+    /* tray may not be ready yet; ignore */
+  }
+}
+
 /** Generate a random local API key. */
 export function generateLocalKey(): string {
   const bytes = new Uint8Array(24);

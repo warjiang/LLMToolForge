@@ -20,6 +20,7 @@ mod preview;
 mod proc_env;
 mod ssh;
 mod storage;
+mod tray;
 mod unified;
 mod web_fetch;
 mod web_fetch_render;
@@ -984,11 +985,38 @@ pub fn run() {
         .manage(browser::BrowserState::default())
         .manage(preview::PreviewState::default())
         .manage(ssh::SshManager::default())
+        .manage(tray::TrayState::default())
         .setup(|app| {
             let state = app.state::<preview::PreviewState>();
             if let Err(e) = preview::start(&state) {
                 eprintln!("preview server failed to start: {e}");
             }
+
+            // System-tray icon so the app can run in the background.
+            if let Err(e) = tray::build(app.handle()) {
+                eprintln!("tray icon failed to start: {e}");
+            }
+
+            // Keep the tray usage menu current (works even while hidden).
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                loop {
+                    tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                    tray::refresh(&handle).await;
+                }
+            });
+
+            // Closing the main window hides it to the tray instead of quitting.
+            if let Some(win) = app.get_webview_window("main") {
+                let win_handle = win.clone();
+                win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        let _ = win_handle.hide();
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -1027,6 +1055,7 @@ pub fn run() {
             unified::unified_api_call_body,
             unified::unified_api_clear_bodies,
             unified::unified_api_stats,
+            tray::tray_set_language,
             connector::connector_start,
             connector::connector_stop,
             connector::connector_status,

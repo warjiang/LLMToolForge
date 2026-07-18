@@ -7,6 +7,7 @@ import { UpdatePrompt } from "@/components/UpdatePrompt";
 import { useLocaleStore } from "@/store/locale";
 import { useDeviceConfigStore } from "@/store/deviceConfig";
 import { AGENT_ROUTE_PATH } from "@/lib/routes";
+import { setTrayLanguage } from "@/lib/unifiedApi";
 
 const DashboardPage = lazy(() =>
   import("@/pages/DashboardPage").then((m) => ({ default: m.DashboardPage }))
@@ -85,6 +86,7 @@ export default function App() {
 
   useEffect(() => {
     i18n.changeLanguage(language);
+    void setTrayLanguage(language);
   }, [language]);
 
   useEffect(() => {
