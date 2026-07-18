@@ -173,7 +173,7 @@ const components: Components = {
       <img
         src={src}
         alt={alt ?? ""}
-        className="md-block my-2 h-auto max-w-full rounded-md border border-border"
+        className="md-block my-2 mx-auto h-auto max-h-[32rem] w-auto max-w-full rounded-md border border-border object-contain"
       />
     ) : null,
 };
