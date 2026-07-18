@@ -70,6 +70,14 @@ impl ConnectorManager {
             inner.running_port = None;
         }
     }
+
+    /// Status snapshot for direct (non-command) consumers such as the tray.
+    pub async fn status_snapshot(
+        &self,
+        app: &tauri::AppHandle,
+    ) -> Result<ConnectorStatus, String> {
+        status(app, self).await
+    }
 }
 
 #[derive(Debug, Serialize)]

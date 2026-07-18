@@ -231,7 +231,7 @@ pub struct ModelStat {
     pub avg_duration_ms: u64,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UnifiedStats {
     pub total: u64,
@@ -292,6 +292,29 @@ impl UnifiedManager {
             }
             inner.external = false;
             inner.running_port = None;
+        }
+    }
+
+    /// Snapshot of aggregated call stats, for direct (non-command) consumers
+    /// such as the system-tray usage menu.
+    pub async fn stats(&self) -> UnifiedStats {
+        let shared = self.shared.read().await;
+        compute_stats(&shared.logs)
+    }
+
+    /// Snapshot of the gateway status, for direct (non-command) consumers such
+    /// as the system-tray status line and quick actions.
+    pub async fn status_snapshot(&self) -> UnifiedStatus {
+        let inner = self.inner.lock().await;
+        let shared = self.shared.read().await;
+        let mut models: Vec<String> = shared.routes.keys().cloned().collect();
+        models.sort();
+        UnifiedStatus {
+            running: inner.child.is_some() || inner.external,
+            port: inner.running_port.unwrap_or(inner.pending_port),
+            route_count: shared.routes.len(),
+            has_local_key: shared.local_key.is_some(),
+            models,
         }
     }
 }

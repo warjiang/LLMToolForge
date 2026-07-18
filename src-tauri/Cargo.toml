@@ -13,7 +13,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["unstable"] }
+tauri = { version = "2", features = ["unstable", "tray-icon", "image-png"] }
 tauri-plugin-store = "2"
 tauri-plugin-http = "2"
 serde = { version = "1", features = ["derive"] }
@@ -46,3 +46,5 @@ base64 = "0.22"
 russh = { version = "0.61", default-features = false, features = ["ring", "flate2", "rsa"] }
 keyring = { version = "3", default-features = false, features = ["apple-native", "windows-native", "async-secret-service", "crypto-rust", "async-io"] }
 dirs = "5"
+# Native clipboard access for the system-tray "copy connector key" action.
+arboard = "3"
