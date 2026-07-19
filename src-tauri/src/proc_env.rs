@@ -17,16 +17,49 @@ use std::sync::OnceLock;
 #[cfg(unix)]
 use std::time::Duration;
 
-/// Cached, login-shell-augmented `PATH`. Computed lazily on first use.
+/// Cached, login-shell-augmented `PATH`.
+///
+/// Only a *successful* login-shell query is cached here. A failed query (e.g. a
+/// slow rc file that trips the timeout) is intentionally left uncached so the
+/// next spawn retries instead of permanently poisoning the process `PATH` with
+/// the minimal GUI value — which is what made `npx`/`uvx` appear "not found".
 static AUGMENTED_PATH: OnceLock<String> = OnceLock::new();
 
 /// Return a `PATH` value augmented with the user's login-shell `PATH`.
 ///
-/// The result is cached for the lifetime of the process. On non-unix targets,
-/// or when the login shell cannot be queried, the current process `PATH` is
-/// returned unchanged.
-pub fn augmented_path() -> &'static str {
-    AUGMENTED_PATH.get_or_init(compute_augmented_path)
+/// On success the result is cached for the lifetime of the process. On non-unix
+/// targets, or while the login shell cannot be queried, the current process
+/// `PATH` is returned unchanged and the next call will try again.
+pub fn augmented_path() -> String {
+    if let Some(cached) = AUGMENTED_PATH.get() {
+        return cached.clone();
+    }
+
+    let current = std::env::var("PATH").unwrap_or_default();
+
+    #[cfg(unix)]
+    {
+        if let Some(shell_path) = query_login_shell_path() {
+            let merged = merge_paths(&shell_path, &current);
+            // Cache only this success. A concurrent set wins the race with an
+            // equivalent value, so ignore the result and read back the winner.
+            let _ = AUGMENTED_PATH.set(merged);
+            return AUGMENTED_PATH.get().cloned().unwrap_or(current);
+        }
+    }
+
+    current
+}
+
+/// Eagerly compute and cache the augmented `PATH` on a background thread.
+///
+/// The login-shell query can take several seconds (interactive rc files,
+/// version-manager init, etc.). Warming the cache at startup pays that cost up
+/// front so the first MCP/agent spawn doesn't block on it.
+pub fn warm() {
+    std::thread::spawn(|| {
+        let _ = augmented_path();
+    });
 }
 
 /// Set the augmented `PATH` on a `std::process::Command`, unless the caller has
@@ -38,19 +71,6 @@ pub fn apply_to_command(cmd: &mut std::process::Command) {
 /// Set the augmented `PATH` on a `tokio::process::Command`.
 pub fn apply_to_tokio_command(cmd: &mut tokio::process::Command) {
     cmd.env("PATH", augmented_path());
-}
-
-fn compute_augmented_path() -> String {
-    let current = std::env::var("PATH").unwrap_or_default();
-
-    #[cfg(unix)]
-    {
-        if let Some(shell_path) = query_login_shell_path() {
-            return merge_paths(&shell_path, &current);
-        }
-    }
-
-    current
 }
 
 /// Merge two `PATH` strings, keeping `primary` order first and appending any
@@ -97,8 +117,11 @@ fn query_login_shell_path() -> Option<String> {
         .spawn()
         .ok()?;
 
-    // Bound the wait so a misbehaving rc file cannot stall the app.
-    let timeout = Duration::from_secs(5);
+    // Bound the wait so a misbehaving rc file cannot stall the app. Interactive
+    // login shells (p10k, oh-my-zsh, nvm, etc.) routinely take several seconds,
+    // so keep this comfortably above typical startup cost — a too-tight bound
+    // makes the query fail and `npx`/`uvx` look "not found".
+    let timeout = Duration::from_secs(20);
     let waited = child.wait_timeout(timeout).ok().flatten();
     if waited.is_none() {
         let _ = child.kill();
