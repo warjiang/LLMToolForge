@@ -987,6 +987,10 @@ pub fn run() {
         .manage(ssh::SshManager::default())
         .manage(tray::TrayState::default())
         .setup(|app| {
+            // Recover the login-shell PATH ahead of the first tool spawn so the
+            // several-second query doesn't block it (and so `npx`/`uvx` resolve).
+            proc_env::warm();
+
             let state = app.state::<preview::PreviewState>();
             if let Err(e) = preview::start(&state) {
                 eprintln!("preview server failed to start: {e}");
