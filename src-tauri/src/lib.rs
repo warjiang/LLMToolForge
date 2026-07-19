@@ -1107,14 +1107,31 @@ pub fn run() {
         ])
         .build(tauri::generate_context!())
         .expect("error while running tauri application")
-        .run(|app_handle, event| {
+        .run(|app_handle, event| match event {
             // Tear down the gateway sidecar we spawned on exit so we never leave
             // an orphan holding the port (an orphan can still route via the
             // shared config but its stdout/call-log is no longer captured).
-            if let tauri::RunEvent::Exit = event {
+            tauri::RunEvent::Exit => {
                 app_handle.state::<unified::UnifiedManager>().shutdown();
                 app_handle.state::<connector::ConnectorManager>().shutdown();
             }
+            // Clicking the Dock icon (or `open`-ing the app again) while the
+            // window is hidden to the tray fires applicationShouldHandleReopen.
+            // Without handling it the Dock click looks dead, so bring the main
+            // window back whenever it isn't actually on screen. We check the
+            // window's own visibility rather than trusting `has_visible_windows`,
+            // which can be stale for a window hidden via `hide()`.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => {
+                if let Some(win) = app_handle.get_webview_window("main") {
+                    if !win.is_visible().unwrap_or(false) {
+                        let _ = win.show();
+                    }
+                    let _ = win.unminimize();
+                    let _ = win.set_focus();
+                }
+            }
+            _ => {}
         });
 }
 
