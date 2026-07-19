@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Copy,
   FileDown,
   FileUp,
   KeyRound,
@@ -50,6 +51,7 @@ export function SshPage() {
   const [importOpen, setImportOpen] = useState(false);
   const [vaultMode, setVaultMode] = useState<"export" | "import" | null>(null);
   const [editing, setEditing] = useState<SshHost | null>(null);
+  const [cloning, setCloning] = useState<SshHost | null>(null);
   const [deleting, setDeleting] = useState<SshHost | null>(null);
   const openSession = useSshSessionStore((s) => s.openTab);
   const desktop = isTauri();
@@ -93,6 +95,7 @@ export function SshPage() {
 
   const openCreate = () => {
     setEditing(null);
+    setCloning(null);
     setDialogOpen(true);
   };
 
@@ -242,7 +245,13 @@ export function SshPage() {
                     </Button>
                     <RowMenu
                       onEdit={() => {
+                        setCloning(null);
                         setEditing(item);
+                        setDialogOpen(true);
+                      }}
+                      onClone={() => {
+                        setEditing(null);
+                        setCloning(item);
                         setDialogOpen(true);
                       }}
                       onDelete={() => setDeleting(item)}
@@ -259,6 +268,7 @@ export function SshPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editing={editing}
+        cloneFrom={cloning}
       />
       <SshImportDialog open={importOpen} onOpenChange={setImportOpen} />
       <SshVaultDialog
@@ -383,9 +393,11 @@ function SshSkeleton() {
 
 function RowMenu({
   onEdit,
+  onClone,
   onDelete,
 }: {
   onEdit: () => void;
+  onClone: () => void;
   onDelete: () => void;
 }) {
   const { t } = useTranslation("pages");
@@ -400,6 +412,10 @@ function RowMenu({
         <DropdownMenuItem onClick={onEdit}>
           <Pencil className="h-4 w-4" />
           {t("edit", { ns: "common" })}
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={onClone}>
+          <Copy className="h-4 w-4" />
+          {t("ssh_duplicate")}
         </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem variant="destructive" onClick={onDelete}>

@@ -34,6 +34,13 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editing: SshHost | null;
+  /**
+   * When set (and not editing), the dialog opens in "clone" mode: visible
+   * fields are pre-filled from this host and its already-sealed secrets are
+   * reused, so the user typically only changes the address/name to spin up a
+   * near-identical host. Submitting creates a brand new host.
+   */
+  cloneFrom?: SshHost | null;
 }
 
 const empty = {
@@ -50,7 +57,7 @@ const empty = {
   note: "",
 };
 
-export function SshHostDialog({ open, onOpenChange, editing }: Props) {
+export function SshHostDialog({ open, onOpenChange, editing, cloneFrom }: Props) {
   const { t } = useTranslation("pages");
   const add = useSshHostStore((s) => s.add);
   const edit = useSshHostStore((s) => s.edit);
@@ -59,31 +66,40 @@ export function SshHostDialog({ open, onOpenChange, editing }: Props) {
   const [busy, setBusy] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
+  // The host whose visible fields / sealed secrets seed this dialog. For an
+  // edit that's the host itself; for a clone it's the source host.
+  const source = editing ?? (cloneFrom || null);
+  const cloning = !editing && !!cloneFrom;
+
   useEffect(() => {
     if (open) {
       setError(null);
       setForm(
-        editing
+        source
           ? {
-              name: editing.name,
-              hostname: editing.hostname,
-              port: String(editing.port ?? SSH_DEFAULT_PORT),
-              username: editing.username,
-              authMethod: editing.authMethod,
-              // Secrets are never shown; blank means "keep existing".
+              name: cloning ? `${source.name}-copy` : source.name,
+              hostname: source.hostname,
+              port: String(source.port ?? SSH_DEFAULT_PORT),
+              username: source.username,
+              authMethod: source.authMethod,
+              // Secrets are never shown; blank means "keep/reuse existing".
               password: "",
               privateKey: "",
               passphrase: "",
-              proxyJump: editing.proxyJump ?? "",
-              forwardAgent: editing.forwardAgent ?? false,
-              note: editing.note ?? "",
+              proxyJump: source.proxyJump ?? "",
+              forwardAgent: source.forwardAgent ?? false,
+              note: source.note ?? "",
             }
           : empty
       );
     }
-  }, [open, editing]);
+  }, [open, editing, cloneFrom]);
 
-  const secretKept = editing ? t("ssh_secret_kept") : "";
+  const secretKept = editing
+    ? t("ssh_secret_kept")
+    : cloning
+      ? t("ssh_secret_inherited")
+      : "";
 
   const onPickKeyFile = () => fileInput.current?.click();
   const onKeyFile = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -103,7 +119,7 @@ export function SshHostDialog({ open, onOpenChange, editing }: Props) {
     if (
       form.authMethod === "key" &&
       !form.privateKey.trim() &&
-      !editing?.privateKey
+      !source?.privateKey
     ) {
       return setError(t("ssh_key_required"));
     }
@@ -118,10 +134,10 @@ export function SshHostDialog({ open, onOpenChange, editing }: Props) {
         passphrase: form.passphrase.trim() || undefined,
       });
 
-      // For edits, fall back to the previously stored (already sealed) value
-      // when the user left a secret field blank.
+      // For edits and clones, fall back to the source host's already-sealed
+      // value when the user left a secret field blank.
       const keep = (next: string | undefined, prev?: string) =>
-        next ?? (editing ? prev : undefined);
+        next ?? (source ? prev : undefined);
 
       const port = Number.parseInt(form.port, 10);
       const payload = {
@@ -130,16 +146,18 @@ export function SshHostDialog({ open, onOpenChange, editing }: Props) {
         port: Number.isFinite(port) && port > 0 ? port : SSH_DEFAULT_PORT,
         username: form.username.trim(),
         authMethod: form.authMethod,
-        password: keep(sealed.password, editing?.password),
-        privateKey: keep(sealed.privateKey, editing?.privateKey),
-        passphrase: keep(sealed.passphrase, editing?.passphrase),
-        keyName: editing?.keyName,
+        password: keep(sealed.password, source?.password),
+        privateKey: keep(sealed.privateKey, source?.privateKey),
+        passphrase: keep(sealed.passphrase, source?.passphrase),
+        keyName: source?.keyName,
         proxyJump: form.proxyJump.trim() || undefined,
         forwardAgent: form.forwardAgent,
         note: form.note.trim() || undefined,
+        // A clone is a fresh, user-created host; its host-key fingerprint is
+        // re-learned on first connect (a different IP has a different key).
         source: editing?.source ?? ("manual" as const),
         fingerprint: editing?.fingerprint,
-        extraOptions: editing?.extraOptions,
+        extraOptions: source?.extraOptions,
       };
 
       if (editing) await edit(editing.id, payload);
@@ -159,9 +177,15 @@ export function SshHostDialog({ open, onOpenChange, editing }: Props) {
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
-            {editing ? t("ssh_edit_title") : t("ssh_create_title")}
+            {editing
+              ? t("ssh_edit_title")
+              : cloning
+                ? t("ssh_clone_title")
+                : t("ssh_create_title")}
           </DialogTitle>
-          <DialogDescription>{t("ssh_dialog_desc")}</DialogDescription>
+          <DialogDescription>
+            {cloning ? t("ssh_clone_desc") : t("ssh_dialog_desc")}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="grid gap-4">
