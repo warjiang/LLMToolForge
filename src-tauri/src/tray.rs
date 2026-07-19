@@ -23,15 +23,19 @@ pub const TRAY_ID: &str = "main";
 const MAIN_WINDOW: &str = "main";
 
 /// Tray-related state managed by Tauri. Holds the UI language so the native
-/// menu can be localized (the frontend pushes changes via `tray_set_language`).
+/// menu can be localized (the frontend pushes changes via `tray_set_language`),
+/// plus the signature of the menu currently applied to the tray so periodic
+/// refreshes can skip rebuilding when nothing changed.
 pub struct TrayState {
     language: Mutex<String>,
+    menu_sig: Mutex<Option<String>>,
 }
 
 impl Default for TrayState {
     fn default() -> Self {
         Self {
             language: Mutex::new("zh".to_string()),
+            menu_sig: Mutex::new(None),
         }
     }
 }
@@ -47,6 +51,20 @@ impl TrayState {
     fn set_language(&self, lang: &str) {
         if let Ok(mut g) = self.language.lock() {
             *g = lang.to_string();
+        }
+    }
+
+    /// True when `sig` matches the menu already applied to the tray.
+    fn menu_unchanged(&self, sig: &str) -> bool {
+        self.menu_sig
+            .lock()
+            .map(|g| g.as_deref() == Some(sig))
+            .unwrap_or(false)
+    }
+
+    fn store_menu_sig(&self, sig: String) {
+        if let Ok(mut g) = self.menu_sig.lock() {
+            *g = Some(sig);
         }
     }
 }
@@ -376,6 +394,30 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
+/// A compact signature of everything `build_menu` renders. When it is unchanged
+/// between refreshes we skip `set_menu`, because replacing the tray menu while
+/// it is open makes macOS dismiss the popup the user is reading.
+fn menu_signature(
+    status: &UnifiedStatus,
+    connector: Option<&ConnectorStatus>,
+    stats: &UnifiedStats,
+    lang: &str,
+) -> String {
+    use std::fmt::Write;
+    let mut s = String::new();
+    let _ = write!(s, "{lang}|api:{}:{}|", status.running, status.port);
+    match connector {
+        Some(c) => {
+            let _ = write!(s, "conn:{}:{}|", c.running, c.port);
+        }
+        None => s.push_str("conn:none|"),
+    }
+    for m in &stats.by_model {
+        let _ = write!(s, "{}={}={};", m.model, m.count, m.total_tokens);
+    }
+    s
+}
+
 /// Recompute statuses + usage stats and rebuild the tray menu on the main thread.
 pub async fn refresh(app: &AppHandle) {
     let unified = app.state::<UnifiedManager>();
@@ -387,11 +429,22 @@ pub async fn refresh(app: &AppHandle) {
         .await
         .ok();
     let lang = app.state::<TrayState>().language();
+
+    // Only rebuild when the rendered content actually changed. This keeps an
+    // open tray popup from being torn down every refresh tick (the reported
+    // "menu disappears after a moment" bug).
+    let sig = menu_signature(&status, connector.as_ref(), &stats, &lang);
+    if app.state::<TrayState>().menu_unchanged(&sig) {
+        return;
+    }
+
     let app = app.clone();
     let _ = app.clone().run_on_main_thread(move || {
         if let Some(tray) = app.tray_by_id(TRAY_ID) {
             if let Ok(menu) = build_menu(&app, &status, connector.as_ref(), &stats, &lang) {
-                let _ = tray.set_menu(Some(menu));
+                if tray.set_menu(Some(menu)).is_ok() {
+                    app.state::<TrayState>().store_menu_sig(sig);
+                }
             }
         }
     });

@@ -845,6 +845,16 @@ function dataArtifact(
   return null;
 }
 
+/**
+ * A screenshot is the one browser action whose output is a viewable image, so
+ * it is the moment we auto-open the preview panel. Other tools that merely
+ * reference an image path should not pop the panel open on their own.
+ */
+function isScreenshotTool(toolName: string | undefined): boolean {
+  if (!toolName) return false;
+  return parseToolName(toolName).name === "browser_take_screenshot";
+}
+
 async function maybeOpenPreview(
   toolName: string | undefined,
   resultJson: unknown,
@@ -852,8 +862,20 @@ async function maybeOpenPreview(
   resultText?: string
 ): Promise<void> {
   const artifact = dataArtifact(toolName, resultJson, argumentsJson, resultText);
-  if (!artifact || artifact.kind !== "browser") return;
-  await openArtifactPreview(artifact);
+  if (!artifact) return;
+  if (artifact.kind === "browser") {
+    await openArtifactPreview(artifact);
+    return;
+  }
+  // Only auto-open screenshot images, and only for the screenshot tool itself,
+  // since that is when there is genuinely new visual content worth previewing.
+  if (
+    artifact.kind === "media" &&
+    artifact.mediaKind === "image" &&
+    isScreenshotTool(toolName)
+  ) {
+    await openArtifactPreview(artifact);
+  }
 }
 
 export function AgentChatView() {
