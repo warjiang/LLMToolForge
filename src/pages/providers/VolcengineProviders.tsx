@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
 import { ModelIcon, ProviderIcon } from "@/components/common/ProviderModelIcon";
+import { ProviderNote } from "@/components/common/ProviderNote";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
@@ -215,6 +216,7 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
           {error}
         </div>
       )}
+      <ProviderNote note={credential.note} />
       <Tabs defaultValue="models">
         <TabsList>
           <TabsTrigger value="models">

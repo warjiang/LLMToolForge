@@ -102,6 +102,11 @@ export function ManualKeyProviders() {
                     <span className="truncate">· {item.baseUrl}</span>
                   )}
                 </div>
+                {item.note && (
+                  <div className="mt-0.5 truncate text-label-12 text-muted-foreground">
+                    {item.note}
+                  </div>
+                )}
               </div>
               <span className="hidden shrink-0 text-label-12 text-muted-foreground md:block">
                 {formatDate(item.updatedAt)}

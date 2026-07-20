@@ -14,6 +14,7 @@ import { EmptyState } from "@/components/common/EmptyState";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { ModelFeatureBadges } from "@/components/common/ModelFeatureBadges";
 import { ModelIcon, ProviderIcon } from "@/components/common/ProviderModelIcon";
+import { ProviderNote } from "@/components/common/ProviderNote";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
@@ -194,6 +195,7 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
           {error}
         </div>
       )}
+      <ProviderNote note={connection.note} />
       <div className="mb-3 flex items-center justify-between">
         <p className="flex items-center gap-1.5 text-label-13 text-muted-foreground">
           <Boxes className="h-3.5 w-3.5" />

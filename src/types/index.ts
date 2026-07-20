@@ -240,6 +240,8 @@ export interface VolcCredential extends BaseEntity {
   apiKeys: ArkApiKeyRef[];
   /** Last fetched models (endpoints), persisted for reuse. */
   models?: ModelInfo[];
+  /** Free-form note: console URLs, docs links, key/model summary, etc. */
+  note?: string;
 }
 
 export const VOLC_DEFAULT_PROJECT = "default";
@@ -260,6 +262,8 @@ export interface GatewayConnection extends BaseEntity {
   apiKey: string;
   /** Last fetched models, persisted for reuse. */
   models?: ModelInfo[];
+  /** Free-form note: console URLs, docs links, key/model summary, etc. */
+  note?: string;
 }
 
 /** Kind of provider, used to drive the unified Providers page. */

@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -38,6 +39,7 @@ const empty = {
   secretKey: "",
   region: VOLC_REGIONS[0] as string,
   project: VOLC_DEFAULT_PROJECT,
+  note: "",
 };
 
 export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
@@ -58,6 +60,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
               secretKey: editing.secretKey,
               region: editing.region,
               project: editing.project || VOLC_DEFAULT_PROJECT,
+              note: editing.note ?? "",
             }
           : empty
       );
@@ -75,6 +78,7 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
       secretKey: form.secretKey.trim(),
       region: form.region,
       project: form.project.trim() || VOLC_DEFAULT_PROJECT,
+      note: form.note.trim() || undefined,
     };
 
     if (editing) await edit(editing.id, payload);
@@ -158,6 +162,15 @@ export function VolcCredentialDialog({ open, onOpenChange, editing }: Props) {
             <p className="text-label-12 text-muted-foreground">
               {t("volc_project_hint")}
             </p>
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="vc-note">{t("provider_note_label")}</Label>
+            <Textarea
+              id="vc-note"
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+            />
           </div>
 
           {error && <p className="text-label-13 text-destructive">{error}</p>}
