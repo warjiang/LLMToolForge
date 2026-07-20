@@ -83,7 +83,7 @@ const TabsTrigger = React.forwardRef<
       {isActive && (
         <motion.span
           layoutId={ctx ? `${ctx.layoutId}-tab` : undefined}
-          className="absolute inset-0 rounded-sm bg-background shadow-geist-sm"
+          className="pointer-events-none absolute inset-0 rounded-sm bg-background shadow-geist-sm"
           transition={
             reduce
               ? { duration: 0 }

@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { useGatewayStore } from "@/store";
 import type { GatewayConnection, GatewayProvider, ProviderMeta } from "@/types";
@@ -42,7 +43,7 @@ export function GatewayConnectionDialog({
   const { t } = useTranslation("pages");
   const add = useGatewayStore((s) => s.add);
   const edit = useGatewayStore((s) => s.edit);
-  const [form, setForm] = useState({ name: "", baseUrl: "", apiKey: "" });
+  const [form, setForm] = useState({ name: "", baseUrl: "", apiKey: "", note: "" });
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -54,11 +55,13 @@ export function GatewayConnectionDialog({
               name: editing.name,
               baseUrl: editing.baseUrl,
               apiKey: editing.apiKey,
+              note: editing.note ?? "",
             }
           : {
               name: "",
               baseUrl: DEFAULT_BASE_URL[provider.id] ?? "",
               apiKey: "",
+              note: "",
             }
       );
     }
@@ -74,6 +77,7 @@ export function GatewayConnectionDialog({
       provider: provider.id,
       baseUrl: form.baseUrl.trim().replace(/\/+$/, ""),
       apiKey: form.apiKey.trim(),
+      note: form.note.trim() || undefined,
     };
 
     if (editing) await edit(editing.id, payload);
@@ -126,6 +130,15 @@ export function GatewayConnectionDialog({
               autoComplete="off"
               value={form.apiKey}
               onChange={(e) => setForm({ ...form, apiKey: e.target.value })}
+            />
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="gw-note">{t("provider_note_label")}</Label>
+            <Textarea
+              id="gw-note"
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
             />
           </div>
 

@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PasswordInput } from "@/components/ui/password-input";
+import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -236,6 +237,15 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
                 ))}
               </div>
             )}
+          </div>
+
+          <div className="grid gap-1.5">
+            <Label htmlFor="ak-note">{t("provider_note_label")}</Label>
+            <Textarea
+              id="ak-note"
+              value={form.note}
+              onChange={(e) => setForm({ ...form, note: e.target.value })}
+            />
           </div>
 
           {error && <p className="text-label-13 text-destructive">{error}</p>}
