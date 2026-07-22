@@ -740,6 +740,8 @@
   "agent_starter_plan_text": "把开发一个小型命令行待办应用拆解成清晰、有序的步骤。",
   "agent_textarea_placeholder": "输入消息，Enter 发送，Shift+Enter 换行",
   "agent_add_attachment": "添加图片或文件",
+  "agent_image_preview_open": "点击放大查看",
+  "agent_image_preview_close": "关闭预览",
   "agent_current_sandbox": "当前沙箱模式",
   "agent_sandbox_read_only": "只读",
   "agent_sandbox_read_only_desc": "仅查看文件和输出，不做任何修改。",
