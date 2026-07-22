@@ -25,7 +25,7 @@ import traceback
 from typing import Any, Awaitable, Callable, Optional, Protocol, Union
 
 AAP_MARKER = "@@AAP@@"
-AAP_PROTOCOL_VERSION = 1
+AAP_PROTOCOL_VERSION = 2
 
 _write_lock = threading.Lock()
 
@@ -40,9 +40,10 @@ def _emit(event: dict) -> None:
 class TurnContext:
     """Per-turn context handed to ``on_prompt``.
 
-    Exposes typed emit helpers plus the prompt ``input``, the init ``config`` /
-    ``history``, and a cooperative ``aborted`` flag (set when the host sends
-    ``abort``).
+    Exposes typed emit helpers plus the prompt ``input``, any native ``images``
+    (protocol v2+; list of ``{"data","mimeType"}`` with base64 sans prefix), the
+    init ``config`` / ``history``, and a cooperative ``aborted`` flag (set when
+    the host sends ``abort``).
     """
 
     def __init__(
@@ -51,10 +52,13 @@ class TurnContext:
         input: str,
         config: Optional[dict],
         history: list,
+        images: Optional[list] = None,
         host_tools: Optional[list] = None,
         call_host: Optional[Callable[[str, Any], dict]] = None,
     ):
         self.input = input
+        #: Native images for this turn (v2+); empty when none/non-vision model.
+        self.images = images or []
         self.config = config or {}
         self.history = history or []
         #: Host tool specs advertised in ``init`` ({name, description, parameters}).
@@ -159,7 +163,7 @@ def run(
 
     _emit({"type": "ready", "protocolVersion": AAP_PROTOCOL_VERSION, "agent": name})
 
-    prompts: "queue.Queue[Optional[str]]" = queue.Queue()
+    prompts: "queue.Queue[Optional[dict]]" = queue.Queue()
     state: dict = {"config": None, "history": [], "host_tools": [], "ctx": None}
 
     # Correlated host tool calls: callId -> {"event": Event, "result": dict}.
@@ -220,7 +224,12 @@ def run(
                     except Exception:  # noqa: BLE001
                         traceback.print_exc()
             elif mtype == "prompt":
-                prompts.put(msg.get("input", ""))
+                prompts.put(
+                    {
+                        "input": msg.get("input", ""),
+                        "images": msg.get("images") or [],
+                    }
+                )
             elif mtype == "abort":
                 ctx = state.get("ctx")
                 if ctx is not None:
@@ -245,7 +254,8 @@ def run(
         if item is None:
             break
         ctx = TurnContext(
-            input=item,
+            input=item.get("input", ""),
+            images=item.get("images") or [],
             config=state["config"],
             history=state["history"],
             host_tools=state["host_tools"],

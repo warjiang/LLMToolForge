@@ -18,6 +18,7 @@ import {
   Check,
   Copy,
   Download,
+  Eye,
   KeyRound,
   Loader2,
   Play,
@@ -316,12 +317,16 @@ function firstVisibleIndex(rows: VirtualRow[], scrollTop: number): number {
 function ModelVirtualTable({
   models,
   disabled,
+  visionForced,
   onToggle,
+  onToggleVision,
   onDelete,
 }: {
   models: ExposedModel[];
   disabled: Set<string>;
+  visionForced: Set<string>;
   onToggle: (id: string, enabled: boolean) => void;
+  onToggleVision: (id: string, on: boolean) => void;
   onDelete: (model: ExposedModel) => void;
 }) {
   const { t } = useTranslation("pages");
@@ -384,7 +389,9 @@ function ModelVirtualTable({
               key={row.id}
               row={row}
               disabled={disabled}
+              visionForced={visionForced.has(row.model.id)}
               onToggle={onToggle}
+              onToggleVision={onToggleVision}
               onDelete={onDelete}
               copyLabel={t("copy", { ns: "common" })}
             />
@@ -398,13 +405,17 @@ function ModelVirtualTable({
 function ModelVirtualRow({
   row,
   disabled,
+  visionForced,
   onToggle,
+  onToggleVision,
   onDelete,
   copyLabel,
 }: {
   row: Extract<VirtualRow, { kind: "model" }>;
   disabled: Set<string>;
+  visionForced: boolean;
   onToggle: (id: string, enabled: boolean) => void;
+  onToggleVision: (id: string, on: boolean) => void;
   onDelete: (model: ExposedModel) => void;
   copyLabel: string;
 }) {
@@ -413,6 +424,10 @@ function ModelVirtualRow({
   const model = row.model;
   const on = !disabled.has(model.id);
   const sameAsId = model.realModel === model.id.split("/").pop();
+  const visionOn = model.features.includes("vision");
+  // Vision came from metadata/heuristic (not the manual override set): show the
+  // toggle as active-but-disabled since the override can only add, not remove.
+  const visionDerived = visionOn && !visionForced;
 
   return (
     <div
@@ -457,6 +472,23 @@ function ModelVirtualRow({
         )}
       </div>
       <div className="flex items-center justify-end gap-1.5">
+        <button
+          type="button"
+          disabled={visionDerived}
+          onClick={() => onToggleVision(model.id, !visionForced)}
+          aria-pressed={visionOn}
+          aria-label={tp("unified_force_vision")}
+          title={tp(
+            visionDerived ? "unified_force_vision_auto" : "unified_force_vision_tip"
+          )}
+          className={`inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm transition-colors duration-150 focus-visible:outline-none focus-visible:shadow-[0_0_0_1px_var(--ring)] disabled:cursor-default ${
+            visionOn
+              ? "text-accent-foreground"
+              : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground"
+          }`}
+        >
+          <Eye className="h-3.5 w-3.5" />
+        </button>
         <Switch checked={on} onCheckedChange={(enabled) => onToggle(model.id, enabled)} />
         <button
           type="button"
@@ -573,16 +605,20 @@ function ConfigIoButtons() {
 function ExposedModelsCard({
   models,
   disabled,
+  visionForced,
   hydrated,
   hydrating,
   onToggle,
+  onToggleVision,
   onDelete,
 }: {
   models: ExposedModel[];
   disabled: Set<string>;
+  visionForced: Set<string>;
   hydrated: boolean;
   hydrating: boolean;
   onToggle: (id: string, enabled: boolean) => void;
+  onToggleVision: (id: string, on: boolean) => void;
   onDelete: (model: ExposedModel) => void;
 }) {
   const { t } = useTranslation("pages");
@@ -732,7 +768,9 @@ function ExposedModelsCard({
             <ModelVirtualTable
               models={filtered}
               disabled={disabled}
+              visionForced={visionForced}
               onToggle={onToggle}
+              onToggleVision={onToggleVision}
               onDelete={onDelete}
             />
           )}
@@ -775,6 +813,7 @@ export function UnifiedApiPage() {
   const hydrateModels = useUnifiedStore((s) => s.hydrateModels);
   const setConfig = useUnifiedStore((s) => s.setConfig);
   const toggleModel = useUnifiedStore((s) => s.toggleModel);
+  const toggleVision = useUnifiedStore((s) => s.toggleVision);
   const removeModel = useUnifiedStore((s) => s.removeModel);
   const start = useUnifiedStore((s) => s.start);
   const stop = useUnifiedStore((s) => s.stop);
@@ -798,6 +837,10 @@ export function UnifiedApiPage() {
   const disabled = useMemo(
     () => new Set(config.disabledModelIds),
     [config.disabledModelIds]
+  );
+  const visionForced = useMemo(
+    () => new Set(config.visionModelIds),
+    [config.visionModelIds]
   );
   const { enabledCount, firstEnabled } = useMemo(() => {
     let enabledCount = 0;
@@ -1022,9 +1065,11 @@ export function UnifiedApiPage() {
                   <ExposedModelsCard
                     models={models}
                     disabled={disabled}
+                    visionForced={visionForced}
                     hydrated={modelsHydrated}
                     hydrating={hydratingModels}
                     onToggle={toggleModel}
+                    onToggleVision={toggleVision}
                     onDelete={setDeleting}
                   />
                 </div>

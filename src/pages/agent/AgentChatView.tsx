@@ -118,6 +118,7 @@ import {
   type SeedHistoryMessage,
 } from "@/lib/agent";
 import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
+import { attachmentsToPromptImages } from "@/lib/agent/images";
 import { openSessionWorkspace, resolveSessionWorkspace } from "@/lib/agent/workspace";
 import {
   mediaKindForPath,
@@ -2523,7 +2524,26 @@ export function AgentChatView() {
       }
       if (notices.length > 0) setError(notices.join("\n"));
     }
-    await runtime!.prompt(promptWithAttachmentPaths(content, inputAttachments));
+    // Send images natively only when the resolved model supports vision;
+    // otherwise fall back to the existing file-path text context (no error on
+    // non-vision models). `def.modelId` is the exposed unified id.
+    const exposedModel = useUnifiedStore
+      .getState()
+      .models.find((m) => m.id === def.modelId);
+    const supportsVision = !!exposedModel?.features.includes("vision");
+    const images = supportsVision
+      ? attachmentsToPromptImages(inputAttachments)
+      : [];
+    const useNativeImages = images.length > 0;
+    // When images are sent natively, keep only non-image attachments in the
+    // path-text context so images aren't represented twice.
+    const textAttachments = useNativeImages
+      ? inputAttachments.filter((a) => a.kind !== "image")
+      : inputAttachments;
+    await runtime!.prompt(
+      promptWithAttachmentPaths(content, textAttachments),
+      useNativeImages ? images : undefined
+    );
     await runtime!.waitForIdle();
     cancelActiveCheckpoint();
     cancelActiveAsk();
