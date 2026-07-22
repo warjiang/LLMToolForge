@@ -740,6 +740,8 @@
   "agent_starter_plan_text": "Break down building a small command-line todo app into clear, ordered steps.",
   "agent_textarea_placeholder": "Type a message, Enter to send, Shift+Enter for newline",
   "agent_add_attachment": "Add image or file",
+  "agent_image_preview_open": "Click to enlarge",
+  "agent_image_preview_close": "Close preview",
   "agent_current_sandbox": "Current sandbox mode",
   "agent_sandbox_read_only": "Read only",
   "agent_sandbox_read_only_desc": "Inspect files and outputs without modifying them.",

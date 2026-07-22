@@ -52,6 +52,7 @@ import {
   Trash2,
   Wrench,
   X,
+  ZoomIn,
 } from "lucide-react";
 import { EmptyState } from "@/components/common/EmptyState";
 import { MarkdownMessage } from "@/components/agent/MarkdownMessage";
@@ -1691,6 +1692,38 @@ export function AgentChatView() {
     }
   };
 
+  // Extract pasted files (e.g. screenshots copied to the clipboard) from a paste
+  // event and add them as attachments. Clipboard image blobs usually have an
+  // empty/generic name, so we synthesize a sensible one from the mime type.
+  const handleComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!settings) return;
+    const files: File[] = [];
+    for (const item of Array.from(e.clipboardData.items)) {
+      if (item.kind !== "file") continue;
+      const file = item.getAsFile();
+      if (!file) continue;
+      if (file.name) {
+        files.push(file);
+      } else {
+        const ext = file.type.split("/")[1] || "png";
+        const stamp = new Date()
+          .toISOString()
+          .replace(/[:.]/g, "-")
+          .replace("T", "_")
+          .slice(0, 19);
+        files.push(
+          new File([file], `pasted-${stamp}.${ext}`, {
+            type: file.type || "image/png",
+          })
+        );
+      }
+    }
+    if (files.length === 0) return;
+    // Prevent the raw blob/text from also landing in the textarea.
+    e.preventDefault();
+    void addAttachmentFiles(files);
+  };
+
   const saveAttachmentsForExecution = async (
     inputAttachments: ChatAttachment[]
   ): Promise<ChatAttachment[]> => {
@@ -3144,6 +3177,7 @@ export function AgentChatView() {
                 placeholder={t("agent_textarea_placeholder")}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
+                onPaste={handleComposerPaste}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
                     e.preventDefault();
@@ -4332,6 +4366,96 @@ function attachmentVisual(attachment: ChatAttachment): {
   };
 }
 
+/**
+ * Full-screen image viewer rendered into a portal. Opens on top of everything,
+ * closes on ESC, backdrop click, or the close button. Used to enlarge inline
+ * chat images (pasted screenshots, attachments, generated images).
+ */
+function ImageLightbox({
+  src,
+  alt,
+  onClose,
+}: {
+  src: string;
+  alt?: string;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("pages");
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div
+      role="dialog"
+      aria-modal="true"
+      onClick={onClose}
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-black/80 p-6 backdrop-blur-sm"
+    >
+      <button
+        type="button"
+        onClick={onClose}
+        title={t("agent_image_preview_close")}
+        className="absolute right-4 top-4 flex h-9 w-9 items-center justify-center rounded-md border border-white/20 bg-black/40 text-white/90 transition-colors hover:bg-black/70"
+      >
+        <X className="h-5 w-5" />
+      </button>
+      <img
+        src={src}
+        alt={alt}
+        onClick={(e) => e.stopPropagation()}
+        className="max-h-full max-w-full rounded-md object-contain shadow-2xl"
+      />
+    </div>,
+    document.body
+  );
+}
+
+/**
+ * An image thumbnail that opens a full-screen lightbox when clicked, with a
+ * hover "zoom" affordance so users know it is enlargeable.
+ */
+function ZoomableImage({
+  src,
+  alt,
+  className,
+}: {
+  src: string;
+  alt?: string;
+  className?: string;
+}) {
+  const { t } = useTranslation("pages");
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        title={t("agent_image_preview_open")}
+        className="group/zoom relative block cursor-zoom-in overflow-hidden rounded-sm"
+      >
+        <img src={src} alt={alt} className={className} />
+        <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/0 opacity-0 transition-all group-hover/zoom:bg-black/25 group-hover/zoom:opacity-100">
+          <ZoomIn className="h-4 w-4 text-white drop-shadow" />
+        </span>
+      </button>
+      {open && <ImageLightbox src={src} alt={alt} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 function AttachmentPreviewCard({
   attachment,
   onRemove,
@@ -4349,7 +4473,7 @@ function AttachmentPreviewCard({
   return (
     <div className="flex h-[52px] w-full max-w-[280px] items-center gap-2.5 rounded-md border border-border bg-background px-2.5 shadow-[0_1px_1px_rgba(0,0,0,0.03)] sm:w-[280px]">
       {isImage && imageSrc ? (
-        <img
+        <ZoomableImage
           src={imageSrc}
           alt={attachment.name}
           className="h-8 w-8 shrink-0 rounded-sm object-cover"
@@ -4915,14 +5039,18 @@ function ChatBubble({
           >
             {generatedImages.length > 0 && (
               <div className="mb-3 grid gap-2">
-                {generatedImages.map((attachment) => (
-                  <img
-                    key={attachment.id}
-                    src={attachmentSrc(attachment)}
-                    alt={attachment.name}
-                    className="mx-auto h-auto max-h-[32rem] w-auto max-w-full rounded-sm border border-border bg-background object-contain"
-                  />
-                ))}
+                {generatedImages.map((attachment) => {
+                  const src = attachmentSrc(attachment);
+                  if (!src) return null;
+                  return (
+                    <ZoomableImage
+                      key={attachment.id}
+                      src={src}
+                      alt={attachment.name}
+                      className="mx-auto h-auto max-h-[32rem] w-auto max-w-full rounded-sm border border-border bg-background object-contain"
+                    />
+                  );
+                })}
               </div>
             )}
             {generatedVideos.length > 0 && (
