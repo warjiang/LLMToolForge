@@ -16,7 +16,7 @@
  */
 
 /** Bump when the wire shape changes incompatibly. */
-export const AAP_PROTOCOL_VERSION = 1;
+export const AAP_PROTOCOL_VERSION = 2;
 
 /** Stdout line prefix marking a structured agent → host event. */
 export const AAP_MARKER = "@@AAP@@";
@@ -76,10 +76,26 @@ export interface AapInitMessage {
   hostTools?: AapHostToolSpec[];
 }
 
+/**
+ * A native image attached to a user turn, base64-encoded without the
+ * `data:<mime>;base64,` prefix. Present only when the host-resolved model is
+ * vision-capable (added in protocol v2).
+ */
+export interface AapPromptImage {
+  data: string;
+  mimeType: string;
+}
+
 /** A user turn. `input` is the prompt text (attachment paths inlined by host). */
 export interface AapPromptMessage {
   type: "prompt";
   input: string;
+  /**
+   * Native images for this turn (protocol v2+). Omitted when the resolved
+   * model has no vision capability; agents that don't support vision should
+   * ignore this field. Non-image attachments are always inlined into `input`.
+   */
+  images?: AapPromptImage[];
 }
 
 /** Cooperative cancel request for the current turn. */

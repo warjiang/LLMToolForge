@@ -1,9 +1,16 @@
-# AAP — Agent Adapter Protocol (v1)
+# AAP — Agent Adapter Protocol (v2)
 
 Framework-neutral wire protocol between the LLMToolForge host (Tauri/Rust) and an
 external agent subprocess (Python / Node). The TypeScript definitions in
 `protocol.ts` are the source of truth; this document is the cross-language
 contract the Python/Node SDKs implement.
+
+## Protocol versions
+
+- **v1** — baseline (text-only prompts).
+- **v2** — adds the optional `prompt.images` field for native multimodal input.
+  The field is additive and backward compatible: v1 agents ignore the unknown
+  field, and the host only sends it when the resolved model is vision-capable.
 
 ## Transport
 
@@ -28,7 +35,7 @@ Newline-delimited JSON over the subprocess's standard streams.
 ```json
 {
   "type": "init",
-  "protocolVersion": 1,
+  "protocolVersion": 2,
   "config": {
     "baseUrl": "http://127.0.0.1:4141/v1",
     "localKey": "sk-local-…",
@@ -66,8 +73,20 @@ environment variable.
 
 ### `prompt`
 ```json
-{ "type": "prompt", "input": "user turn text" }
+{
+  "type": "prompt",
+  "input": "user turn text",
+  "images": [
+    { "data": "<base64 without data: prefix>", "mimeType": "image/png" }
+  ]
+}
 ```
+`images` (optional, v2+) carries native images for this turn. The host includes
+it **only** when the resolved model is vision-capable; otherwise it is omitted
+and any image attachments are instead referenced as file paths inlined into
+`input` (as are all non-image attachments regardless of vision support). Agents
+that don't handle vision should ignore `images`. The SDKs surface it as
+`ctx.images` (Node) / `ctx.images` (Python).
 
 ### `abort`
 ```json

@@ -23,6 +23,7 @@ import {
   type AgentRuntimeCallbacks,
   type AgentRuntimeOptions,
 } from "./runtime";
+import type { AgentPromptImage } from "./images";
 import {
   AAP_PROTOCOL_VERSION,
   encodeHostMessage,
@@ -379,11 +380,15 @@ export async function createExternalAgentRuntime(
   };
 
   return {
-    prompt: async (input: string) => {
+    prompt: async (input: string, images?: AgentPromptImage[]) => {
       idlePromise = new Promise<void>((resolve) => {
         idleResolve = resolve;
       });
-      await send({ type: "prompt", input });
+      await send({
+        type: "prompt",
+        input,
+        images: images?.length ? images : undefined,
+      });
     },
     abort: () => {
       void send({ type: "abort" }).catch(() => {});

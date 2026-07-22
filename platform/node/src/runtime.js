@@ -10,7 +10,7 @@
  */
 
 export const AAP_MARKER = "@@AAP@@";
-export const AAP_PROTOCOL_VERSION = 1;
+export const AAP_PROTOCOL_VERSION = 2;
 
 function writeEvent(event) {
   process.stdout.write(AAP_MARKER + JSON.stringify(event) + "\n");
@@ -18,12 +18,15 @@ function writeEvent(event) {
 
 /**
  * Per-turn context handed to `onPrompt`. Exposes typed emit helpers plus the
- * prompt input, the init config/history/host tools, and an `AbortSignal` wired
- * to `abort`.
+ * prompt input, any native `images` (protocol v2+; array of `{data, mimeType}`
+ * with base64 sans prefix), the init config/history/host tools, and an
+ * `AbortSignal` wired to `abort`.
  */
 export class TurnContext {
-  constructor({ input, config, history, hostTools, signal, callHost }) {
+  constructor({ input, config, history, images, hostTools, signal, callHost }) {
     this.input = input;
+    /** Native images for this turn (v2+); empty when none/non-vision model. */
+    this.images = images ?? [];
     this.config = config;
     this.history = history;
     /** Host tool specs advertised in `init` ({name, description, parameters}). */
@@ -126,12 +129,13 @@ export function run(agent) {
     agent: agent.name ?? "node-agent",
   });
 
-  async function handlePrompt(input) {
+  async function handlePrompt(input, images) {
     controller = new AbortController();
     const ctx = new TurnContext({
       input,
       config,
       history,
+      images,
       hostTools,
       signal: controller.signal,
       callHost,
@@ -180,7 +184,7 @@ export function run(agent) {
           }
         }
       } else if (msg.type === "prompt") {
-        void handlePrompt(msg.input ?? "");
+        void handlePrompt(msg.input ?? "", msg.images ?? []);
       } else if (msg.type === "abort") {
         controller?.abort();
       } else if (msg.type === "host_tool_result") {

@@ -13,7 +13,9 @@ import type {
   AgentMessage,
   AgentToolResult,
 } from "@earendil-works/pi-agent-core";
+import type { ImageContent } from "@earendil-works/pi-ai";
 import type { AgentDefinition } from "@/types";
+import type { AgentPromptImage } from "./images";
 import { useUnifiedStore } from "@/store/unified";
 import { useSkillStore, getEffectiveMcpServers } from "@/store";
 import { buildPiModel } from "./model";
@@ -77,7 +79,7 @@ export interface AgentRuntimeCallbacks {
 }
 
 export interface AgentRuntime {
-  prompt: (input: string) => Promise<void>;
+  prompt: (input: string, images?: AgentPromptImage[]) => Promise<void>;
   abort: () => void;
   waitForIdle: () => Promise<void>;
   /**
@@ -387,9 +389,16 @@ export async function createAgentRuntime(
   });
 
   return {
-    prompt: async (input: string) => {
+    prompt: async (input: string, images?: AgentPromptImage[]) => {
       try {
-        await agent.prompt(input);
+        const piImages: ImageContent[] | undefined = images?.length
+          ? images.map((im) => ({
+              type: "image" as const,
+              data: im.data,
+              mimeType: im.mimeType,
+            }))
+          : undefined;
+        await agent.prompt(input, piImages);
       } catch (err) {
         console.error("[agent] prompt threw", err);
         throw err;

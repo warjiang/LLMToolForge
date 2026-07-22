@@ -108,8 +108,57 @@ async function main() {
   await testRuntimeLoop();
   await testVercelAdapter();
   await testHostToolBridge();
+  await testPromptImages();
   await testModelConfig();
   console.log("ALL NODE SDK TESTS PASSED");
+}
+
+// --- Test: a v2 prompt with `images` surfaces them on ctx.images ---------------
+async function testPromptImages() {
+  const agentPath = join(here, "fixtures", "image-agent.mjs");
+  const child = spawn("node", [agentPath], {
+    stdio: ["pipe", "pipe", "inherit"],
+  });
+  const events = [];
+  let buf = "";
+  child.stdout.setEncoding("utf8");
+  child.stdout.on("data", (c) => {
+    buf += c;
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (line.startsWith(MARKER)) events.push(JSON.parse(line.slice(MARKER.length)));
+    }
+  });
+  const send = (m) => child.stdin.write(JSON.stringify(m) + "\n");
+
+  send({
+    type: "init",
+    protocolVersion: 2,
+    config: { baseUrl: "x", localKey: "y", model: "m", systemPrompt: "", temperature: 0.7, maxTokens: 100 },
+    history: [],
+  });
+  send({
+    type: "prompt",
+    input: "look",
+    images: [{ data: "QUJD", mimeType: "image/png" }],
+  });
+
+  const deadline = Date.now() + 4000;
+  while (Date.now() < deadline && !events.some((e) => e.type === "done")) {
+    await new Promise((r) => setTimeout(r, 30));
+  }
+  child.stdin.end();
+  child.kill();
+
+  const end = events.find((e) => e.type === "assistant_end");
+  assert.equal(end.text, "images=1", "one image received");
+  const delta = events.find(
+    (e) => e.type === "assistant_delta" && e.delta.startsWith("images=")
+  );
+  assert.ok(delta && delta.delta.includes("image/png:QUJD"), "image payload forwarded");
+  console.log("PASS: prompt images");
 }
 
 // --- Test 4: modelConfig surfaces userAgent + headers for call attribution ---

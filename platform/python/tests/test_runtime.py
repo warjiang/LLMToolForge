@@ -184,10 +184,51 @@ def test_host_tool_bridge() -> None:
     print("PASS: host tool bridge")
 
 
+def test_prompt_images() -> None:
+    """A v2 prompt with `images` surfaces them on `ctx.images`."""
+    agent = HERE / "fixtures" / "image_agent.py"
+    env = dict(os.environ)
+    env["PYTHONPATH"] = str(PKG_ROOT) + os.pathsep + env.get("PYTHONPATH", "")
+    proc = subprocess.Popen(
+        [sys.executable, str(agent)],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=sys.stderr,
+        text=True,
+        env=env,
+    )
+    init = {
+        "type": "init",
+        "protocolVersion": 2,
+        "config": {"baseUrl": "x", "localKey": "y", "model": "m",
+                   "systemPrompt": "", "temperature": 0.7, "maxTokens": 100},
+        "history": [],
+    }
+    prompt = {
+        "type": "prompt",
+        "input": "look",
+        "images": [{"data": "QUJD", "mimeType": "image/png"}],
+    }
+    assert proc.stdin is not None
+    payload = json.dumps(init) + "\n" + json.dumps(prompt) + "\n"
+    out, _ = proc.communicate(input=payload, timeout=10)
+
+    events = _parse_events(out)
+    end = next(e for e in events if e["type"] == "assistant_end")
+    assert end["text"] == "images=1", end
+    delta = next(
+        e for e in events
+        if e["type"] == "assistant_delta" and e["delta"].startswith("images=")
+    )
+    assert "image/png:QUJD" in delta["delta"], delta
+    print("PASS: prompt images")
+
+
 if __name__ == "__main__":
     test_runtime_loop()
     test_langchain_handler()
     test_host_tool_bridge()
+    test_prompt_images()
     print("ALL PYTHON SDK TESTS PASSED")
 
 
