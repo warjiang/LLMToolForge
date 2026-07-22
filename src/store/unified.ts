@@ -92,6 +92,7 @@ interface UnifiedState {
   rebuild: () => Promise<void>;
   setConfig: (patch: Partial<UnifiedApiConfig>) => Promise<void>;
   toggleModel: (id: string, enabled: boolean) => Promise<void>;
+  toggleVision: (id: string, on: boolean) => Promise<void>;
   removeModel: (model: ExposedModel) => Promise<void>;
   start: () => Promise<void>;
   stop: () => Promise<void>;
@@ -101,11 +102,17 @@ interface UnifiedState {
   clearBodies: () => Promise<void>;
 }
 
-function currentModels(): ExposedModel[] {
-  return buildExposedModels(
+function currentModels(visionOverride: Set<string>): ExposedModel[] {
+  const models = buildExposedModels(
     useVolcCredentialStore.getState().items,
     useGatewayStore.getState().items,
     useApiKeyStore.getState().items
+  );
+  if (visionOverride.size === 0) return models;
+  return models.map((m) =>
+    visionOverride.has(m.id) && !m.features.includes("vision")
+      ? { ...m, features: [...m.features, "vision"] }
+      : m
   );
 }
 
@@ -185,14 +192,14 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
     modelHydrationPromise = (async () => {
       await loadConnectionStores();
       set({
-        models: currentModels(),
+        models: currentModels(new Set(get().config.visionModelIds)),
         modelsHydrated: true,
         hydratingModels: false,
       });
 
       if (providerUnsubscribes.length === 0) {
         const onChange = () => {
-          set({ models: currentModels() });
+          set({ models: currentModels(new Set(get().config.visionModelIds)) });
           if (get().supported && get().status?.running) {
             void get().rebuild().catch(() => undefined);
           }
@@ -222,7 +229,7 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
     if (!get().supported) return;
     await get().hydrateModels();
     const { config } = get();
-    const models = currentModels();
+    const models = currentModels(new Set(config.visionModelIds));
     const routes = modelsToRoutes(models, new Set(config.disabledModelIds));
     const status = await pushConfig(config, routes);
     set({ models, status });
@@ -231,6 +238,9 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
   setConfig: async (patch) => {
     const config = { ...get().config, ...patch };
     set({ config });
+    if (get().modelsHydrated) {
+      set({ models: currentModels(new Set(config.visionModelIds)) });
+    }
     await saveConfig(config);
     if (get().supported && get().status?.running) {
       await get().rebuild();
@@ -253,6 +263,13 @@ export const useUnifiedStore = create<UnifiedState>((set, get) => ({
     if (enabled) set0.delete(id);
     else set0.add(id);
     await get().setConfig({ disabledModelIds: [...set0] });
+  },
+
+  toggleVision: async (id, on) => {
+    const set0 = new Set(get().config.visionModelIds);
+    if (on) set0.add(id);
+    else set0.delete(id);
+    await get().setConfig({ visionModelIds: [...set0] });
   },
 
   removeModel: async (model) => {

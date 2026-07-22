@@ -8,6 +8,7 @@
 
 import type { ApiKey, GatewayConnection, VolcCredential } from "@/types";
 import type { ModelInfo } from "@/lib/providers/types";
+import { isVisionModel } from "@/lib/providers/capabilities";
 import { getStore } from "@/data/storage";
 
 /** Volcengine Ark OpenAI-compatible base URL (region does not change it). */
@@ -24,6 +25,8 @@ export interface UnifiedApiConfig {
   autoStart: boolean;
   /** Exposed model ids the user has turned off. */
   disabledModelIds: string[];
+  /** Exposed model ids the user has force-tagged as vision-capable. */
+  visionModelIds: string[];
 }
 
 export const DEFAULT_CONFIG: UnifiedApiConfig = {
@@ -31,6 +34,7 @@ export const DEFAULT_CONFIG: UnifiedApiConfig = {
   localKey: "",
   autoStart: false,
   disabledModelIds: [],
+  visionModelIds: [],
 };
 
 /** One exposable model resolved from a connection. */
@@ -77,7 +81,8 @@ function modelFeatures(m: ModelInfo): ModelFeature[] {
   const out: ModelFeature[] = [];
   const mm =
     m.supportsVision ||
-    (m.inputModalities ?? []).some((x) => x !== "text");
+    (m.inputModalities ?? []).some((x) => x !== "text") ||
+    isVisionModel(m.id, m.name);
   if (mm) out.push("vision");
   if (m.supportsImageGeneration) out.push("image-gen");
   if (m.supportsVideoGeneration) out.push("video-gen");
@@ -264,7 +269,7 @@ export function buildExposedModels(
         apiKey: conn.key,
         connId: `key:${conn.id}`,
         connName: conn.name,
-        features: [],
+        features: isVisionModel(id) ? ["vision"] : [],
       });
     }
   }
