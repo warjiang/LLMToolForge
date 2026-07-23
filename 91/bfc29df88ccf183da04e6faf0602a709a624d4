@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_f42d46768f1a99::t_dcb45a4a579fdb 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.6.10",
+  "base_commit_sha": "91bfc29df88ccf183da04e6faf0602a709a624d4",
+  "prompts": {},
+  "sessions": {
+    "s_f42d46768f1a99": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c33d1553-c0fa-4d04-a0eb-19bb3b630b81",
+        "model": "unknown"
+      },
+      "human_author": "xjhznick <xjhznick@gmail.com>"
+    }
+  },
+  "attestation_metadata": {},
+  "remote_transcripts": {}
+}
