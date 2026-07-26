@@ -551,6 +551,8 @@
   "creativity_evaluating": "评价中",
   "creativity_hint_unlock": "解锁第 {{level}} 级提示",
   "creativity_hint_running": "生成提示中",
+  "creativity_hint_empty": "需要帮助时逐级解锁提示。提示只推动思考，不直接给出完整答案。",
+  "creativity_hint_level": "第 {{level}} 级提示",
   "creativity_evaluation_title": "教练反馈",
   "creativity_dimension_distance": "联结跨度",
   "creativity_dimension_coherence": "合理性",

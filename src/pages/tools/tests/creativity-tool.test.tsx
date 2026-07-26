@@ -150,4 +150,99 @@ describe("CreativityTool", () => {
 
     expect(remove).toHaveBeenCalledWith("round-history");
   });
+
+  it("reveals hints in order and keeps examples locked before evaluation", async () => {
+    const user = userEvent.setup();
+    const generateHint = vi
+      .fn()
+      .mockResolvedValueOnce({ level: 1, content: "先观察共同约束" })
+      .mockResolvedValueOnce({ level: 2, content: "尝试迁移所有权概念" });
+    renderHarness({ client: { generateHint } });
+
+    await user.click(
+      await screen.findByRole("button", { name: "结构化训练" }),
+    );
+    await startRound(user);
+
+    expect(
+      screen.queryByRole("button", { name: "生成 3 个示例" }),
+    ).toBeNull();
+    await user.click(
+      screen.getByRole("button", { name: "解锁第 1 级提示" }),
+    );
+    expect(await screen.findByText("先观察共同约束")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "解锁第 2 级提示" }),
+    ).toBeTruthy();
+    expect(generateHint).toHaveBeenCalledWith(
+      "gateway/model",
+      expect.objectContaining({ level: 1, previousHints: [] }),
+      expect.any(AbortSignal),
+    );
+  });
+
+  it("renders four dimensions and unlocks examples after evaluation", async () => {
+    const user = userEvent.setup();
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    const evaluate = vi.fn().mockResolvedValue({
+      dimensions: {
+        distance: { level: "strong", reason: "跨领域明显" },
+        coherence: { level: "clear", reason: "机制可解释" },
+        novelty: { level: "strong", reason: "组合新颖" },
+        depth: { level: "starting", reason: "仍可展开" },
+      },
+      strengths: ["发现了所有权联结"],
+      improvement: "补充具体使用情境",
+      followUpQuestion: "如果没有手机，如何验证所有权？",
+    });
+    renderHarness({
+      client: { evaluate },
+      history: { upsert },
+    });
+
+    await user.click(
+      await screen.findByRole("button", { name: "结构化训练" }),
+    );
+    await startRound(user);
+    const evaluateButton = screen.getByRole("button", {
+      name: "评价我的答案",
+    }) as HTMLButtonElement;
+    expect(evaluateButton.disabled).toBe(true);
+    await user.type(
+      screen.getByLabelText("你的联结"),
+      "共享雨伞所有权",
+    );
+    await user.click(evaluateButton);
+
+    expect(await screen.findByText("跨领域明显")).toBeTruthy();
+    expect(screen.getByText("机制可解释")).toBeTruthy();
+    expect(screen.getByText("组合新颖")).toBeTruthy();
+    expect(screen.getByText("仍可展开")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "生成 3 个示例" }),
+    ).toBeTruthy();
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("confirms before replacing an unsubmitted training answer", async () => {
+    const user = userEvent.setup();
+    const generatePrompt = vi.fn().mockResolvedValue(prompt);
+    renderHarness({ client: { generatePrompt } });
+
+    await user.click(
+      await screen.findByRole("button", { name: "结构化训练" }),
+    );
+    await startRound(user);
+    await user.type(screen.getByLabelText("你的联结"), "尚未提交的草稿");
+    await user.click(screen.getByRole("button", { name: "换一组" }));
+
+    expect(await screen.findByText("放弃当前答案？")).toBeTruthy();
+    expect(generatePrompt).toHaveBeenCalledTimes(1);
+    await user.click(
+      screen.getByRole("button", { name: "放弃并换题" }),
+    );
+    await vi.waitFor(() => {
+      expect(generatePrompt).toHaveBeenCalledTimes(2);
+    });
+  });
 });

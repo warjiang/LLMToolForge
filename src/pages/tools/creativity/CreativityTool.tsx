@@ -13,6 +13,8 @@ import {
 import type { CreativityHistoryStore } from "@/lib/creativity/history";
 import { creativityHistory } from "@/lib/creativity/history";
 import type {
+  CreativityEvaluation,
+  CreativityExample,
   CreativityHistoryRecord,
   CreativityMode,
   CreativityPromptOptions,
@@ -20,6 +22,7 @@ import type {
 import type { ExposedModel } from "@/lib/unifiedApi";
 import { isAbortError } from "@/lib/http";
 import { uid } from "@/lib/utils";
+import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { CreativityControls } from "./CreativityControls";
 import { CreativityHistoryDialog } from "./CreativityHistoryDialog";
 import { CreativityWorkspace } from "./CreativityWorkspace";
@@ -46,6 +49,7 @@ export function CreativityTool({
   const [models, setModels] = useState<ExposedModel[]>([]);
   const [modelId, setModelId] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
   const [records, setRecords] = useState<CreativityHistoryRecord[]>([]);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -112,7 +116,7 @@ export function CreativityTool({
   };
 
   const startOperation = (
-    operation: "prompt" | "examples",
+    operation: "prompt" | "hint" | "examples" | "evaluation",
     roundId: string,
   ): AbortController => {
     abortRef.current?.abort();
@@ -154,30 +158,50 @@ export function CreativityTool({
     }
   };
 
-  const saveQuickRecord = async (
-    examples: CreativityHistoryRecord["examples"],
-  ) => {
+  const requestPrompt = () => {
+    if (
+      state.mode === "training" &&
+      state.answerDirty &&
+      !state.evaluation
+    ) {
+      setDiscardOpen(true);
+      return;
+    }
+    void generatePrompt();
+  };
+
+  const saveRecord = async ({
+    examples,
+    evaluation,
+  }: {
+    examples: CreativityExample[];
+    evaluation: CreativityEvaluation | null;
+  }) => {
     if (!state.prompt) return;
     const now = new Date().toISOString();
     const id = state.historyId ?? state.roundId;
     const existing = records.find((record) => record.id === id);
     const record: CreativityHistoryRecord = {
       id,
-      mode: "inspiration",
+      mode: state.mode,
       modelId,
       locale,
       options: state.options,
       prompt: state.prompt,
-      answer: "",
-      hints: [],
+      answer: state.mode === "training" ? state.answer : "",
+      hints: state.mode === "training" ? state.hints : [],
       examples,
-      evaluation: null,
+      evaluation,
       createdAt: existing?.createdAt ?? now,
       updatedAt: now,
     };
     try {
       await history.upsert(record);
-      dispatch({ type: "history-linked", roundId: state.roundId, historyId: id });
+      dispatch({
+        type: "history-linked",
+        roundId: state.roundId,
+        historyId: id,
+      });
       setRecords(await history.list());
     } catch {
       setSaveWarning(t("creativity_save_warning"));
@@ -198,7 +222,53 @@ export function CreativityTool({
         controller.signal,
       );
       dispatch({ type: "examples-succeeded", roundId, examples });
-      await saveQuickRecord(examples);
+      await saveRecord({
+        examples,
+        evaluation: state.mode === "training" ? state.evaluation : null,
+      });
+    } catch (error) {
+      failOperation(roundId, error);
+    }
+  };
+
+  const generateHint = async () => {
+    if (!modelId || !state.prompt || state.hints.length >= 3) return;
+    const roundId = state.roundId;
+    const level = (state.hints.length + 1) as 1 | 2 | 3;
+    const controller = startOperation("hint", roundId);
+    try {
+      const hint = await client.generateHint(
+        modelId,
+        {
+          locale,
+          promptItems: state.prompt.items.map((item) => item.text),
+          level,
+          previousHints: state.hints,
+        },
+        controller.signal,
+      );
+      dispatch({ type: "hint-succeeded", roundId, hint });
+    } catch (error) {
+      failOperation(roundId, error);
+    }
+  };
+
+  const evaluateAnswer = async () => {
+    if (!modelId || !state.prompt || !state.answer.trim()) return;
+    const roundId = state.roundId;
+    const controller = startOperation("evaluation", roundId);
+    try {
+      const evaluation = await client.evaluate(
+        modelId,
+        {
+          locale,
+          promptItems: state.prompt.items.map((item) => item.text),
+          answer: state.answer.trim(),
+        },
+        controller.signal,
+      );
+      dispatch({ type: "evaluation-succeeded", roundId, evaluation });
+      await saveRecord({ examples: state.examples, evaluation });
     } catch (error) {
       failOperation(roundId, error);
     }
@@ -231,7 +301,7 @@ export function CreativityTool({
         onModeChange={changeMode}
         onOptionsChange={changeOptions}
         onModelChange={changeModel}
-        onGenerate={() => void generatePrompt()}
+        onGenerate={requestPrompt}
         onShowHistory={() => {
           void history.list().then(setRecords);
           setHistoryOpen(true);
@@ -239,8 +309,13 @@ export function CreativityTool({
       />
       <CreativityWorkspace
         state={state}
-        onGenerate={() => void generatePrompt()}
+        onGenerate={requestPrompt}
         onGenerateExamples={() => void generateExamples()}
+        onGenerateHint={() => void generateHint()}
+        onAnswerChange={(answer) =>
+          dispatch({ type: "answer-changed", answer })
+        }
+        onEvaluate={() => void evaluateAnswer()}
         saveWarning={saveWarning}
       />
       <CreativityHistoryDialog
@@ -254,6 +329,17 @@ export function CreativityTool({
         onClear={async () => {
           await history.clear();
           setRecords([]);
+        }}
+      />
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        title={t("creativity_discard_title")}
+        description={t("creativity_discard_desc")}
+        confirmLabel={t("creativity_discard_confirm")}
+        onConfirm={() => {
+          setDiscardOpen(false);
+          void generatePrompt();
         }}
       />
     </div>

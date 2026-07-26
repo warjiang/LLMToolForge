@@ -551,6 +551,8 @@
   "creativity_evaluating": "Evaluating",
   "creativity_hint_unlock": "Unlock Hint Level {{level}}",
   "creativity_hint_running": "Generating Hint",
+  "creativity_hint_empty": "Unlock hints one level at a time when needed. Hints move your thinking forward without revealing a complete answer.",
+  "creativity_hint_level": "Hint Level {{level}}",
   "creativity_evaluation_title": "Coach Feedback",
   "creativity_dimension_distance": "Connection Distance",
   "creativity_dimension_coherence": "Coherence",
