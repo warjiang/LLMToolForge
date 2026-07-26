@@ -10,5 +10,6 @@ describe("ToolsPage tabs", () => {
     expect(jsonIndex).toBeGreaterThanOrEqual(0);
     expect(markdownIndex).toBe(jsonIndex + 1);
     expect(textEditorIndex).toBe(markdownIndex + 1);
+    expect(TOOL_TAB_ORDER).toContain("creativity");
   });
 });

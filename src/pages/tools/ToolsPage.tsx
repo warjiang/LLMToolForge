@@ -7,6 +7,7 @@ import {
   Languages,
   Link2,
   NotebookText,
+  Sparkles,
   Type,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +22,7 @@ import { HashTool } from "./HashTool";
 import { MarkdownTool } from "./MarkdownTool";
 import { TranslateTool } from "./TranslateTool";
 import { TextEditorTool } from "./TextEditorTool";
+import { CreativityTool } from "./creativity/CreativityTool";
 
 export const TOOL_TAB_ORDER = [
   "url",
@@ -31,6 +33,7 @@ export const TOOL_TAB_ORDER = [
   "hash",
   "escape",
   "unicode",
+  "creativity",
   "translate",
 ] as const;
 
@@ -46,6 +49,12 @@ export function ToolsPage() {
     { value: "hash", label: t("hash_tool"), icon: Hash, Comp: HashTool },
     { value: "escape", label: t("escape_tool"), icon: Code2, Comp: EscapeTool },
     { value: "unicode", label: t("unicode_tool"), icon: Type, Comp: UnicodeTool },
+    {
+      value: "creativity",
+      label: t("creativity_tool"),
+      icon: Sparkles,
+      Comp: CreativityTool,
+    },
     { value: "translate", label: t("translate_tool"), icon: Languages, Comp: TranslateTool },
   ];
 
