@@ -10,7 +10,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -21,13 +20,15 @@ import {
 } from "@/components/ui/select";
 import type { ExposedModel } from "@/lib/unifiedApi";
 import type {
-  AbstractionLevel,
+  CreativityItemCount,
   CreativityMode,
   CreativityPromptOptions,
-  CreativityPurpose,
-  SemanticDistance,
 } from "@/lib/creativity/types";
 import { cn } from "@/lib/utils";
+import {
+  PresetCustomSelect,
+  type SelectPreset,
+} from "./PresetCustomSelect";
 
 interface CreativityControlsProps {
   mode: CreativityMode;
@@ -43,7 +44,7 @@ interface CreativityControlsProps {
 }
 
 const MODE_VALUES: CreativityMode[] = ["inspiration", "training"];
-const DISTANCES: SemanticDistance[] = ["near", "cross-domain", "far"];
+const ITEM_COUNTS: CreativityItemCount[] = [2, 3, 4, 5, 6];
 
 function ToggleButton({
   active,
@@ -88,6 +89,23 @@ export function CreativityControls({
 
   const patchOptions = (patch: Partial<CreativityPromptOptions>) =>
     onOptionsChange({ ...options, ...patch });
+  const customLabel = t("creativity_custom_option");
+  const distances = presets(
+    ["near", "cross-domain", "far"],
+    (value) => t(`creativity_distance_${value}`),
+  );
+  const domains = presets(
+    ["any", "daily", "technology", "nature", "art"],
+    (value) => t(`creativity_domain_${value}`),
+  );
+  const abstractions = presets(
+    ["concrete", "abstract", "mixed"],
+    (value) => t(`creativity_abstraction_${value}`),
+  );
+  const purposes = presets(
+    ["divergent", "product", "story", "problem-solving"],
+    (value) => t(`creativity_purpose_${value}`),
+  );
 
   return (
     <div className="space-y-4">
@@ -132,49 +150,70 @@ export function CreativityControls({
         </div>
       </div>
 
-      <div className="flex flex-wrap items-end gap-4 rounded-md border border-border bg-background-secondary p-4">
-        <div className="space-y-1.5">
+      <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-background-secondary p-4">
+        <div className="min-w-[110px] flex-1 space-y-1.5">
           <Label>{t("creativity_item_count")}</Label>
-          <div className="flex gap-2">
-            {([2, 3] as const).map((count) => (
-              <ToggleButton
-                key={count}
-                active={options.itemCount === count}
-                onClick={() => patchOptions({ itemCount: count })}
-              >
-                {count}
-              </ToggleButton>
-            ))}
-          </div>
+          <Select
+            value={String(options.itemCount)}
+            onValueChange={(value) =>
+              patchOptions({
+                itemCount: Number(value) as CreativityItemCount,
+              })
+            }
+          >
+            <SelectTrigger aria-label={t("creativity_item_count")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {ITEM_COUNTS.map((count) => (
+                <SelectItem key={count} value={String(count)}>
+                  {count}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
-        <div className="space-y-1.5">
-          <Label>{t("creativity_distance")}</Label>
-          <div className="flex flex-wrap gap-2">
-            {DISTANCES.map((distance) => (
-              <ToggleButton
-                key={distance}
-                active={options.semanticDistance === distance}
-                onClick={() =>
-                  patchOptions({ semanticDistance: distance })
-                }
-              >
-                {t(`creativity_distance_${distance}`)}
-              </ToggleButton>
-            ))}
-          </div>
-        </div>
+        <PresetCustomSelect
+          className="min-w-[180px] flex-[1.2] space-y-1.5"
+          label={t("creativity_distance")}
+          value={options.semanticDistance}
+          presets={distances}
+          customLabel={customLabel}
+          customPlaceholder={t("creativity_distance_custom_placeholder")}
+          onChange={(semanticDistance) =>
+            patchOptions({ semanticDistance })
+          }
+        />
 
         <Button
           variant="secondary"
+          className="xl:hidden"
           onClick={() => setAdvancedOpen(true)}
         >
           <Settings2 className="h-4 w-4" />
           {t("creativity_more_settings")}
         </Button>
 
+        <div className="hidden min-w-[540px] flex-[3] grid-cols-3 gap-3 xl:grid">
+          <AdvancedFields
+            options={options}
+            labels={{
+              domain: t("creativity_domain"),
+              abstraction: t("creativity_abstraction"),
+              purpose: t("creativity_purpose"),
+            }}
+            customLabel={customLabel}
+            domains={domains}
+            abstractions={abstractions}
+            purposes={purposes}
+            onPatch={patchOptions}
+            t={t}
+          />
+        </div>
+
         <Button
-          className="ml-auto"
+          className="ml-auto shrink-0"
           onClick={onGenerate}
           disabled={!modelId}
         >
@@ -193,39 +232,26 @@ export function CreativityControls({
               {t("creativity_more_settings_desc")}
             </DialogDescription>
           </DialogHeader>
-          <div className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="creativity-domain">
-                {t("creativity_domain")}
-              </Label>
-              <Input
-                id="creativity-domain"
-                value={options.domain === "any" ? "" : options.domain}
-                placeholder={t("creativity_domain_placeholder")}
-                onChange={(event) =>
-                  patchOptions({ domain: event.target.value || "any" })
-                }
-              />
-            </div>
-            <AdvancedSelect
-              label={t("creativity_abstraction")}
-              value={options.abstraction}
-              values={["concrete", "abstract", "mixed"]}
-              labelFor={(value) =>
-                t(`creativity_abstraction_${value}`)
-              }
-              onChange={(value) =>
-                patchOptions({ abstraction: value as AbstractionLevel })
-              }
-            />
-            <AdvancedSelect
-              label={t("creativity_purpose")}
-              value={options.purpose}
-              values={["divergent", "product", "story", "problem-solving"]}
-              labelFor={(value) => t(`creativity_purpose_${value}`)}
-              onChange={(value) =>
-                patchOptions({ purpose: value as CreativityPurpose })
-              }
+          <div className="space-y-4 xl:hidden">
+            <AdvancedFields
+              options={options}
+              labels={{
+                domain: t("creativity_more_field", {
+                  field: t("creativity_domain"),
+                }),
+                abstraction: t("creativity_more_field", {
+                  field: t("creativity_abstraction"),
+                }),
+                purpose: t("creativity_more_field", {
+                  field: t("creativity_purpose"),
+                }),
+              }}
+              customLabel={customLabel}
+              domains={domains}
+              abstractions={abstractions}
+              purposes={purposes}
+              onPatch={patchOptions}
+              t={t}
             />
           </div>
           <DialogFooter>
@@ -239,34 +265,58 @@ export function CreativityControls({
   );
 }
 
-function AdvancedSelect({
-  label,
-  value,
-  values,
-  labelFor,
-  onChange,
+function presets(
+  values: string[],
+  labelFor: (value: string) => string,
+): SelectPreset[] {
+  return values.map((value) => ({ value, label: labelFor(value) }));
+}
+
+function AdvancedFields({
+  options,
+  labels,
+  customLabel,
+  domains,
+  abstractions,
+  purposes,
+  onPatch,
+  t,
 }: {
-  label: string;
-  value: string;
-  values: string[];
-  labelFor: (value: string) => string;
-  onChange: (value: string) => void;
+  options: CreativityPromptOptions;
+  labels: { domain: string; abstraction: string; purpose: string };
+  customLabel: string;
+  domains: SelectPreset[];
+  abstractions: SelectPreset[];
+  purposes: SelectPreset[];
+  onPatch: (patch: Partial<CreativityPromptOptions>) => void;
+  t: (key: string) => string;
 }) {
   return (
-    <div className="space-y-1.5">
-      <Label>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger>
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          {values.map((item) => (
-            <SelectItem key={item} value={item}>
-              {labelFor(item)}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </div>
+    <>
+      <PresetCustomSelect
+        label={labels.domain}
+        value={options.domain}
+        presets={domains}
+        customLabel={customLabel}
+        customPlaceholder={t("creativity_domain_placeholder")}
+        onChange={(domain) => onPatch({ domain })}
+      />
+      <PresetCustomSelect
+        label={labels.abstraction}
+        value={options.abstraction}
+        presets={abstractions}
+        customLabel={customLabel}
+        customPlaceholder={t("creativity_abstraction_custom_placeholder")}
+        onChange={(abstraction) => onPatch({ abstraction })}
+      />
+      <PresetCustomSelect
+        label={labels.purpose}
+        value={options.purpose}
+        presets={purposes}
+        customLabel={customLabel}
+        customPlaceholder={t("creativity_purpose_custom_placeholder")}
+        onChange={(purpose) => onPatch({ purpose })}
+      />
+    </>
   );
 }

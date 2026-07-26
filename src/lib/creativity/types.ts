@@ -3,21 +3,14 @@ import type { ChatMessage } from "@/lib/providers";
 export type CreativityLocale = "zh" | "en";
 export type CreativityMode = "inspiration" | "training";
 export type CreativityItemCount = 2 | 3 | 4 | 5 | 6;
-export type SemanticDistance = "near" | "cross-domain" | "far";
-export type AbstractionLevel = "concrete" | "abstract" | "mixed";
-export type CreativityPurpose =
-  | "divergent"
-  | "product"
-  | "story"
-  | "problem-solving";
 export type EvaluationLevel = "starting" | "clear" | "strong";
 
 export interface CreativityPromptOptions {
   itemCount: CreativityItemCount;
-  semanticDistance: SemanticDistance;
+  semanticDistance: string;
   domain: string;
-  abstraction: AbstractionLevel;
-  purpose: CreativityPurpose;
+  abstraction: string;
+  purpose: string;
 }
 
 export interface CreativityPromptItem {

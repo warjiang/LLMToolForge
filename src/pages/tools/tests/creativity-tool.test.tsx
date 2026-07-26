@@ -100,11 +100,39 @@ describe("CreativityTool", () => {
     await user.click(
       await screen.findByRole("button", { name: "更多设置" }),
     );
-    const domain = screen.getByLabelText("主题领域") as HTMLInputElement;
+    await user.click(screen.getByLabelText("主题领域（更多设置）"));
+    await user.click(
+      screen.getByRole("option", { name: "自定义…" }),
+    );
+    const domain = screen.getByLabelText(
+      "自定义主题领域（更多设置）",
+    ) as HTMLInputElement;
 
     await user.type(domain, "product design");
 
     expect(domain.value).toBe("product design");
+  });
+
+  it("shows five select controls and accepts a custom semantic distance", async () => {
+    const user = userEvent.setup();
+    renderHarness();
+
+    expect(await screen.findByLabelText("组合数量")).toBeTruthy();
+    expect(screen.getByLabelText("语义距离")).toBeTruthy();
+    expect(screen.getByLabelText("主题领域")).toBeTruthy();
+    expect(screen.getByLabelText("抽象层级")).toBeTruthy();
+    expect(screen.getByLabelText("用途目标")).toBeTruthy();
+
+    await user.click(screen.getByLabelText("语义距离"));
+    await user.click(
+      screen.getByRole("option", { name: "自定义…" }),
+    );
+    const input = screen.getByLabelText(
+      "自定义语义距离",
+    ) as HTMLInputElement;
+    await user.type(input, "跨文化但功能相似");
+
+    expect(input.value).toBe("跨文化但功能相似");
   });
 
   it("generates a prompt, renders three examples, and saves one record", async () => {

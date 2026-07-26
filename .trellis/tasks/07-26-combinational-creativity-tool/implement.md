@@ -1273,7 +1273,7 @@ pnpm tauri:dev
 - Modify: `src/pages/tools/creativity/state.ts`
 - Modify: `src/pages/tools/tests/creativity-domain.test.ts`
 
-- [ ] **Step 1：先写失败测试**
+- [x] **Step 1：先写失败测试**
 
 ```ts
 it("accepts six short independent concepts", () => {
@@ -1294,7 +1294,7 @@ it("rejects questions and task instructions as combination items", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
@@ -1302,7 +1302,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
 
 Expected: `6` 不满足旧 `2 | 3` 类型，且完整任务句未被拒绝。
 
-- [ ] **Step 3：实现数量与短语契约**
+- [x] **Step 3：实现数量与短语契约**
 
 ```ts
 export type CreativityItemCount = 2 | 3 | 4 | 5 | 6;
@@ -1324,7 +1324,7 @@ export function validateCombinationLabel(value: string): string {
 
 `buildPromptMessages` 明确要求每项是一个名词、事物名称或简短概念短语，禁止问题、任务指令、完整句子和多对象描述。
 
-- [ ] **Step 4：运行测试与类型检查**
+- [x] **Step 4：运行测试与类型检查**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
@@ -1333,7 +1333,7 @@ pnpm exec tsc --noEmit
 
 Expected: 全部通过。
 
-- [ ] **Step 5：提交**
+- [x] **Step 5：提交**
 
 ```bash
 git add src/lib/creativity src/pages/tools/creativity/state.ts src/pages/tools/tests/creativity-domain.test.ts
@@ -1351,7 +1351,7 @@ git commit -m "fix: constrain creativity prompts to short concepts"
 - Modify: `src/i18n/locales/en/pages.json`
 - Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
 
-- [ ] **Step 1：先写失败测试**
+- [x] **Step 1：先写失败测试**
 
 ```tsx
 it("shows all five prompt controls and accepts a custom semantic distance", async () => {
@@ -1373,7 +1373,7 @@ it("shows all five prompt controls and accepts a custom semantic distance", asyn
 
 测试使用原生 `HTMLInputElement.value` 断言，不依赖 jest-dom matcher。
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
@@ -1381,7 +1381,7 @@ pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
 
 Expected: 现有按钮组和更多设置结构不满足五项同级与自定义输入。
 
-- [ ] **Step 3：实现通用预设/自定义选择器**
+- [x] **Step 3：实现通用预设/自定义选择器**
 
 ```ts
 interface PresetCustomSelectProps {
@@ -1396,7 +1396,7 @@ interface PresetCustomSelectProps {
 
 组件使用现有 Radix `Select`。当当前值不属于 presets 时，Select 值为 `__custom__` 并显示一个受控 `Input`；选择预设时直接写预设值。
 
-- [ ] **Step 4：实现响应式配置栏**
+- [x] **Step 4：实现响应式配置栏**
 
 - 组合数量改为带 `aria-label` 的 Select，选项为 2-6。
 - 语义距离常驻。
@@ -1404,7 +1404,7 @@ interface PresetCustomSelectProps {
 - `xl` 以下显示“更多设置”，对话框复用同一个 `PresetCustomSelect`。
 - 四个字符串字段均可保存预设值或自定义文本。
 
-- [ ] **Step 5：运行测试与构建**
+- [x] **Step 5：运行测试与构建**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
@@ -1413,7 +1413,7 @@ pnpm build
 
 Expected: 全部通过。
 
-- [ ] **Step 6：提交**
+- [x] **Step 6：提交**
 
 ```bash
 git add src/pages/tools/creativity src/lib/creativity/types.ts src/i18n/locales
