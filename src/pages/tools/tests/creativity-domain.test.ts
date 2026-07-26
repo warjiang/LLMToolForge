@@ -8,6 +8,10 @@ import {
   parseCreativityExamples,
   parseCreativityPrompt,
 } from "@/lib/creativity/parser";
+import {
+  createInitialCreativityState,
+  creativityReducer,
+} from "@/pages/tools/creativity/state";
 
 describe("creativity domain", () => {
   it("includes every prompt control and the output language", () => {
@@ -59,5 +63,76 @@ describe("creativity domain", () => {
     expect(() => parseCreativityEvaluation('{"dimensions":{}}')).toThrow(
       /distance/i,
     );
+  });
+
+  it("ignores a response from an obsolete round", () => {
+    const initial = createInitialCreativityState();
+    const loading = creativityReducer(initial, {
+      type: "operation-started",
+      operation: "prompt",
+      roundId: "round-a",
+    });
+    const nextRound = creativityReducer(loading, {
+      type: "round-reset",
+      roundId: "round-b",
+    });
+    const stale = creativityReducer(nextRound, {
+      type: "prompt-succeeded",
+      roundId: "round-a",
+      prompt: { id: "old", items: [] },
+    });
+
+    expect(stale.prompt).toBeNull();
+    expect(stale.roundId).toBe("round-b");
+  });
+
+  it("keeps the prompt and answer when an operation fails", () => {
+    const state = {
+      ...createInitialCreativityState(),
+      roundId: "round-a",
+      prompt: {
+        id: "prompt",
+        items: [
+          { text: "雨伞", kind: "thing" as const },
+          { text: "区块链", kind: "concept" as const },
+        ],
+      },
+      answer: "共享雨伞所有权",
+    };
+    const failed = creativityReducer(state, {
+      type: "operation-failed",
+      roundId: "round-a",
+      message: "invalid JSON",
+    });
+
+    expect(failed.prompt).toEqual(state.prompt);
+    expect(failed.answer).toBe(state.answer);
+    expect(failed.error).toBe("invalid JSON");
+  });
+
+  it("keeps the prompt but clears mode-specific results", () => {
+    const state = {
+      ...createInitialCreativityState(),
+      prompt: {
+        id: "prompt",
+        items: [
+          { text: "雨伞", kind: "thing" as const },
+          { text: "区块链", kind: "concept" as const },
+        ],
+      },
+      examples: [{ method: "类比", title: "A", content: "B" }],
+      answer: "draft",
+      answerDirty: true,
+    };
+    const changed = creativityReducer(state, {
+      type: "mode-changed",
+      mode: "training",
+    });
+
+    expect(changed.prompt).toEqual(state.prompt);
+    expect(changed.mode).toBe("training");
+    expect(changed.examples).toEqual([]);
+    expect(changed.answer).toBe("");
+    expect(changed.answerDirty).toBe(false);
   });
 });
