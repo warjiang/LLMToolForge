@@ -167,6 +167,8 @@
   "update_relaunching": "已安装，正在重启…",
   "tools_title": "实用工具",
   "tools_description": "常用的编解码与文本处理工具，所有计算都在本地完成。",
+  "tools_reset_order": "恢复默认顺序",
+  "tools_reset_order_short": "恢复默认",
   "url_codec": "URL 编解码",
   "json_viewer": "JSON 预览",
   "escape_tool": "转义/去转义",

@@ -1,4 +1,5 @@
 .trae/
+.superpowers/
 # Dependencies
 node_modules/
 
