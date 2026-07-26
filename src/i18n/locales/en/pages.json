@@ -167,6 +167,8 @@
   "update_relaunching": "Installed, restarting…",
   "tools_title": "Tools",
   "tools_description": "Common encoding/decoding and text processing tools. All calculations are done locally.",
+  "tools_reset_order": "Reset tool order",
+  "tools_reset_order_short": "Reset order",
   "url_codec": "URL Codec",
   "json_viewer": "JSON Viewer",
   "escape_tool": "Escape/Unescape",
