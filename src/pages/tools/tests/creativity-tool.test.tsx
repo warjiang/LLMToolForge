@@ -54,6 +54,7 @@ export function renderHarness({
 }
 
 export async function startRound(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByText("gateway/model");
   await user.click(await screen.findByRole("button", { name: "生成组合" }));
   await screen.findByText("雨伞");
 }
@@ -76,5 +77,77 @@ describe("CreativityTool", () => {
     expect(
       screen.getByRole("button", { name: "更多设置" }),
     ).toBeTruthy();
+  });
+
+  it("generates a prompt, renders three examples, and saves one record", async () => {
+    const user = userEvent.setup();
+    const generatePrompt = vi.fn().mockResolvedValue(prompt);
+    const generateExamples = vi.fn().mockResolvedValue([
+      { method: "类比", title: "共享节点", content: "示例一" },
+      { method: "功能融合", title: "可信雨伞", content: "示例二" },
+      { method: "情境叙事", title: "雨夜网络", content: "示例三" },
+    ]);
+    const upsert = vi.fn().mockResolvedValue(undefined);
+    renderHarness({
+      client: { generatePrompt, generateExamples },
+      history: { upsert },
+    });
+
+    await startRound(user);
+    await user.click(
+      screen.getByRole("button", { name: "生成 3 个示例" }),
+    );
+
+    expect(await screen.findByText("共享节点")).toBeTruthy();
+    expect(screen.getByText("可信雨伞")).toBeTruthy();
+    expect(screen.getByText("雨夜网络")).toBeTruthy();
+    expect(generatePrompt).toHaveBeenCalledTimes(1);
+    expect(generateExamples).toHaveBeenCalledTimes(1);
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
+  it("opens recent history and deletes a confirmed record", async () => {
+    const user = userEvent.setup();
+    const record = {
+      id: "round-history",
+      mode: "inspiration" as const,
+      modelId: "gateway/model",
+      locale: "zh" as const,
+      options: {
+        itemCount: 2 as const,
+        semanticDistance: "far" as const,
+        domain: "any",
+        abstraction: "mixed" as const,
+        purpose: "divergent" as const,
+      },
+      prompt,
+      answer: "",
+      hints: [],
+      examples: [],
+      evaluation: null,
+      createdAt: "2026-07-26T00:00:00.000Z",
+      updatedAt: "2026-07-26T00:00:00.000Z",
+    };
+    const list = vi
+      .fn()
+      .mockResolvedValueOnce([record])
+      .mockResolvedValueOnce([record])
+      .mockResolvedValueOnce([]);
+    const remove = vi.fn().mockResolvedValue(undefined);
+    renderHarness({ history: { list, remove } });
+
+    await user.click(
+      await screen.findByRole("button", { name: "最近记录" }),
+    );
+    expect(await screen.findByText("雨伞 + 区块链")).toBeTruthy();
+    await user.click(
+      screen.getByRole("button", { name: "删除记录" }),
+    );
+    const confirmButtons = await screen.findAllByRole("button", {
+      name: "删除记录",
+    });
+    await user.click(confirmButtons[confirmButtons.length - 1]!);
+
+    expect(remove).toHaveBeenCalledWith("round-history");
   });
 });
