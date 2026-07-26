@@ -3,6 +3,7 @@ import type { ChatMessage } from "@/lib/providers";
 export type CreativityLocale = "zh" | "en";
 export type CreativityMode = "inspiration" | "training";
 export type CreativityItemCount = 2 | 3 | 4 | 5 | 6;
+export type CombinationSource = "ai" | "custom";
 export type EvaluationLevel = "starting" | "clear" | "strong";
 
 export interface CreativityPromptOptions {
@@ -80,6 +81,7 @@ export interface CreativitySettings {
 export interface CreativityHistoryRecord {
   id: string;
   mode: CreativityMode;
+  source: CombinationSource;
   modelId: string;
   locale: CreativityLocale;
   options: CreativityPromptOptions;

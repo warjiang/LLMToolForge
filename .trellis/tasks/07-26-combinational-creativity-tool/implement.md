@@ -1435,7 +1435,7 @@ git commit -m "feat: add responsive custom creativity controls"
 - Modify: `src/pages/tools/tests/creativity-domain.test.ts`
 - Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
 
-- [ ] **Step 1：先写 reducer 失败测试**
+- [x] **Step 1：先写 reducer 失败测试**
 
 ```ts
 it("resizes the custom draft while preserving leading values", () => {
@@ -1456,7 +1456,7 @@ it("resizes the custom draft while preserving leading values", () => {
 });
 ```
 
-- [ ] **Step 2：先写组件失败测试**
+- [x] **Step 2：先写组件失败测试**
 
 ```tsx
 it("creates a local four-item combination without calling AI generation", async () => {
@@ -1476,7 +1476,7 @@ it("creates a local four-item combination without calling AI generation", async 
 });
 ```
 
-- [ ] **Step 3：运行测试确认失败**
+- [x] **Step 3：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-domain.test.ts src/pages/tools/tests/creativity-tool.test.tsx
@@ -1484,7 +1484,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts src/pages/tools/tes
 
 Expected: source 与 customItems 状态不存在。
 
-- [ ] **Step 4：实现来源和自定义草稿**
+- [x] **Step 4：实现来源和自定义草稿**
 
 ```ts
 export type CombinationSource = "ai" | "custom";
@@ -1492,7 +1492,7 @@ export type CombinationSource = "ai" | "custom";
 
 状态增加 `source` 和 `customItems`。`options-changed` 根据 itemCount 扩展或裁剪草稿；自定义提交复用 `validateCombinationLabel`、空值和归一化去重校验，并在本地创建 `CreativityPrompt`。
 
-- [ ] **Step 5：接入 UI 与历史**
+- [x] **Step 5：接入 UI 与历史**
 
 - 配置栏提供 `AI 生成 / 自定义组合` 切换。
 - 自定义模式显示与数量一致的输入框。
@@ -1500,7 +1500,7 @@ export type CombinationSource = "ai" | "custom";
 - AI 模式继续显示“生成组合”。
 - 历史记录增加 `source`，旧记录缺失时按 `"ai"` 读取。
 
-- [ ] **Step 6：运行测试与构建**
+- [x] **Step 6：运行测试与构建**
 
 ```bash
 pnpm test
@@ -1510,7 +1510,7 @@ git diff --check
 
 Expected: 全部通过。
 
-- [ ] **Step 7：提交**
+- [x] **Step 7：提交**
 
 ```bash
 git add src/lib/creativity src/pages/tools/creativity src/pages/tools/tests src/i18n/locales

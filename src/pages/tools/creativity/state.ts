@@ -1,5 +1,6 @@
 import { uid } from "@/lib/utils";
 import type {
+  CombinationSource,
   CreativityEvaluation,
   CreativityExample,
   CreativityHint,
@@ -18,6 +19,9 @@ export type CreativityOperation =
 export interface CreativityState {
   roundId: string;
   mode: CreativityMode;
+  source: CombinationSource;
+  promptSource: CombinationSource | null;
+  customItems: string[];
   options: CreativityPromptOptions;
   prompt: CreativityPrompt | null;
   answer: string;
@@ -43,6 +47,9 @@ export function createInitialCreativityState(): CreativityState {
   return {
     roundId: uid("round"),
     mode: "inspiration",
+    source: "ai",
+    promptSource: null,
+    customItems: Array(DEFAULT_CREATIVITY_OPTIONS.itemCount).fill(""),
     options: DEFAULT_CREATIVITY_OPTIONS,
     prompt: null,
     answer: "",
@@ -60,6 +67,8 @@ export function createInitialCreativityState(): CreativityState {
 export type CreativityAction =
   | { type: "round-reset"; roundId: string }
   | { type: "mode-changed"; mode: CreativityMode }
+  | { type: "source-changed"; source: CombinationSource }
+  | { type: "custom-item-changed"; index: number; value: string }
   | { type: "options-changed"; options: CreativityPromptOptions }
   | { type: "answer-changed"; answer: string }
   | {
@@ -71,6 +80,7 @@ export type CreativityAction =
       type: "prompt-succeeded";
       roundId: string;
       prompt: CreativityPrompt;
+      source: CombinationSource;
     }
   | { type: "hint-succeeded"; roundId: string; hint: CreativityHint }
   | {
@@ -109,6 +119,8 @@ export function creativityReducer(
         ...createInitialCreativityState(),
         roundId: action.roundId,
         mode: state.mode,
+        source: state.source,
+        customItems: state.customItems,
         options: state.options,
       };
     case "mode-changed":
@@ -126,8 +138,29 @@ export function creativityReducer(
         error: null,
         historyId: null,
       };
+    case "source-changed":
+      return {
+        ...state,
+        source: action.source,
+        error: null,
+      };
+    case "custom-item-changed":
+      return {
+        ...state,
+        customItems: state.customItems.map((value, index) =>
+          index === action.index ? action.value : value,
+        ),
+        error: null,
+      };
     case "options-changed":
-      return { ...state, options: action.options };
+      return {
+        ...state,
+        options: action.options,
+        customItems: resizeCustomItems(
+          state.customItems,
+          action.options.itemCount,
+        ),
+      };
     case "answer-changed":
       return {
         ...state,
@@ -148,6 +181,7 @@ export function creativityReducer(
       return idle({
         ...state,
         prompt: action.prompt,
+        promptSource: action.source,
         answer: "",
         answerDirty: false,
         hints: [],
@@ -187,4 +221,8 @@ export function creativityReducer(
       if (!currentRound(state, action.roundId)) return state;
       return { ...state, historyId: action.historyId };
   }
+}
+
+function resizeCustomItems(values: string[], count: number): string[] {
+  return Array.from({ length: count }, (_, index) => values[index] ?? "");
 }

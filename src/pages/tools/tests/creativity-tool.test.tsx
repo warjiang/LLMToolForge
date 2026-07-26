@@ -135,6 +135,54 @@ describe("CreativityTool", () => {
     expect(input.value).toBe("跨文化但功能相似");
   });
 
+  it("creates a local four-item combination without calling AI generation", async () => {
+    const user = userEvent.setup();
+    const generatePrompt = vi.fn();
+    renderHarness({ client: { generatePrompt } });
+
+    await user.click(
+      await screen.findByRole("button", { name: "自定义组合" }),
+    );
+    await user.click(screen.getByLabelText("组合数量"));
+    await user.click(screen.getByRole("option", { name: "4" }));
+    const inputs = screen.getAllByLabelText(/组合词 \d/);
+    for (const [index, value] of [
+      "雨伞",
+      "信任",
+      "珊瑚",
+      "节奏",
+    ].entries()) {
+      await user.type(inputs[index]!, value);
+    }
+    await user.click(
+      screen.getByRole("button", { name: "使用此组合" }),
+    );
+
+    expect(await screen.findByText("节奏")).toBeTruthy();
+    expect(generatePrompt).not.toHaveBeenCalled();
+  });
+
+  it("rejects duplicate custom items without calling AI generation", async () => {
+    const user = userEvent.setup();
+    const generatePrompt = vi.fn();
+    renderHarness({ client: { generatePrompt } });
+
+    await user.click(
+      await screen.findByRole("button", { name: "自定义组合" }),
+    );
+    const inputs = screen.getAllByLabelText(/组合词 \d/);
+    await user.type(inputs[0]!, "雨伞");
+    await user.type(inputs[1]!, " 雨伞 ");
+    await user.click(
+      screen.getByRole("button", { name: "使用此组合" }),
+    );
+
+    expect(
+      await screen.findByText(/请填写所有组合词，确保内容不重复/),
+    ).toBeTruthy();
+    expect(generatePrompt).not.toHaveBeenCalled();
+  });
+
   it("generates a prompt, renders three examples, and saves one record", async () => {
     const user = userEvent.setup();
     const generatePrompt = vi.fn().mockResolvedValue(prompt);

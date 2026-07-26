@@ -22,6 +22,7 @@ import type {
 import type { ExposedModel } from "@/lib/unifiedApi";
 import { isAbortError } from "@/lib/http";
 import { uid } from "@/lib/utils";
+import { createCreativityPrompt } from "@/lib/creativity/parser";
 import { ConfirmDialog } from "@/components/common/ConfirmDialog";
 import { CreativityControls } from "./CreativityControls";
 import { CreativityHistoryDialog } from "./CreativityHistoryDialog";
@@ -175,10 +176,43 @@ export function CreativityTool({
         { locale, options: state.options },
         controller.signal,
       );
-      dispatch({ type: "prompt-succeeded", roundId, prompt });
+      dispatch({ type: "prompt-succeeded", roundId, prompt, source: "ai" });
     } catch (error) {
       failOperation(roundId, "prompt", error);
     }
+  };
+
+  const submitCustomPrompt = () => {
+    const roundId = uid("round");
+    abortRef.current?.abort();
+    dispatch({ type: "round-reset", roundId });
+    try {
+      const prompt = createCreativityPrompt(
+        state.customItems,
+        state.options.itemCount,
+      );
+      dispatch({
+        type: "prompt-succeeded",
+        roundId,
+        prompt,
+        source: "custom",
+      });
+    } catch {
+      setFailedOperation("prompt");
+      dispatch({
+        type: "operation-failed",
+        roundId,
+        message: t("creativity_custom_invalid"),
+      });
+    }
+  };
+
+  const replacePrompt = () => {
+    if (state.source === "custom") {
+      submitCustomPrompt();
+      return;
+    }
+    void generatePrompt();
   };
 
   const requestPrompt = () => {
@@ -190,7 +224,7 @@ export function CreativityTool({
       setDiscardOpen(true);
       return;
     }
-    void generatePrompt();
+    replacePrompt();
   };
 
   const saveRecord = async ({
@@ -207,6 +241,7 @@ export function CreativityTool({
     const record: CreativityHistoryRecord = {
       id,
       mode: state.mode,
+      source: state.promptSource ?? state.source,
       modelId,
       locale,
       options: state.options,
@@ -322,6 +357,11 @@ export function CreativityTool({
     persistSettings(modelId, mode, state.options);
   };
 
+  const changeSource = (source: "ai" | "custom") => {
+    abortRef.current?.abort();
+    dispatch({ type: "source-changed", source });
+  };
+
   const changeOptions = (options: CreativityPromptOptions) => {
     dispatch({ type: "options-changed", options });
     persistSettings(modelId, state.mode, options);
@@ -337,11 +377,18 @@ export function CreativityTool({
     <div className="flex h-full min-h-0 flex-col gap-4 overflow-auto">
       <CreativityControls
         mode={state.mode}
+        source={state.source}
+        customItems={state.customItems}
+        error={state.prompt ? null : state.error}
         options={state.options}
         models={models}
         modelId={modelId}
         loading={state.operation === "prompt"}
         onModeChange={changeMode}
+        onSourceChange={changeSource}
+        onCustomItemChange={(index, value) =>
+          dispatch({ type: "custom-item-changed", index, value })
+        }
         onOptionsChange={changeOptions}
         onModelChange={changeModel}
         onGenerate={requestPrompt}
@@ -401,7 +448,7 @@ export function CreativityTool({
         confirmLabel={t("creativity_discard_confirm")}
         onConfirm={() => {
           setDiscardOpen(false);
-          void generatePrompt();
+          replacePrompt();
         }}
       />
     </div>

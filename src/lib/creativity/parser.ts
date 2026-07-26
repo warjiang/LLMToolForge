@@ -80,6 +80,24 @@ export function parseCreativityPrompt(
 ): CreativityPrompt {
   const value = parseJsonObject(text);
   const items = arrayValue(value.items, "items").map(promptItem);
+  return createPrompt(items, expectedCount);
+}
+
+export function createCreativityPrompt(
+  values: string[],
+  expectedCount: CreativityItemCount,
+): CreativityPrompt {
+  const items = values.map((value) => ({
+    text: validateCombinationLabel(value),
+    kind: "concept" as const,
+  }));
+  return createPrompt(items, expectedCount);
+}
+
+function createPrompt(
+  items: CreativityPromptItem[],
+  expectedCount: CreativityItemCount,
+): CreativityPrompt {
   if (items.length !== expectedCount) {
     throw new Error(`items must contain exactly ${expectedCount} entries`);
   }

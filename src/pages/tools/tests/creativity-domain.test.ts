@@ -4,6 +4,7 @@ import {
   buildPromptMessages,
 } from "@/lib/creativity/prompts";
 import {
+  createCreativityPrompt,
   parseCreativityEvaluation,
   parseCreativityExamples,
   parseCreativityPrompt,
@@ -63,6 +64,15 @@ describe("creativity domain", () => {
     ).toThrow(/short phrase/i);
   });
 
+  it("rejects empty and duplicate custom combination items", () => {
+    expect(() => createCreativityPrompt(["雨伞", ""], 2)).toThrow(
+      /short phrase/i,
+    );
+    expect(() =>
+      createCreativityPrompt(["Clock", " clock "], 2),
+    ).toThrow(/duplicate/i);
+  });
+
   it("requires three examples with distinct methods", () => {
     expect(() =>
       parseCreativityExamples(
@@ -99,6 +109,7 @@ describe("creativity domain", () => {
       type: "prompt-succeeded",
       roundId: "round-a",
       prompt: { id: "old", items: [] },
+      source: "ai",
     });
 
     expect(stale.prompt).toBeNull();
@@ -184,5 +195,23 @@ describe("creativity domain", () => {
 
     expect(changed.roundId).not.toBe("round-inspiration");
     expect(stale.examples).toEqual([]);
+  });
+
+  it("resizes the custom draft while preserving leading values", () => {
+    const custom = creativityReducer(createInitialCreativityState(), {
+      type: "source-changed",
+      source: "custom",
+    });
+    const filled = creativityReducer(custom, {
+      type: "custom-item-changed",
+      index: 0,
+      value: "雨伞",
+    });
+    const resized = creativityReducer(filled, {
+      type: "options-changed",
+      options: { ...filled.options, itemCount: 4 },
+    });
+
+    expect(resized.customItems).toEqual(["雨伞", "", "", ""]);
   });
 });

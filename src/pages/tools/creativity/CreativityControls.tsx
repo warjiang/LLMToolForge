@@ -10,6 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -20,6 +21,7 @@ import {
 } from "@/components/ui/select";
 import type { ExposedModel } from "@/lib/unifiedApi";
 import type {
+  CombinationSource,
   CreativityItemCount,
   CreativityMode,
   CreativityPromptOptions,
@@ -32,11 +34,16 @@ import {
 
 interface CreativityControlsProps {
   mode: CreativityMode;
+  source: CombinationSource;
+  customItems: string[];
+  error: string | null;
   options: CreativityPromptOptions;
   models: ExposedModel[];
   modelId: string;
   loading: boolean;
   onModeChange: (mode: CreativityMode) => void;
+  onSourceChange: (source: CombinationSource) => void;
+  onCustomItemChange: (index: number, value: string) => void;
   onOptionsChange: (options: CreativityPromptOptions) => void;
   onModelChange: (modelId: string) => void;
   onGenerate: () => void;
@@ -74,11 +81,16 @@ function ToggleButton({
 
 export function CreativityControls({
   mode,
+  source,
+  customItems,
+  error,
   options,
   models,
   modelId,
   loading,
   onModeChange,
+  onSourceChange,
+  onCustomItemChange,
   onOptionsChange,
   onModelChange,
   onGenerate,
@@ -151,6 +163,21 @@ export function CreativityControls({
       </div>
 
       <div className="flex flex-wrap items-end gap-3 rounded-md border border-border bg-background-secondary p-4">
+        <div className="flex basis-full flex-wrap items-center gap-2">
+          <span className="mr-1 text-label-13 font-medium">
+            {t("creativity_source")}
+          </span>
+          {(["ai", "custom"] as const).map((value) => (
+            <ToggleButton
+              key={value}
+              active={source === value}
+              onClick={() => onSourceChange(value)}
+            >
+              {t(`creativity_source_${value}`)}
+            </ToggleButton>
+          ))}
+        </div>
+
         <div className="min-w-[110px] flex-1 space-y-1.5">
           <Label>{t("creativity_item_count")}</Label>
           <Select
@@ -212,15 +239,50 @@ export function CreativityControls({
           />
         </div>
 
+        {source === "custom" && (
+          <div className="grid basis-full gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {customItems.map((value, index) => {
+              const label = t("creativity_custom_item_label", {
+                index: index + 1,
+              });
+              return (
+                <div key={index} className="space-y-1.5">
+                  <Label htmlFor={`creativity-custom-item-${index}`}>
+                    {label}
+                  </Label>
+                  <Input
+                    id={`creativity-custom-item-${index}`}
+                    aria-label={label}
+                    value={value}
+                    maxLength={24}
+                    placeholder={t("creativity_custom_item_placeholder")}
+                    onChange={(event) =>
+                      onCustomItemChange(index, event.target.value)
+                    }
+                  />
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {source === "custom" && error && (
+          <p className="basis-full text-label-13 text-destructive">
+            {error}
+          </p>
+        )}
+
         <Button
           className="ml-auto shrink-0"
           onClick={onGenerate}
-          disabled={!modelId}
+          disabled={source === "ai" && !modelId}
         >
           <Sparkles className="h-4 w-4" />
-          {loading
-            ? t("creativity_regenerate")
-            : t("creativity_generate")}
+          {source === "custom"
+            ? t("creativity_use_custom")
+            : loading
+              ? t("creativity_regenerate")
+              : t("creativity_generate")}
         </Button>
       </div>
 

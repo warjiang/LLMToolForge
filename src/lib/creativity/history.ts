@@ -1,5 +1,6 @@
 import { getStore, type KeyValueStore } from "@/data/storage";
 import type {
+  CombinationSource,
   CreativityHistoryRecord,
   CreativitySettings,
 } from "./types";
@@ -23,13 +24,26 @@ function newestFirst(
   return [...records].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+type StoredCreativityHistoryRecord = Omit<
+  CreativityHistoryRecord,
+  "source"
+> & {
+  source?: CombinationSource;
+};
+
 export function createCreativityHistory(
   store: KeyValueStore,
 ): CreativityHistoryStore {
-  const read = async () =>
-    newestFirst(
-      (await store.get<CreativityHistoryRecord[]>(HISTORY_KEY)) ?? [],
+  const read = async () => {
+    const stored =
+      (await store.get<StoredCreativityHistoryRecord[]>(HISTORY_KEY)) ?? [];
+    return newestFirst(
+      stored.map((record) => ({
+        ...record,
+        source: record.source ?? "ai",
+      })),
     );
+  };
 
   return {
     list: read,

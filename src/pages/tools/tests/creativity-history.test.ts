@@ -20,6 +20,7 @@ function record(index: number): CreativityHistoryRecord {
   return {
     id: `round-${index}`,
     mode: "inspiration",
+    source: "ai",
     modelId: "gateway/model",
     locale: "zh",
     options: {
@@ -46,6 +47,15 @@ function record(index: number): CreativityHistoryRecord {
 }
 
 describe("creativity history", () => {
+  it("treats legacy records without a source as AI-generated", async () => {
+    const store = new MemoryStore();
+    const { source: _source, ...legacyRecord } = record(1);
+    await store.set("creativityHistory", [legacyRecord]);
+    const history = createCreativityHistory(store);
+
+    expect((await history.list())[0]?.source).toBe("ai");
+  });
+
   it("upserts one round and keeps only the newest 50 records", async () => {
     const history = createCreativityHistory(new MemoryStore());
     for (let index = 0; index < 51; index += 1) {
