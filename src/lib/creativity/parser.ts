@@ -3,6 +3,7 @@ import type {
   CreativityEvaluation,
   CreativityExample,
   CreativityHint,
+  CreativityItemCount,
   CreativityPrompt,
   CreativityPromptItem,
   EvaluationDimension,
@@ -10,6 +11,7 @@ import type {
 } from "./types";
 
 type JsonObject = Record<string, unknown>;
+const SENTENCE_PUNCTUATION = /[，。！？；：,!?;:\n\r]/u;
 
 function objectValue(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -30,6 +32,18 @@ function arrayValue(value: unknown, label: string): unknown[] {
     throw new Error(`${label} must be an array`);
   }
   return value;
+}
+
+export function validateCombinationLabel(value: string): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Array.from(normalized).length > 24 ||
+    SENTENCE_PUNCTUATION.test(normalized)
+  ) {
+    throw new Error("Combination item must be a short phrase");
+  }
+  return normalized;
 }
 
 export function parseJsonObject(text: string): JsonObject {
@@ -53,14 +67,16 @@ function promptItem(value: unknown, index: number): CreativityPromptItem {
     throw new Error(`items[${index}].kind must be thing or concept`);
   }
   return {
-    text: stringValue(item.text, `items[${index}].text`),
+    text: validateCombinationLabel(
+      stringValue(item.text, `items[${index}].text`),
+    ),
     kind,
   };
 }
 
 export function parseCreativityPrompt(
   text: string,
-  expectedCount: 2 | 3,
+  expectedCount: CreativityItemCount,
 ): CreativityPrompt {
   const value = parseJsonObject(text);
   const items = arrayValue(value.items, "items").map(promptItem);

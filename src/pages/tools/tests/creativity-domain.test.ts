@@ -33,6 +33,7 @@ describe("creativity domain", () => {
     expect(text).toContain("mixed");
     expect(text).toContain("product");
     expect(text).toContain("简体中文");
+    expect(text).toContain("short noun or concept phrase");
   });
 
   it("rejects duplicate prompt items after normalization", () => {
@@ -42,6 +43,24 @@ describe("creativity domain", () => {
         2,
       ),
     ).toThrow(/duplicate/i);
+  });
+
+  it("accepts six short independent concepts", () => {
+    const result = parseCreativityPrompt(
+      '{"items":[{"text":"雨伞","kind":"thing"},{"text":"信任","kind":"concept"},{"text":"珊瑚","kind":"thing"},{"text":"节奏","kind":"concept"},{"text":"电池","kind":"thing"},{"text":"迁徙","kind":"concept"}]}',
+      6,
+    );
+
+    expect(result.items).toHaveLength(6);
+  });
+
+  it("rejects questions and task instructions as combination items", () => {
+    expect(() =>
+      parseCreativityPrompt(
+        '{"items":[{"text":"结合雨伞与手电筒的功能，列出至少十种新产品形态","kind":"concept"},{"text":"森林","kind":"thing"}]}',
+        2,
+      ),
+    ).toThrow(/short phrase/i);
   });
 
   it("requires three examples with distinct methods", () => {

@@ -32,7 +32,13 @@ export function buildPromptMessages(
 ): CreativityMessages {
   const { locale, options } = request;
   return messages(
-    "You create concise combinational-creativity exercises. Avoid proper names, unsafe content, and duplicate concepts.",
+    [
+      "You create concise combinational-creativity exercises.",
+      "Each item must be one short noun or concept phrase naming a single independently connectable thing or idea.",
+      "Never return a question, task instruction, creative brief, complete sentence, or a phrase that already combines multiple requested items.",
+      "Keep every item under 24 characters and avoid sentence punctuation.",
+      "Avoid proper names, unsafe content, and duplicate concepts.",
+    ].join(" "),
     [
       `Output language: ${languageName(locale)}`,
       `Item count: ${options.itemCount}`,

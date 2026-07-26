@@ -2,6 +2,7 @@ import type { ChatMessage } from "@/lib/providers";
 
 export type CreativityLocale = "zh" | "en";
 export type CreativityMode = "inspiration" | "training";
+export type CreativityItemCount = 2 | 3 | 4 | 5 | 6;
 export type SemanticDistance = "near" | "cross-domain" | "far";
 export type AbstractionLevel = "concrete" | "abstract" | "mixed";
 export type CreativityPurpose =
@@ -12,7 +13,7 @@ export type CreativityPurpose =
 export type EvaluationLevel = "starting" | "clear" | "strong";
 
 export interface CreativityPromptOptions {
-  itemCount: 2 | 3;
+  itemCount: CreativityItemCount;
   semanticDistance: SemanticDistance;
   domain: string;
   abstraction: AbstractionLevel;
