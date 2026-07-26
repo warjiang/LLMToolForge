@@ -62,6 +62,12 @@ describe("creativity domain", () => {
         2,
       ),
     ).toThrow(/short phrase/i);
+    expect(() =>
+      parseCreativityPrompt(
+        '{"items":[{"text":"如何让雨伞更智能","kind":"concept"},{"text":"森林","kind":"thing"}]}',
+        2,
+      ),
+    ).toThrow(/short phrase/i);
   });
 
   it("rejects empty and duplicate custom combination items", () => {

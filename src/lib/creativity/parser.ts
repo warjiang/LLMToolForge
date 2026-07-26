@@ -12,6 +12,8 @@ import type {
 
 type JsonObject = Record<string, unknown>;
 const SENTENCE_PUNCTUATION = /[，。！？；：,!?;:\n\r]/u;
+const QUESTION_OR_INSTRUCTION_PREFIX =
+  /^(?:如何|怎么|怎样|为什么|为何|是否|能否|请|how\b|why\b|what\b|when\b|where\b|who\b|which\b|can\b|could\b|should\b|would\b|please\b)/iu;
 
 function objectValue(value: unknown, label: string): JsonObject {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -39,7 +41,8 @@ export function validateCombinationLabel(value: string): string {
   if (
     !normalized ||
     Array.from(normalized).length > 24 ||
-    SENTENCE_PUNCTUATION.test(normalized)
+    SENTENCE_PUNCTUATION.test(normalized) ||
+    QUESTION_OR_INSTRUCTION_PREFIX.test(normalized)
   ) {
     throw new Error("Combination item must be a short phrase");
   }
