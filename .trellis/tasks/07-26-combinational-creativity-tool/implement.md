@@ -1258,3 +1258,284 @@ pnpm tauri:dev
 - **历史数据问题：** 历史使用独立 key 且未加入同步注册表；可清空 `creativityHistory` 而不影响聊天、模型或其他工具数据。
 - **测试基础设施：** Vitest 仅影响开发依赖和测试命令；生产构建仍使用原有 `tsc && vite build`。
 - **局部回滚顺序：** 先从 `ToolsPage` 移除 Tab，再删除 `src/pages/tools/creativity/`，最后删除 `src/lib/creativity/` 和独立历史 key；不需要 Rust 或数据库迁移回滚。
+
+---
+
+## 验收反馈改造（2026-07-26）
+
+### Task 10：扩展 2-6 数量并阻止 AI 返回完整问题
+
+**Files:**
+
+- Modify: `src/lib/creativity/types.ts`
+- Modify: `src/lib/creativity/prompts.ts`
+- Modify: `src/lib/creativity/parser.ts`
+- Modify: `src/pages/tools/creativity/state.ts`
+- Modify: `src/pages/tools/tests/creativity-domain.test.ts`
+
+- [ ] **Step 1：先写失败测试**
+
+```ts
+it("accepts six short independent concepts", () => {
+  const result = parseCreativityPrompt(
+    '{"items":[{"text":"雨伞","kind":"thing"},{"text":"信任","kind":"concept"},{"text":"珊瑚","kind":"thing"},{"text":"节奏","kind":"concept"},{"text":"电池","kind":"thing"},{"text":"迁徙","kind":"concept"}]}',
+    6,
+  );
+  expect(result.items).toHaveLength(6);
+});
+
+it("rejects questions and task instructions as combination items", () => {
+  expect(() =>
+    parseCreativityPrompt(
+      '{"items":[{"text":"结合雨伞与手电筒的功能，列出至少十种新产品形态","kind":"concept"},{"text":"森林","kind":"thing"}]}',
+      2,
+    ),
+  ).toThrow(/short phrase/i);
+});
+```
+
+- [ ] **Step 2：运行测试确认失败**
+
+```bash
+pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
+```
+
+Expected: `6` 不满足旧 `2 | 3` 类型，且完整任务句未被拒绝。
+
+- [ ] **Step 3：实现数量与短语契约**
+
+```ts
+export type CreativityItemCount = 2 | 3 | 4 | 5 | 6;
+
+const SENTENCE_PUNCTUATION = /[，。！？；：,!?;:\n\r]/u;
+
+export function validateCombinationLabel(value: string): string {
+  const normalized = value.trim();
+  if (
+    !normalized ||
+    Array.from(normalized).length > 24 ||
+    SENTENCE_PUNCTUATION.test(normalized)
+  ) {
+    throw new Error("Combination item must be a short phrase");
+  }
+  return normalized;
+}
+```
+
+`buildPromptMessages` 明确要求每项是一个名词、事物名称或简短概念短语，禁止问题、任务指令、完整句子和多对象描述。
+
+- [ ] **Step 4：运行测试与类型检查**
+
+```bash
+pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
+pnpm exec tsc --noEmit
+```
+
+Expected: 全部通过。
+
+- [ ] **Step 5：提交**
+
+```bash
+git add src/lib/creativity src/pages/tools/creativity/state.ts src/pages/tools/tests/creativity-domain.test.ts
+git commit -m "fix: constrain creativity prompts to short concepts"
+```
+
+### Task 11：重构响应式配置栏和自定义选择值
+
+**Files:**
+
+- Create: `src/pages/tools/creativity/PresetCustomSelect.tsx`
+- Modify: `src/pages/tools/creativity/CreativityControls.tsx`
+- Modify: `src/lib/creativity/types.ts`
+- Modify: `src/i18n/locales/zh/pages.json`
+- Modify: `src/i18n/locales/en/pages.json`
+- Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
+
+- [ ] **Step 1：先写失败测试**
+
+```tsx
+it("shows all five prompt controls and accepts a custom semantic distance", async () => {
+  const user = userEvent.setup();
+  renderHarness();
+  expect(await screen.findByLabelText("组合数量")).toBeTruthy();
+  expect(screen.getByLabelText("语义距离")).toBeTruthy();
+  expect(screen.getByLabelText("主题领域")).toBeTruthy();
+  expect(screen.getByLabelText("抽象层级")).toBeTruthy();
+  expect(screen.getByLabelText("用途目标")).toBeTruthy();
+
+  await user.click(screen.getByLabelText("语义距离"));
+  await user.click(screen.getByRole("option", { name: "自定义…" }));
+  await user.type(screen.getByLabelText("自定义语义距离"), "跨文化但功能相似");
+  const input = screen.getByLabelText("自定义语义距离") as HTMLInputElement;
+  expect(input.value).toBe("跨文化但功能相似");
+});
+```
+
+测试使用原生 `HTMLInputElement.value` 断言，不依赖 jest-dom matcher。
+
+- [ ] **Step 2：运行测试确认失败**
+
+```bash
+pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
+```
+
+Expected: 现有按钮组和更多设置结构不满足五项同级与自定义输入。
+
+- [ ] **Step 3：实现通用预设/自定义选择器**
+
+```ts
+interface PresetCustomSelectProps {
+  label: string;
+  value: string;
+  presets: Array<{ value: string; label: string }>;
+  customLabel: string;
+  customPlaceholder: string;
+  onChange: (value: string) => void;
+}
+```
+
+组件使用现有 Radix `Select`。当当前值不属于 presets 时，Select 值为 `__custom__` 并显示一个受控 `Input`；选择预设时直接写预设值。
+
+- [ ] **Step 4：实现响应式配置栏**
+
+- 组合数量改为带 `aria-label` 的 Select，选项为 2-6。
+- 语义距离常驻。
+- 主题领域、抽象层级、用途目标在 `xl` 及以上同级展示。
+- `xl` 以下显示“更多设置”，对话框复用同一个 `PresetCustomSelect`。
+- 四个字符串字段均可保存预设值或自定义文本。
+
+- [ ] **Step 5：运行测试与构建**
+
+```bash
+pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
+pnpm build
+```
+
+Expected: 全部通过。
+
+- [ ] **Step 6：提交**
+
+```bash
+git add src/pages/tools/creativity src/lib/creativity/types.ts src/i18n/locales
+git commit -m "feat: add responsive custom creativity controls"
+```
+
+### Task 12：增加自定义组合来源
+
+**Files:**
+
+- Modify: `src/lib/creativity/types.ts`
+- Modify: `src/pages/tools/creativity/state.ts`
+- Modify: `src/pages/tools/creativity/CreativityControls.tsx`
+- Modify: `src/pages/tools/creativity/CreativityTool.tsx`
+- Modify: `src/pages/tools/creativity/CreativityWorkspace.tsx`
+- Modify: `src/lib/creativity/history.ts`
+- Modify: `src/i18n/locales/zh/pages.json`
+- Modify: `src/i18n/locales/en/pages.json`
+- Modify: `src/pages/tools/tests/creativity-domain.test.ts`
+- Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
+
+- [ ] **Step 1：先写 reducer 失败测试**
+
+```ts
+it("resizes the custom draft while preserving leading values", () => {
+  const custom = creativityReducer(createInitialCreativityState(), {
+    type: "source-changed",
+    source: "custom",
+  });
+  const filled = creativityReducer(custom, {
+    type: "custom-item-changed",
+    index: 0,
+    value: "雨伞",
+  });
+  const resized = creativityReducer(filled, {
+    type: "options-changed",
+    options: { ...filled.options, itemCount: 4 },
+  });
+  expect(resized.customItems).toEqual(["雨伞", "", "", ""]);
+});
+```
+
+- [ ] **Step 2：先写组件失败测试**
+
+```tsx
+it("creates a local four-item combination without calling AI generation", async () => {
+  const user = userEvent.setup();
+  const generatePrompt = vi.fn();
+  renderHarness({ client: { generatePrompt } });
+  await user.click(await screen.findByRole("button", { name: "自定义组合" }));
+  await user.click(screen.getByLabelText("组合数量"));
+  await user.click(screen.getByRole("option", { name: "4" }));
+  const inputs = screen.getAllByLabelText(/组合词/);
+  for (const [index, value] of ["雨伞", "信任", "珊瑚", "节奏"].entries()) {
+    await user.type(inputs[index]!, value);
+  }
+  await user.click(screen.getByRole("button", { name: "使用此组合" }));
+  expect(await screen.findByText("节奏")).toBeTruthy();
+  expect(generatePrompt).not.toHaveBeenCalled();
+});
+```
+
+- [ ] **Step 3：运行测试确认失败**
+
+```bash
+pnpm test -- src/pages/tools/tests/creativity-domain.test.ts src/pages/tools/tests/creativity-tool.test.tsx
+```
+
+Expected: source 与 customItems 状态不存在。
+
+- [ ] **Step 4：实现来源和自定义草稿**
+
+```ts
+export type CombinationSource = "ai" | "custom";
+```
+
+状态增加 `source` 和 `customItems`。`options-changed` 根据 itemCount 扩展或裁剪草稿；自定义提交复用 `validateCombinationLabel`、空值和归一化去重校验，并在本地创建 `CreativityPrompt`。
+
+- [ ] **Step 5：接入 UI 与历史**
+
+- 配置栏提供 `AI 生成 / 自定义组合` 切换。
+- 自定义模式显示与数量一致的输入框。
+- 自定义提交按钮为“使用此组合”。
+- AI 模式继续显示“生成组合”。
+- 历史记录增加 `source`，旧记录缺失时按 `"ai"` 读取。
+
+- [ ] **Step 6：运行测试与构建**
+
+```bash
+pnpm test
+pnpm build
+git diff --check
+```
+
+Expected: 全部通过。
+
+- [ ] **Step 7：提交**
+
+```bash
+git add src/lib/creativity src/pages/tools/creativity src/pages/tools/tests src/i18n/locales
+git commit -m "feat: support custom creativity combinations"
+```
+
+### Task 13：重新验收并归档
+
+- [ ] **Step 1：更新 `manual-acceptance.md`**
+
+新增并实际验证：
+
+```markdown
+- [ ] AI 组合只返回独立词语或短语，不返回完整问题或任务。
+- [ ] 五项配置在宽屏同级显示，窄屏低频项进入更多设置。
+- [ ] 四个配置维度均可使用自定义文本。
+- [ ] 自定义组合支持 2-6 个非空且不重复的词语。
+```
+
+- [ ] **Step 2：执行全量验证**
+
+```bash
+pnpm test
+pnpm build
+git diff --check
+```
+
+- [ ] **Step 3：用户验收通过后归档 Trellis 任务**
