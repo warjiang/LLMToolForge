@@ -114,6 +114,7 @@ export function creativityReducer(
     case "mode-changed":
       return {
         ...state,
+        roundId: uid("round"),
         mode: action.mode,
         answer: "",
         answerDirty: false,

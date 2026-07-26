@@ -78,6 +78,53 @@ export function CreativityHistoryDialog({
                       {record.answer && (
                         <p className="mt-3 text-copy-14">{record.answer}</p>
                       )}
+                      {record.examples.length > 0 && (
+                        <div className="mt-3 space-y-2 border-t border-border pt-3">
+                          {record.examples.map((example) => (
+                            <div key={example.method}>
+                              <div className="text-label-12 text-muted-foreground">
+                                {example.method}
+                              </div>
+                              <div className="text-label-14 font-medium">
+                                {example.title}
+                              </div>
+                              <p className="text-copy-13 text-muted-foreground">
+                                {example.content}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {record.evaluation && (
+                        <div className="mt-3 grid gap-2 border-t border-border pt-3 sm:grid-cols-2">
+                          {(
+                            [
+                              [
+                                "distance",
+                                record.evaluation.dimensions.distance,
+                              ],
+                              [
+                                "coherence",
+                                record.evaluation.dimensions.coherence,
+                              ],
+                              [
+                                "novelty",
+                                record.evaluation.dimensions.novelty,
+                              ],
+                              ["depth", record.evaluation.dimensions.depth],
+                            ] as const
+                          ).map(([key, dimension]) => (
+                            <div key={key}>
+                              <span className="text-label-12 text-muted-foreground">
+                                {t(`creativity_dimension_${key}`)}
+                              </span>
+                              <p className="text-copy-13">
+                                {dimension.reason}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <Button
                       variant="ghost"

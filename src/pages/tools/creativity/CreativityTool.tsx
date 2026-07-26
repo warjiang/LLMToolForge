@@ -29,6 +29,7 @@ import { CreativityWorkspace } from "./CreativityWorkspace";
 import {
   createInitialCreativityState,
   creativityReducer,
+  type CreativityOperation,
 } from "./state";
 
 export interface CreativityToolProps {
@@ -47,11 +48,16 @@ export function CreativityTool({
     createInitialCreativityState,
   );
   const [models, setModels] = useState<ExposedModel[]>([]);
+  const [modelsLoaded, setModelsLoaded] = useState(false);
   const [modelId, setModelId] = useState("");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
   const [records, setRecords] = useState<CreativityHistoryRecord[]>([]);
   const [saveWarning, setSaveWarning] = useState<string | null>(null);
+  const [modelNotice, setModelNotice] = useState<string | null>(null);
+  const [failedOperation, setFailedOperation] = useState<
+    Exclude<CreativityOperation, null> | null
+  >(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const locale = i18n.resolvedLanguage?.startsWith("en") ? "en" : "zh";
@@ -66,6 +72,7 @@ export function CreativityTool({
       .then(async ([available, settings, storedRecords]) => {
         if (cancelled) return;
         setModels(available);
+        setModelsLoaded(true);
         setRecords(storedRecords);
         const selected = selectCreativityModel(
           available,
@@ -74,6 +81,15 @@ export function CreativityTool({
         );
         const nextModelId = selected?.id ?? "";
         setModelId(nextModelId);
+        if (
+          settings?.modelId &&
+          selected &&
+          selected.id !== settings.modelId
+        ) {
+          setModelNotice(
+            t("creativity_model_fallback", { model: selected.id }),
+          );
+        }
         if (settings) {
           dispatch({ type: "mode-changed", mode: settings.mode });
           dispatch({ type: "options-changed", options: settings.options });
@@ -88,6 +104,7 @@ export function CreativityTool({
       })
       .catch((error: unknown) => {
         if (cancelled) return;
+        setModelsLoaded(true);
         dispatch({
           type: "operation-failed",
           roundId: state.roundId,
@@ -124,14 +141,20 @@ export function CreativityTool({
     abortRef.current = controller;
     dispatch({ type: "operation-started", operation, roundId });
     setSaveWarning(null);
+    setFailedOperation(null);
     return controller;
   };
 
-  const failOperation = (roundId: string, error: unknown) => {
+  const failOperation = (
+    roundId: string,
+    operation: Exclude<CreativityOperation, null>,
+    error: unknown,
+  ) => {
     if (isAbortError(error)) {
       dispatch({ type: "operation-cancelled", roundId });
       return;
     }
+    setFailedOperation(operation);
     dispatch({
       type: "operation-failed",
       roundId,
@@ -154,7 +177,7 @@ export function CreativityTool({
       );
       dispatch({ type: "prompt-succeeded", roundId, prompt });
     } catch (error) {
-      failOperation(roundId, error);
+      failOperation(roundId, "prompt", error);
     }
   };
 
@@ -227,7 +250,7 @@ export function CreativityTool({
         evaluation: state.mode === "training" ? state.evaluation : null,
       });
     } catch (error) {
-      failOperation(roundId, error);
+      failOperation(roundId, "examples", error);
     }
   };
 
@@ -249,7 +272,7 @@ export function CreativityTool({
       );
       dispatch({ type: "hint-succeeded", roundId, hint });
     } catch (error) {
-      failOperation(roundId, error);
+      failOperation(roundId, "hint", error);
     }
   };
 
@@ -270,7 +293,26 @@ export function CreativityTool({
       dispatch({ type: "evaluation-succeeded", roundId, evaluation });
       await saveRecord({ examples: state.examples, evaluation });
     } catch (error) {
-      failOperation(roundId, error);
+      failOperation(roundId, "evaluation", error);
+    }
+  };
+
+  const retryFailedOperation = () => {
+    switch (failedOperation) {
+      case "prompt":
+        requestPrompt();
+        break;
+      case "hint":
+        void generateHint();
+        break;
+      case "examples":
+        void generateExamples();
+        break;
+      case "evaluation":
+        void evaluateAnswer();
+        break;
+      case null:
+        break;
     }
   };
 
@@ -287,6 +329,7 @@ export function CreativityTool({
 
   const changeModel = (nextModelId: string) => {
     setModelId(nextModelId);
+    setModelNotice(null);
     persistSettings(nextModelId, state.mode, state.options);
   };
 
@@ -307,6 +350,24 @@ export function CreativityTool({
           setHistoryOpen(true);
         }}
       />
+      {modelsLoaded && models.length === 0 && (
+        <div className="flex items-center justify-between gap-4 rounded-md border border-border bg-background-secondary p-4">
+          <p className="text-copy-14 text-muted-foreground">
+            {t("creativity_no_model")}
+          </p>
+          <a
+            href="/unified"
+            className="shrink-0 rounded-sm border border-border bg-background px-3 py-1.5 text-label-13 transition-colors hover:bg-secondary"
+          >
+            {t("creativity_open_unified")}
+          </a>
+        </div>
+      )}
+      {modelNotice && (
+        <div className="rounded-md border border-border bg-background-secondary px-4 py-2 text-label-13 text-muted-foreground">
+          {modelNotice}
+        </div>
+      )}
       <CreativityWorkspace
         state={state}
         onGenerate={requestPrompt}
@@ -316,6 +377,7 @@ export function CreativityTool({
           dispatch({ type: "answer-changed", answer })
         }
         onEvaluate={() => void evaluateAnswer()}
+        onRetry={retryFailedOperation}
         saveWarning={saveWarning}
       />
       <CreativityHistoryDialog

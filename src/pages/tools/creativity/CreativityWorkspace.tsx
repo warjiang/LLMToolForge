@@ -17,6 +17,7 @@ export function CreativityWorkspace({
   onGenerateHint,
   onAnswerChange,
   onEvaluate,
+  onRetry,
   saveWarning,
 }: {
   state: CreativityState;
@@ -25,6 +26,7 @@ export function CreativityWorkspace({
   onGenerateHint: () => void;
   onAnswerChange: (answer: string) => void;
   onEvaluate: () => void;
+  onRetry: () => void;
   saveWarning: string | null;
 }) {
   const { t } = useTranslation("pages");
@@ -194,8 +196,11 @@ export function CreativityWorkspace({
       )}
 
       {state.error && (
-        <div className="rounded-md border border-destructive/30 bg-destructive/5 p-3 text-label-13 text-destructive">
-          {state.error}
+        <div className="flex items-center justify-between gap-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-label-13 text-destructive">
+          <span>{state.error}</span>
+          <Button variant="secondary" size="sm" onClick={onRetry}>
+            {t("creativity_retry")}
+          </Button>
         </div>
       )}
     </div>

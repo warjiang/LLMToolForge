@@ -135,4 +135,35 @@ describe("creativity domain", () => {
     expect(changed.answer).toBe("");
     expect(changed.answerDirty).toBe(false);
   });
+
+  it("ignores an old-mode response after switching modes", () => {
+    const initial = {
+      ...createInitialCreativityState(),
+      roundId: "round-inspiration",
+      prompt: {
+        id: "prompt",
+        items: [
+          { text: "雨伞", kind: "thing" as const },
+          { text: "区块链", kind: "concept" as const },
+        ],
+      },
+    };
+    const loading = creativityReducer(initial, {
+      type: "operation-started",
+      operation: "examples",
+      roundId: "round-inspiration",
+    });
+    const changed = creativityReducer(loading, {
+      type: "mode-changed",
+      mode: "training",
+    });
+    const stale = creativityReducer(changed, {
+      type: "examples-succeeded",
+      roundId: "round-inspiration",
+      examples: [{ method: "类比", title: "旧结果", content: "不应出现" }],
+    });
+
+    expect(changed.roundId).not.toBe("round-inspiration");
+    expect(stale.examples).toEqual([]);
+  });
 });

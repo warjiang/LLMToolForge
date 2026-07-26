@@ -1,6 +1,6 @@
 # 组合式创造思维训练工具实施计划
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** 在现有“实用工具”页面交付一个通过统一网关生成随机联结题、示例、渐进提示和结构化评价的双模式创造力训练工具。
 
@@ -48,7 +48,7 @@
 - Create: `vitest.config.ts`
 - Create: `src/test/setup.ts`
 
-- [ ] **Step 1：安装测试依赖并添加命令**
+- [x] **Step 1：安装测试依赖并添加命令**
 
 Run:
 
@@ -65,7 +65,7 @@ pnpm add -D vitest jsdom @testing-library/react @testing-library/user-event
 
 Expected: `package.json` 和 `pnpm-lock.yaml` 只出现上述测试依赖及其传递依赖变化。
 
-- [ ] **Step 2：添加 Vitest 配置**
+- [x] **Step 2：添加 Vitest 配置**
 
 创建 `vitest.config.ts`：
 
@@ -102,7 +102,7 @@ import { cleanup } from "@testing-library/react";
 afterEach(() => cleanup());
 ```
 
-- [ ] **Step 3：把现有工具页断言改为可执行测试**
+- [x] **Step 3：把现有工具页断言改为可执行测试**
 
 将 `src/pages/tools/tests/tools-page.test.ts` 改为：
 
@@ -119,7 +119,7 @@ describe("ToolsPage tabs", () => {
 });
 ```
 
-- [ ] **Step 4：运行测试确认基线可执行**
+- [x] **Step 4：运行测试确认基线可执行**
 
 Run:
 
@@ -129,7 +129,7 @@ pnpm test -- src/pages/tools/tests/tools-page.test.ts
 
 Expected: 1 test file passed。
 
-- [ ] **Step 5：提交测试基线**
+- [x] **Step 5：提交测试基线**
 
 ```bash
 git add package.json pnpm-lock.yaml vitest.config.ts src/test/setup.ts src/pages/tools/tests/tools-page.test.ts
@@ -145,7 +145,7 @@ git commit -m "test: add frontend unit test runner"
 - Create: `src/lib/creativity/parser.ts`
 - Create: `src/pages/tools/tests/creativity-domain.test.ts`
 
-- [ ] **Step 1：先写失败的领域测试**
+- [x] **Step 1：先写失败的领域测试**
 
 创建 `src/pages/tools/tests/creativity-domain.test.ts`，至少包含：
 
@@ -213,7 +213,7 @@ describe("creativity domain", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 Run:
 
@@ -223,7 +223,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
 
 Expected: FAIL，原因是 `@/lib/creativity/*` 模块不存在。
 
-- [ ] **Step 3：实现稳定领域类型**
+- [x] **Step 3：实现稳定领域类型**
 
 在 `src/lib/creativity/types.ts` 定义并导出：
 
@@ -304,7 +304,7 @@ export interface CreativityEvaluationRequest
 export type CreativityMessages = ChatMessage[];
 ```
 
-- [ ] **Step 4：实现提示词构造和解析器**
+- [x] **Step 4：实现提示词构造和解析器**
 
 `prompts.ts` 中为出题、指定级别提示、三个示例和评价分别生成 system/user 两条消息。每个 system message 必须写明：
 
@@ -330,7 +330,7 @@ export function parseJsonObject(text: string): unknown {
 
 业务校验必须覆盖：题目数量、空值、标准化去重；提示级别；示例恰好三条和方法去重；四个评价维度、合法等级和非空理由。
 
-- [ ] **Step 5：运行领域测试**
+- [x] **Step 5：运行领域测试**
 
 Run:
 
@@ -340,7 +340,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
 
 Expected: 全部通过。
 
-- [ ] **Step 6：提交领域层**
+- [x] **Step 6：提交领域层**
 
 ```bash
 git add src/lib/creativity src/pages/tools/tests/creativity-domain.test.ts
@@ -354,7 +354,7 @@ git commit -m "feat: add creativity domain contracts"
 - Create: `src/lib/creativity/client.ts`
 - Create: `src/pages/tools/tests/creativity-client.test.ts`
 
-- [ ] **Step 1：先写模型选择和修复重试测试**
+- [x] **Step 1：先写模型选择和修复重试测试**
 
 ```ts
 import { describe, expect, it, vi } from "vitest";
@@ -414,7 +414,7 @@ describe("creativity client", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 Run:
 
@@ -424,7 +424,7 @@ pnpm test -- src/pages/tools/tests/creativity-client.test.ts
 
 Expected: FAIL，`client.ts` 不存在。
 
-- [ ] **Step 3：实现模型过滤和可注入客户端**
+- [x] **Step 3：实现模型过滤和可注入客户端**
 
 `selectCreativityModel` 排除 `disabledModelIds`，并排除带 `image-gen` 或 `video-gen` 的专用生成模型。优先返回仍可用的 preferred model，否则返回按 Unified Store 顺序排列的第一个文本模型。
 
@@ -461,7 +461,7 @@ export interface CreativityClient {
 
 `createCreativityClient` 接收可注入的 `complete` 函数用于单测。第一次解析失败后，第二次调用只携带原始响应、目标 JSON 形状和“只修复格式，不改变内容”的指令；第二次失败直接抛错。
 
-- [ ] **Step 4：实现默认统一网关 transport**
+- [x] **Step 4：实现默认统一网关 transport**
 
 默认 `complete` 执行以下步骤：
 
@@ -489,7 +489,7 @@ async function ensureUnifiedReady(): Promise<{
 
 使用 `createOpenAICompatibleAdapter("unified")` 调用 `chat`，传入 exposed model id，而不是上游真实 model id。`listModels()` 返回 hydrate 后未禁用的文本模型。
 
-- [ ] **Step 5：运行客户端测试和类型检查**
+- [x] **Step 5：运行客户端测试和类型检查**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-client.test.ts
@@ -498,7 +498,7 @@ pnpm exec tsc --noEmit
 
 Expected: 测试通过；TypeScript 无错误。
 
-- [ ] **Step 6：提交客户端**
+- [x] **Step 6：提交客户端**
 
 ```bash
 git add src/lib/creativity/client.ts src/pages/tools/tests/creativity-client.test.ts
@@ -513,7 +513,7 @@ git commit -m "feat: connect creativity tool to unified gateway"
 - Create: `src/pages/tools/tests/creativity-history.test.ts`
 - Modify: `src/lib/creativity/types.ts`
 
-- [ ] **Step 1：先写历史仓库失败测试**
+- [x] **Step 1：先写历史仓库失败测试**
 
 ```ts
 import { describe, expect, it } from "vitest";
@@ -565,7 +565,7 @@ describe("creativity history", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-history.test.ts
@@ -573,7 +573,7 @@ pnpm test -- src/pages/tools/tests/creativity-history.test.ts
 
 Expected: FAIL，历史模块或历史类型不存在。
 
-- [ ] **Step 3：实现历史与设置仓库**
+- [x] **Step 3：实现历史与设置仓库**
 
 `history.ts` 使用两个稳定 key：
 
@@ -598,7 +598,7 @@ export interface CreativityHistoryStore {
 
 `upsert` 以 id 替换旧项，按 `updatedAt` 降序排序并 `slice(0, 50)`。`clear` 写入空数组，不产生同步 tombstone。默认实例使用 `getStore()`。
 
-- [ ] **Step 4：运行历史测试**
+- [x] **Step 4：运行历史测试**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-history.test.ts
@@ -606,7 +606,7 @@ pnpm test -- src/pages/tools/tests/creativity-history.test.ts
 
 Expected: 全部通过。
 
-- [ ] **Step 5：提交历史模块**
+- [x] **Step 5：提交历史模块**
 
 ```bash
 git add src/lib/creativity/types.ts src/lib/creativity/history.ts src/pages/tools/tests/creativity-history.test.ts
@@ -620,7 +620,7 @@ git commit -m "feat: persist creativity training history"
 - Create: `src/pages/tools/creativity/state.ts`
 - Modify: `src/pages/tools/tests/creativity-domain.test.ts`
 
-- [ ] **Step 1：先写 reducer 失败测试**
+- [x] **Step 1：先写 reducer 失败测试**
 
 在 `creativity-domain.test.ts` 增加：
 
@@ -674,7 +674,7 @@ it("keeps the prompt and answer when evaluation fails", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
@@ -682,7 +682,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
 
 Expected: FAIL，`state.ts` 不存在。
 
-- [ ] **Step 3：实现 reducer**
+- [x] **Step 3：实现 reducer**
 
 状态至少包含：
 
@@ -713,7 +713,7 @@ export interface CreativityState {
 
 所有异步成功/失败 action 都携带 `roundId`。当 action 的 roundId 与当前状态不同，reducer 原样返回 state。`mode-changed` 保留 prompt，清空 answer、hints、examples、evaluation 和 historyId。
 
-- [ ] **Step 4：运行状态测试**
+- [x] **Step 4：运行状态测试**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
@@ -721,7 +721,7 @@ pnpm test -- src/pages/tools/tests/creativity-domain.test.ts
 
 Expected: 全部通过。
 
-- [ ] **Step 5：提交状态机**
+- [x] **Step 5：提交状态机**
 
 ```bash
 git add src/pages/tools/creativity/state.ts src/pages/tools/tests/creativity-domain.test.ts
@@ -742,7 +742,7 @@ git commit -m "feat: add creativity round state machine"
 - Modify: `src/i18n/locales/en/pages.json`
 - Create: `src/pages/tools/tests/creativity-tool.test.tsx`
 
-- [ ] **Step 1：先写 Tab 和基础视图失败测试**
+- [x] **Step 1：先写 Tab 和基础视图失败测试**
 
 更新 `tools-page.test.ts`：
 
@@ -828,7 +828,7 @@ describe("CreativityTool", () => {
 });
 ```
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/tools-page.test.ts src/pages/tools/tests/creativity-tool.test.tsx
@@ -836,7 +836,7 @@ pnpm test -- src/pages/tools/tests/tools-page.test.ts src/pages/tools/tests/crea
 
 Expected: FAIL，新 Tab 和组件尚不存在。
 
-- [ ] **Step 3：实现基础组件和 Tab 注册**
+- [x] **Step 3：实现基础组件和 Tab 注册**
 
 在 `TOOL_TAB_ORDER` 中把 `creativity` 放在 `translate` 前；在 tabs 数组增加：
 
@@ -860,7 +860,7 @@ interface CreativityToolProps {
 
 生产默认值使用统一网关客户端和默认历史仓库。基础界面先完成模式切换、模型 Select、2/3 数量选择、语义距离、更多设置 Dialog、生成按钮和空状态；具体异步动作在后续任务接入。
 
-- [ ] **Step 4：添加完整双语文案**
+- [x] **Step 4：添加完整双语文案**
 
 中英文 key 使用统一 `creativity_` 前缀，至少覆盖：
 
@@ -870,7 +870,7 @@ interface CreativityToolProps {
 - 四个评价维度和三个等级。
 - 历史、删除、清空、确认和所有错误状态。
 
-- [ ] **Step 5：运行基础视图测试和构建**
+- [x] **Step 5：运行基础视图测试和构建**
 
 ```bash
 pnpm test -- src/pages/tools/tests/tools-page.test.ts src/pages/tools/tests/creativity-tool.test.tsx
@@ -879,7 +879,7 @@ pnpm build
 
 Expected: 测试和构建通过。
 
-- [ ] **Step 6：提交基础界面**
+- [x] **Step 6：提交基础界面**
 
 ```bash
 git add src/pages/tools src/i18n/locales/zh/pages.json src/i18n/locales/en/pages.json
@@ -895,7 +895,7 @@ git commit -m "feat: add creativity tool workspace"
 - Modify: `src/pages/tools/creativity/CreativityHistoryDialog.tsx`
 - Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
 
-- [ ] **Step 1：先写快速模式失败测试**
+- [x] **Step 1：先写快速模式失败测试**
 
 ```tsx
 it("generates a prompt, renders three examples, and saves one record", async () => {
@@ -929,7 +929,7 @@ it("generates a prompt, renders three examples, and saves one record", async () 
 
 测试辅助函数必须提供一个可用模型，并为未关注的方法提供明确 mock 返回，不能依赖真实网关。
 
-- [ ] **Step 2：运行测试确认失败**
+- [x] **Step 2：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
@@ -937,7 +937,7 @@ pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
 
 Expected: FAIL，按钮尚未接入客户端或历史。
 
-- [ ] **Step 3：实现快速模式编排**
+- [x] **Step 3：实现快速模式编排**
 
 实现规则：
 
@@ -950,11 +950,11 @@ Expected: FAIL，按钮尚未接入客户端或历史。
 
 历史写入失败只设置独立 `saveWarning`，不回滚示例。
 
-- [ ] **Step 4：实现历史对话框**
+- [x] **Step 4：实现历史对话框**
 
 历史对话框加载最近 50 条记录，列表显示时间、模式和题目词语。选择一条后显示规范化详情。删除单条和清空全部使用 `ConfirmDialog`；成功后刷新列表。
 
-- [ ] **Step 5：运行快速模式测试**
+- [x] **Step 5：运行快速模式测试**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx src/pages/tools/tests/creativity-history.test.ts
@@ -962,7 +962,7 @@ pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx src/pages/tools/test
 
 Expected: 全部通过。
 
-- [ ] **Step 6：提交快速模式**
+- [x] **Step 6：提交快速模式**
 
 ```bash
 git add src/pages/tools/creativity src/pages/tools/tests/creativity-tool.test.tsx
@@ -977,7 +977,7 @@ git commit -m "feat: add quick creativity inspiration flow"
 - Modify: `src/pages/tools/creativity/CreativityWorkspace.tsx`
 - Modify: `src/pages/tools/tests/creativity-tool.test.tsx`
 
-- [ ] **Step 1：先写示例门槛和渐进提示失败测试**
+- [x] **Step 1：先写示例门槛和渐进提示失败测试**
 
 ```tsx
 it("reveals hints in order and keeps examples locked before evaluation", async () => {
@@ -1000,7 +1000,7 @@ it("reveals hints in order and keeps examples locked before evaluation", async (
 });
 ```
 
-- [ ] **Step 2：先写评价与历史更新失败测试**
+- [x] **Step 2：先写评价与历史更新失败测试**
 
 ```tsx
 it("renders four dimensions and unlocks examples after evaluation", async () => {
@@ -1035,7 +1035,7 @@ it("renders four dimensions and unlocks examples after evaluation", async () => 
 });
 ```
 
-- [ ] **Step 3：运行测试确认失败**
+- [x] **Step 3：运行测试确认失败**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
@@ -1043,7 +1043,7 @@ pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
 
 Expected: 新训练测试失败。
 
-- [ ] **Step 4：实现三级提示、评价和示例解锁**
+- [x] **Step 4：实现三级提示、评价和示例解锁**
 
 规则：
 
@@ -1054,11 +1054,11 @@ Expected: 新训练测试失败。
 - 评价成功后创建历史；生成示例后使用同一 historyId 更新。
 - 训练模式在评价前不渲染示例按钮。
 
-- [ ] **Step 5：实现未提交答案换题确认**
+- [x] **Step 5：实现未提交答案换题确认**
 
 当 `answerDirty` 为 true 且没有评价时，“换一组”先打开 `ConfirmDialog`。确认后中止当前请求、生成新 round ID 并清空答案；取消时状态不变。
 
-- [ ] **Step 6：运行训练模式测试**
+- [x] **Step 6：运行训练模式测试**
 
 ```bash
 pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
@@ -1066,7 +1066,7 @@ pnpm test -- src/pages/tools/tests/creativity-tool.test.tsx
 
 Expected: 全部通过。
 
-- [ ] **Step 7：提交训练模式**
+- [x] **Step 7：提交训练模式**
 
 ```bash
 git add src/pages/tools/creativity src/pages/tools/tests/creativity-tool.test.tsx
@@ -1081,7 +1081,7 @@ git commit -m "feat: add structured creativity training flow"
 - Modify: `src/pages/tools/tests/creativity-client.test.ts`
 - Create: `.trellis/tasks/07-26-combinational-creativity-tool/manual-acceptance.md`
 
-- [ ] **Step 1：补充异常路径自动化测试**
+- [x] **Step 1：补充异常路径自动化测试**
 
 在 `creativity-tool.test.tsx` 增加：
 
@@ -1176,7 +1176,7 @@ it("falls back when the remembered model no longer exists", async () => {
 
 请求进行期间，原“生成组合”按钮的可访问名称固定为“重新生成组合”；点击后先 abort 旧请求，再创建新 round 并发起第二次请求。该行为同时满足用户主动取消和迟到响应保护。
 
-- [ ] **Step 2：运行全部自动化检查**
+- [x] **Step 2：运行全部自动化检查**
 
 ```bash
 pnpm test
@@ -1190,7 +1190,7 @@ Expected:
 - `tsc && vite build` 成功。
 - `git diff --check` 无输出。
 
-- [ ] **Step 3：创建手动验收清单**
+- [x] **Step 3：创建手动验收清单**
 
 `manual-acceptance.md` 写入以下未勾选项目：
 

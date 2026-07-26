@@ -180,7 +180,7 @@ export function CreativityControls({
         >
           <Sparkles className="h-4 w-4" />
           {loading
-            ? t("creativity_generating")
+            ? t("creativity_regenerate")
             : t("creativity_generate")}
         </Button>
       </div>
@@ -203,7 +203,7 @@ export function CreativityControls({
                 value={options.domain === "any" ? "" : options.domain}
                 placeholder={t("creativity_domain_placeholder")}
                 onChange={(event) =>
-                  patchOptions({ domain: event.target.value.trim() || "any" })
+                  patchOptions({ domain: event.target.value || "any" })
                 }
               />
             </div>
