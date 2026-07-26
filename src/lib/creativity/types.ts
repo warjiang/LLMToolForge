@@ -77,4 +77,25 @@ export interface CreativityEvaluationRequest
   answer: string;
 }
 
+export interface CreativitySettings {
+  modelId: string;
+  mode: CreativityMode;
+  options: CreativityPromptOptions;
+}
+
+export interface CreativityHistoryRecord {
+  id: string;
+  mode: CreativityMode;
+  modelId: string;
+  locale: CreativityLocale;
+  options: CreativityPromptOptions;
+  prompt: CreativityPrompt;
+  answer: string;
+  hints: CreativityHint[];
+  examples: CreativityExample[];
+  evaluation: CreativityEvaluation | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export type CreativityMessages = ChatMessage[];
