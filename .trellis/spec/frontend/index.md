@@ -19,7 +19,7 @@ This directory contains guidelines for frontend development. Fill in each file w
 | [Hook Guidelines](./hook-guidelines.md) | Custom hooks, data fetching patterns | To fill |
 | [State Management](./state-management.md) | Local state, global state, server state | To fill |
 | [Quality Guidelines](./quality-guidelines.md) | Code standards, forbidden patterns | To fill |
-| [Type Safety](./type-safety.md) | Type patterns, validation | To fill |
+| [Type Safety](./type-safety.md) | Type patterns, validation | Active |
 | [Agent Chat Provider Contracts](./agent-chat-provider-contracts.md) | SQLite chat, generated media, provider adapter, and polling contracts | Active |
 | [Skill Management Contracts](./skill-management-contracts.md) | Skill deployment payloads, target paths, and sync command behavior | Active |
 
