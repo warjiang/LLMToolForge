@@ -20,7 +20,7 @@ LLMToolForge is a desktop application that centralizes LLM tool management. It c
 - **Skills**: Create, install from GitHub or [skills.sh](https://skills.sh), sync to agent targets. Multi-file skills with update detection via content hashing.
 - **SSH**: Host management with credential vault, PTY terminal sessions, ~/.ssh/config import, and host cloning.
 - **Storage Sync**: AES-256-GCM encrypted sync to S3-compatible storage with per-resource tombstone merging and versioned history snapshots.
-- **Built-in Utilities**: JSON viewer (with React Flow diagram), Base64/URL/Unicode encode-decode, hash tools, text editor, markdown preview, translator.
+- **Built-in Utilities**: Creativity training tool (AI-generated combinational prompts, structured evaluation), JSON viewer (with React Flow diagram), Base64/URL/Unicode encode-decode, hash tools, text editor, markdown preview, translator.
 
 ## Where to Start
 
