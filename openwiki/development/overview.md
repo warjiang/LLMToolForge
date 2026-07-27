@@ -145,9 +145,12 @@ Full spec: [`/src/lib/agent/aap/PROTOCOL.md`](/src/lib/agent/aap/PROTOCOL.md)
 
 ### Frontend Tests
 
+The project uses [Vitest](https://vitest.dev) as its test runner. Config: [`/vitest.config.ts`](/vitest.config.ts), setup: [`/src/test/setup.ts`](/src/test/setup.ts).
+
 - Store tests: [`/src/store/tests/`](/src/store/tests/)
 - Data tests: [`/src/data/tests/`](/src/data/tests/)
 - Agent tests: [`/src/pages/agent/tests/`](/src/pages/agent/tests/)
+- Tools tests: [`/src/pages/tools/tests/`](/src/pages/tools/tests/) (creativity domain, creativity tool, tools page)
 
 ### Platform SDK Tests (Offline, No Network)
 

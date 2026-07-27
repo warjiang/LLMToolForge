@@ -81,7 +81,7 @@ src/
 │   ├── connectors/      # Connector sidecar management
 │   ├── skills/          # Skills CRUD + marketplace
 │   ├── ssh/             # SSH host management + terminal
-│   ├── tools/           # Utility tools (JSON, Base64, URL, hash, etc.)
+│   ├── tools/           # Utility tools (creativity training, JSON, Base64, URL, hash, etc.)
 │   ├── settings/        # Settings (theme, sync, etc.)
 │   └── browser/         # In-app browser wrapper
 ├── lib/                 # Core libraries
@@ -90,6 +90,7 @@ src/
 │   ├── unifiedApi.ts    # Frontend bridge for Unified API server
 │   ├── mcp/             # MCP configurations
 │   ├── connector/       # Connector API client
+│   ├── creativity/       # Creativity tool domain (prompts, parsing, history, client)
 │   ├── skillMarket/     # Skill marketplace (GitHub + skills.sh)
 │   └── ssh/             # SSH client
 ├── store/               # Zustand stores (unified, chat, connector, ssh, sync, theme, etc.)
