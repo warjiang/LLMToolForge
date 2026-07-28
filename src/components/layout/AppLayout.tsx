@@ -1,9 +1,8 @@
 import { Outlet, useLocation } from "react-router-dom";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
-import { SshTerminalWorkspace } from "@/pages/ssh/SshTerminalWorkspace";
-import { useChatStore } from "@/store";
+import { useChatStore, useSshSessionStore } from "@/store";
 import { useAppModeStore } from "@/store/appMode";
 import { AGENT_ROUTE_PATH } from "@/lib/routes";
 
@@ -12,6 +11,11 @@ const AgentSidebar = lazy(() =>
 );
 const AgentChatView = lazy(() =>
   import("@/pages/agent/AgentChatView").then((m) => ({ default: m.AgentChatView }))
+);
+const SshTerminalWorkspace = lazy(() =>
+  import("@/pages/ssh/SshTerminalWorkspace").then((m) => ({
+    default: m.SshTerminalWorkspace,
+  }))
 );
 
 function AgentFallback() {
@@ -26,7 +30,10 @@ export function AppLayout() {
   const mode = useAppModeStore((s) => s.mode);
   const setMode = useAppModeStore((s) => s.setMode);
   const initChat = useChatStore((s) => s.init);
+  const sshWorkspaceOpen = useSshSessionStore((s) => s.workspaceOpen);
   const location = useLocation();
+  const sshVisible = location.pathname.startsWith("/ssh");
+  const [sshWorkspaceLoaded, setSshWorkspaceLoaded] = useState(false);
 
   useEffect(() => {
     const routeMode = location.pathname === `/${AGENT_ROUTE_PATH}` ? "agent" : "tool";
@@ -36,6 +43,10 @@ export function AppLayout() {
   useEffect(() => {
     if (mode === "agent") void initChat();
   }, [mode, initChat]);
+
+  useEffect(() => {
+    if (sshVisible || sshWorkspaceOpen) setSshWorkspaceLoaded(true);
+  }, [sshVisible, sshWorkspaceOpen]);
 
   return (
     <div className="flex h-screen w-full flex-col overflow-hidden bg-background">
@@ -55,7 +66,11 @@ export function AppLayout() {
               <div className="mx-auto flex h-full w-full max-w-[1500px] flex-col overflow-y-auto px-5 py-6 sm:px-6 lg:px-8">
                 <Outlet />
               </div>
-              <SshTerminalWorkspace visible={location.pathname.startsWith("/ssh")} />
+              {sshWorkspaceLoaded && (
+                <Suspense fallback={null}>
+                  <SshTerminalWorkspace visible={sshVisible} />
+                </Suspense>
+              )}
             </main>
           </>
         )}

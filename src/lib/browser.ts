@@ -67,6 +67,11 @@ export async function browserReload(): Promise<void> {
   await invoke<void>("browser_reload");
 }
 
+export async function browserStop(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke<void>("browser_stop");
+}
+
 export async function setBrowserBounds(bounds: BrowserBounds): Promise<void> {
   if (!isTauri()) return;
   await invoke<void>("browser_set_bounds", {

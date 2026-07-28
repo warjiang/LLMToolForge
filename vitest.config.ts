@@ -13,6 +13,7 @@ export default defineConfig({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     include: [
+      "src/components/agent/BrowserPreview.test.tsx",
       "src/pages/tools/tests/tools-page.test.ts",
       "src/pages/tools/tests/creativity-*.test.{ts,tsx}",
     ],
