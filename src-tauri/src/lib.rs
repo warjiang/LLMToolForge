@@ -1075,6 +1075,7 @@ pub fn run() {
             browser::browser_back,
             browser::browser_forward,
             browser::browser_reload,
+            browser::browser_stop,
             browser::browser_set_bounds,
             browser::browser_show,
             browser::browser_hide,

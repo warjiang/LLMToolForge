@@ -263,6 +263,16 @@ pub fn browser_reload(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn browser_stop(app: AppHandle) -> Result<(), String> {
+    let webview = app
+        .get_webview(BROWSER_LABEL)
+        .ok_or_else(|| "browser webview not open".to_string())?;
+    webview.eval("window.stop()").map_err(err_to_string)?;
+    let _ = app.emit(EVENT_LOADING, serde_json::json!({ "loading": false }));
+    Ok(())
+}
+
+#[tauri::command]
 pub fn browser_set_bounds(
     app: AppHandle,
     x: f64,

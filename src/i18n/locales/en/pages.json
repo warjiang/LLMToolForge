@@ -185,6 +185,8 @@
   "browser_back": "Back",
   "browser_forward": "Forward",
   "browser_reload": "Reload",
+  "browser_stop": "Stop loading",
+  "browser_clear": "Clear current page",
   "browser_empty_hint": "Type a URL in the address bar above, or pick a common local address to start previewing.",
   "browser_desktop_only_title": "Desktop only",
   "browser_desktop_only_desc": "The built-in browser uses a native webview and is only available in the desktop app (Tauri). Please open it there.",

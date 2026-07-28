@@ -9,8 +9,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Globe,
-  Loader2,
   RotateCw,
+  Trash2,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -21,6 +21,8 @@ import {
   browserBack,
   browserForward,
   browserReload,
+  browserStop,
+  closeBrowser,
   getBrowserStatus,
   onBrowserLoading,
   onBrowserNavigated,
@@ -35,6 +37,7 @@ const QUICK_LINKS = [
   "http://localhost:3000",
   "http://127.0.0.1:8080",
 ];
+const BROWSER_LOAD_TIMEOUT_MS = 15_000;
 
 export interface BrowserPreviewProps {
   /** When set (paired with a changing `navNonce`), auto-navigates to this URL. */
@@ -97,6 +100,21 @@ export function BrowserPreview({
     if (bounds) void setBrowserBounds(bounds);
   }, [readBounds]);
 
+  const stopLoading = useCallback(() => {
+    setLoading(false);
+    void browserStop();
+  }, []);
+
+  const clearCurrentPage = useCallback(() => {
+    setLoading(false);
+    setCurrentUrl(null);
+    setAddress("");
+    setCanGoBack(false);
+    setCanGoForward(false);
+    setBrowserPreviewVisible(false);
+    void closeBrowser();
+  }, []);
+
   const go = useCallback(
     (raw?: string) => {
       const url = (raw ?? address).trim();
@@ -108,6 +126,12 @@ export function BrowserPreview({
     },
     [address, readBounds]
   );
+
+  useEffect(() => {
+    if (!loading) return;
+    const timeoutId = window.setTimeout(stopLoading, BROWSER_LOAD_TIMEOUT_MS);
+    return () => window.clearTimeout(timeoutId);
+  }, [loading, stopLoading]);
 
   // Keep a stable handle to the latest `go` so the auto-navigate effect below
   // does not depend on its identity (which changes whenever `address` updates).
@@ -242,15 +266,24 @@ export function BrowserPreview({
           <Button
             variant="ghost"
             size="icon-sm"
-            onClick={() => void browserReload()}
-            disabled={!currentUrl}
-            title={t("browser_reload")}
+            onClick={loading ? stopLoading : () => void browserReload()}
+            disabled={!loading && !currentUrl}
+            title={loading ? t("browser_stop") : t("browser_reload")}
           >
             {loading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
+              <X className="h-4 w-4" />
             ) : (
               <RotateCw className="h-4 w-4" />
             )}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={clearCurrentPage}
+            disabled={!loading && !currentUrl}
+            title={t("browser_clear")}
+          >
+            <Trash2 className="h-4 w-4" />
           </Button>
           <form
             className="flex flex-1 items-center gap-2"
