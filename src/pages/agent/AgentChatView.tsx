@@ -125,6 +125,11 @@ import {
   filterAttachmentsForImageInput,
   filterFilesForImageInput,
 } from "./attachmentInput";
+import { SummaryReportLinks } from "./SummaryReportLinks";
+import {
+  summaryReportArtifactsByMessage,
+  type SummaryReportArtifact,
+} from "./summaryReportArtifacts";
 import {
   mediaKindForPath,
   registerPreview,
@@ -1140,6 +1145,10 @@ export function AgentChatView() {
     }
     return map;
   }, [chat.toolCalls]);
+  const summaryReportsByMessage = useMemo(
+    () => summaryReportArtifactsByMessage(chat.messages, chat.toolCalls),
+    [chat.messages, chat.toolCalls]
+  );
   const turns = useMemo(() => {
     const list: { id: string; index: number; question: string }[] = [];
     let n = 0;
@@ -3098,6 +3107,7 @@ export function AgentChatView() {
                         turnId={m.role === "user" ? m.id : undefined}
                         message={m}
                         toolCalls={toolCallsByMessage.get(m.id)}
+                        summaryReports={summaryReportsByMessage.get(m.id)}
                         typing={m.status === "pending" && !m.content}
                         streaming={sending && i === chat.messages.length - 1}
                         editing={editingThisMessage}
@@ -4946,6 +4956,7 @@ function ChatBubble({
   message,
   turnId,
   toolCalls,
+  summaryReports,
   typing,
   streaming,
   editing,
@@ -4961,6 +4972,7 @@ function ChatBubble({
   message: PersistedChatMessage;
   turnId?: string;
   toolCalls?: ToolCallRecord[];
+  summaryReports?: SummaryReportArtifact[];
   typing?: boolean;
   streaming?: boolean;
   editing?: boolean;
@@ -5209,6 +5221,13 @@ function ChatBubble({
                       streaming={streaming && message.status === "pending"}
                     />
                   ))}
+                {!!summaryReports?.length && (
+                  <SummaryReportLinks
+                    reports={summaryReports}
+                    openLabel={t("agent_open_report")}
+                    onOpen={(report) => void openArtifactPreview(report)}
+                  />
+                )}
                 {message.error && (
                   <div className="whitespace-pre-wrap break-words rounded-sm border border-destructive/25 bg-destructive/10 px-2.5 py-2 text-label-12 text-destructive">
                     {message.error}

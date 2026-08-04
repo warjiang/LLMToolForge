@@ -366,6 +366,62 @@ if (!decision.approved) return;
 await data_report_html({ title, sections, outputPath });
 ```
 
+## Scenario: HTML Report Links On Final Summaries
+
+### 1. Scope / Trigger
+- Trigger: an agent turn generates an HTML report through one or more tool calls
+  and later emits a final text summary.
+
+### 2. Signatures
+- `summaryReportArtifactsByMessage(messages, toolCalls): Map<string, SummaryReportArtifact[]>`
+- `SummaryReportArtifact` contains `kind: "browser"`, `dir`, optional `file`,
+  and optional `title`.
+
+### 3. Contracts
+- Derive report links from persisted messages and successful tool-call results;
+  do not persist temporary localhost preview URLs.
+- Supported report tools are `html_artifact_create`, `html_artifact_block`,
+  `data_report_html`, and `write` when its result path is an HTML file.
+- A report belongs to the user turn containing its tool-call anchor message.
+- Render links only on the last complete assistant text message that occurs
+  after the turn's final report tool anchor.
+- Deduplicate repeated block updates by artifact directory plus optional file.
+- Opening a summary report must reuse the existing preview registration path so
+  links continue to work after reopening a historical session.
+
+### 4. Validation & Error Matrix
+- Failed tool call -> no report link.
+- Missing `outputDir` / HTML path -> no report link.
+- Report tool has no later complete assistant text -> no report link.
+- Multiple successful calls for the same artifact path -> one report link.
+- Multiple distinct artifact paths in one turn -> one link per report.
+
+### 5. Good/Base/Bad Cases
+- Good: several `html_artifact_block` calls produce one "Open report" entry on
+  the final summary, and reopening history reconstructs the same entry.
+- Base: a turn generates two reports and the summary shows two entries.
+- Bad: attach the link to a pre-tool "generating report" message or embed the
+  preview server's temporary localhost URL in Markdown.
+
+### 6. Tests Required
+- Unit tests cover cross-message turn association, path deduplication, multiple
+  reports, failed/non-report tools, historical turns, and no post-tool summary.
+- Component test asserts the visible report title and that "Open report"
+  invokes the callback with the selected artifact.
+- Full type-check and production build must pass.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+summary += `[Open report](${previewStore.url})`;
+```
+
+#### Correct
+```typescript
+const reports = summaryReportArtifactsByMessage(messages, toolCalls);
+<SummaryReportLinks reports={reports.get(summary.id) ?? []} onOpen={openArtifactPreview} />;
+```
+
 ## Scenario: Tool-Call Goals In Agent Timeline
 
 ### 1. Scope / Trigger
