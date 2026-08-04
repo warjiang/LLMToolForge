@@ -121,6 +121,11 @@ import { buildResearchSystemPrompt } from "@/lib/agent/researchPrompt";
 import { attachmentsToPromptImages } from "@/lib/agent/images";
 import { openSessionWorkspace, resolveSessionWorkspace } from "@/lib/agent/workspace";
 import {
+  clearResolvedImageInputError,
+  filterAttachmentsForImageInput,
+  filterFilesForImageInput,
+} from "./attachmentInput";
+import {
   mediaKindForPath,
   registerPreview,
   registerPreviewMedia,
@@ -977,6 +982,7 @@ export function AgentChatView() {
   const pendingAutoScrollFrameRef = useRef<number | null>(null);
   const touchYRef = useRef<number | null>(null);
   const lastScrollSessionRef = useRef<string | null>(null);
+  const lastImageInputErrorSessionRef = useRef<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const agentRuntimeRef = useRef<AgentRuntime | null>(null);
   const agentRuntimeMetaRef = useRef<{
@@ -1011,6 +1017,10 @@ export function AgentChatView() {
   const runStatusSessionRef = useRef<string | null>(null);
 
   const settings = chat.settings;
+  const unifiedModels = useUnifiedStore((s) => s.models);
+  const disabledUnifiedModelIds = useUnifiedStore(
+    (s) => s.config.disabledModelIds
+  );
   const loaded =
     volc.loaded &&
     gateway.loaded &&
@@ -1316,6 +1326,25 @@ export function AgentChatView() {
   const selectedModel =
     models.find((m) => m.id === settings?.modelId) ?? null;
   const currentConn = options.find((o) => o.key === connKey) ?? null;
+  const selectedExposedModel = useMemo(() => {
+    if (!settings?.connKey || !settings.modelId) return null;
+    const disabled = new Set(disabledUnifiedModelIds);
+    return (
+      unifiedModels.find(
+        (m) =>
+          m.connId === settings.connKey &&
+          m.realModel === settings.modelId &&
+          !disabled.has(m.id)
+      ) ?? null
+    );
+  }, [
+    disabledUnifiedModelIds,
+    settings?.connKey,
+    settings?.modelId,
+    unifiedModels,
+  ]);
+  const supportsImageInput =
+    selectedExposedModel?.features.includes("vision") ?? false;
   const activeSkills = skills.items.filter(
     (s) => s.enabled !== false && settings?.enabledSkillIds.includes(s.id)
   );
@@ -1327,6 +1356,31 @@ export function AgentChatView() {
     autoApproveCheckpointsRef.current =
       isResearchAgent && (settings?.autoApproveCheckpoints ?? false);
   }, [isResearchAgent, settings?.autoApproveCheckpoints]);
+
+  useEffect(() => {
+    if (!selectedExposedModel || supportsImageInput) return;
+    const result = filterAttachmentsForImageInput(attachments, false);
+    if (result.removedImageCount === 0) return;
+    setAttachments(result.acceptedAttachments);
+    setError(t("agent_model_no_image_input"));
+  }, [attachments, selectedExposedModel, supportsImageInput, t]);
+
+  useEffect(() => {
+    const sessionId = chat.activeSessionId ?? null;
+    const previousSessionId = lastImageInputErrorSessionRef.current;
+    const sessionChanged =
+      previousSessionId !== null && previousSessionId !== sessionId;
+    lastImageInputErrorSessionRef.current = sessionId;
+
+    setError((currentError) =>
+      clearResolvedImageInputError({
+        currentError,
+        imageInputError: t("agent_model_no_image_input"),
+        supportsImageInput,
+        sessionChanged,
+      })
+    );
+  }, [chat.activeSessionId, supportsImageInput, t]);
 
   // Warm enabled MCP servers in the background so a healthy server (e.g. a
   // remote HTTP one) is ready instantly when the user sends, and a slow/broken
@@ -1685,8 +1739,15 @@ export function AgentChatView() {
 
   const addAttachmentFiles = async (files: File[]) => {
     if (files.length === 0) return;
+    const result = filterFilesForImageInput(files, supportsImageInput);
+    if (result.rejectedImageCount > 0) {
+      setError(t("agent_model_no_image_input"));
+    }
+    if (result.acceptedFiles.length === 0) return;
     try {
-      const next = await Promise.all(files.map((f) => chat.fileToAttachment(f)));
+      const next = await Promise.all(
+        result.acceptedFiles.map((f) => chat.fileToAttachment(f))
+      );
       setAttachments((prev) => [...prev, ...next]);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("agent_read_attachment_failed"));
@@ -1699,6 +1760,7 @@ export function AgentChatView() {
   const handleComposerPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
     if (!settings) return;
     const files: File[] = [];
+    const hasText = e.clipboardData.getData("text/plain").length > 0;
     for (const item of Array.from(e.clipboardData.items)) {
       if (item.kind !== "file") continue;
       const file = item.getAsFile();
@@ -1720,9 +1782,17 @@ export function AgentChatView() {
       }
     }
     if (files.length === 0) return;
+    const result = filterFilesForImageInput(files, supportsImageInput);
+    if (result.rejectedImageCount > 0) {
+      setError(t("agent_model_no_image_input"));
+    }
+    if (result.acceptedFiles.length === 0) {
+      if (!hasText) e.preventDefault();
+      return;
+    }
     // Prevent the raw blob/text from also landing in the textarea.
     e.preventDefault();
-    void addAttachmentFiles(files);
+    void addAttachmentFiles(result.acceptedFiles);
   };
 
   const saveAttachmentsForExecution = async (
@@ -1914,6 +1984,12 @@ export function AgentChatView() {
     if (!selectedModel) return t("agent_select_model_first");
     if (!provider) return t("agent_no_provider");
     if (!content && inputAttachments.length === 0) return t("agent_message_required");
+    if (
+      !supportsImageInput &&
+      filterAttachmentsForImageInput(inputAttachments, false).removedImageCount > 0
+    ) {
+      return t("agent_model_no_image_input");
+    }
     if (isImageGenerationModel(selectedModel) && !content) {
       return t("agent_image_prompt_required");
     }
@@ -3181,7 +3257,11 @@ export function AgentChatView() {
                   <button
                     type="button"
                     disabled={!settings}
-                    title={t("agent_add_attachment")}
+                    title={
+                      supportsImageInput
+                        ? t("agent_add_attachment")
+                        : t("agent_add_file_only")
+                    }
                     onClick={openAttachmentPicker}
                     className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-md border border-dashed border-border bg-background/40 text-muted-foreground transition-colors hover:border-muted-foreground/40 hover:bg-secondary disabled:cursor-not-allowed disabled:opacity-50"
                   >
@@ -3212,7 +3292,11 @@ export function AgentChatView() {
                     variant="ghost"
                     className="shrink-0"
                     disabled={!settings}
-                    title={t("agent_add_attachment")}
+                    title={
+                      supportsImageInput
+                        ? t("agent_add_attachment")
+                        : t("agent_add_file_only")
+                    }
                     onClick={openAttachmentPicker}
                   >
                     <Paperclip className="h-4 w-4" />
