@@ -15,6 +15,8 @@ export default defineConfig({
     include: [
       "src/components/agent/BrowserPreview.test.tsx",
       "src/pages/agent/tests/attachment-input.test.ts",
+      "src/pages/agent/tests/summary-report-artifacts.test.ts",
+      "src/pages/agent/tests/summary-report-links.test.tsx",
       "src/pages/tools/tests/tools-page.test.ts",
       "src/pages/tools/tests/creativity-*.test.{ts,tsx}",
     ],
