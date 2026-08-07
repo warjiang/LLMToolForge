@@ -21,7 +21,10 @@ Both runtimes are defined in [`/src/lib/agent/`](/src/lib/agent/) and communicat
 | [`/src/lib/agent/runtime.ts`](/src/lib/agent/runtime.ts) | `createAgentRuntime()` — factory that selects Pi or External based on platform and agent definition |
 | [`/src/lib/agent/externalRuntime.ts`](/src/lib/agent/externalRuntime.ts) | `createExternalAgentRuntime()` — spawns Python/Node subprocess, bridges AAP events |
 | [`/src/lib/agent/agentDefinition.ts`](/src/lib/agent/agentDefinition.ts) | `AgentDefinition` type — reusable config (system prompt, model, tools, skills, MCP, sandbox) |
-| [`/src/lib/agent/images.ts`](/src/lib/agent/images.ts) | Image attachment handling for agent chat (recent: PR #66) |
+| [`/src/lib/agent/images.ts`](/src/lib/agent/images.ts) | Image attachment handling for agent chat |
+| [`/src/pages/agent/attachmentInput.ts`](/src/pages/agent/attachmentInput.ts) | Image capability gate — filters image attachments when model lacks vision (recent: PR #73) |
+| [`/src/pages/agent/SummaryReportLinks.tsx`](/src/pages/agent/SummaryReportLinks.tsx) | Inline summary links for agent-generated HTML artifacts and reports (recent: PR #74) |
+| [`/src/pages/agent/summaryReportArtifacts.ts`](/src/pages/agent/summaryReportArtifacts.ts) | Extracts report artifacts from agent tool call results (recent: PR #74) |
 | [`/src/pages/agent/AgentChatView.tsx`](/src/pages/agent/AgentChatView.tsx) | Main chat UI (~200KB) — message rendering, tool status, streaming, image paste/preview |
 
 ## AAP Protocol (Agent Adapter Protocol)
@@ -121,14 +124,26 @@ Agent packages use an `agent.json` manifest:
 
 See [/openwiki/development/overview.md](/openwiki/development/overview.md) for the platform SDKs and examples.
 
-## Image Support (Recent: PR #66, #65)
+## Image Support
 
-The agent runtime recently gained native image input support:
+The agent runtime supports native image input, with capability-gated validation:
 
 1. **Vision model detection**: [`/src/lib/providers/capabilities.ts`](/src/lib/providers/capabilities.ts) `isVisionModel()` uses a conservative name-based heuristic to detect vision-capable models, including for manual/gateway connections where capability metadata isn't available.
-2. **Image paste + preview**: Users can paste images into the chat input (`AgentChatView.tsx`). Pasted images display as clickable thumbnails with aspect-aware sizing (PR #65).
-3. **Native image delivery**: When the resolved model is vision-capable, images are sent natively via AAP v2's `prompt.images` field (base64 without `data:` prefix, with MIME type). Non-vision models receive images as file-path references in the text input instead.
-4. **Media artifact preview**: Agent-generated images and media are displayed inline with zoomable viewer and "open in system" button (PR #60).
+2. **Capability gate** (PR #73): Before accepting image attachments, the chat UI checks whether the selected model's [Unified API](/openwiki/providers/overview.md) exposed model has the `vision` feature. If not, image files are filtered out — whether pasted, dropped, or picked via the file picker — and the user sees an error. The attachment button tooltip also changes dynamically from "Add attachment" to "Add file only" when images aren't supported.
+3. **Image paste + preview**: Users can paste images into the chat input (`AgentChatView.tsx`). Pasted images display as clickable thumbnails with aspect-aware sizing (PR #65).
+4. **Native image delivery**: When the resolved model is vision-capable, images are sent natively via AAP v2's `prompt.images` field (base64 without `data:` prefix, with MIME type). Non-vision models receive images as file-path references in the text input instead.
+5. **Media artifact preview**: Agent-generated images and media are displayed inline with zoomable viewer and "open in system" button (PR #60).
+
+## Summary Report Links
+
+When an agent run produces HTML artifacts or reports through tool calls, the final assistant message surfaces them as clickable **summary report links** in the chat view. [`summaryReportArtifacts.ts`](/src/pages/agent/summaryReportArtifacts.ts) scans completed tool calls for report-producing operations and [`SummaryReportLinks.tsx`](/src/pages/agent/SummaryReportLinks.tsx) renders them as inline links below the assistant's final response. This lets users open generated reports directly in the [in-app browser](/openwiki/architecture/overview.md) without hunting through tool results.
+
+### Detected tool calls
+
+| Tool | Detection |
+|---|---|
+| `html_artifact_create`, `html_artifact_block`, `data_report_html` | Any successful call with an `outputDir` in the result |
+| `write` | Any successful call writing an `.html`/`.htm` file; `index.html` links to the parent directory, other files link directly |
 
 ## AgentDefinition
 

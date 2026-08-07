@@ -21,10 +21,11 @@ Configured with AK/SK credentials. On connection, the app automatically fetches 
 
 ### New API (OpenAI-compatible Gateway)
 
-A generic OpenAI-compatible gateway. Enter a Base URL and API Key; the app calls `/v1/models` to discover available models.
+A generic OpenAI-compatible gateway. Enter a Base URL and API Key; the app calls `/v1/models` to discover available models. Discovered models appear as **candidate models** — the user selectively adds or removes them from the connection rather than having all models auto-imported. Individual models can also be deleted with a per-row trash button.
 
 **Implementation**: [`/src/lib/providers/openai-compatible/`](/src/lib/providers/openai-compatible/)  
-**UI**: [`/src/pages/providers/GatewayProviders.tsx`](/src/pages/providers/GatewayProviders.tsx), [`/src/pages/providers/GatewayConnectionDialog.tsx`](/src/pages/providers/GatewayConnectionDialog.tsx)
+**UI**: [`/src/pages/providers/GatewayProviders.tsx`](/src/pages/providers/GatewayProviders.tsx), [`/src/pages/providers/GatewayConnectionDialog.tsx`](/src/pages/providers/GatewayConnectionDialog.tsx)  
+**Candidate list**: [`/src/pages/providers/ProviderModelCandidateList.tsx`](/src/pages/providers/ProviderModelCandidateList.tsx)
 
 ### LiteLLM
 
@@ -32,7 +33,7 @@ An OpenAI-compatible proxy. Same discovery mechanism as New API — enter Base U
 
 ### Manual API Keys
 
-For providers without auto-discovery. Configure a name, provider label, API key, optional base URL, and manually specify model IDs. A free-form **note/memo field** was added in PR #64 for annotating endpoints.
+For providers without auto-discovery. Configure a name, provider label, API key, optional base URL, and manually specify model IDs. A free-form **note/memo field** was added in PR #64 for annotating endpoints. Clicking "Fetch Models" calls `/v1/models` and shows results as **candidate models** for selective addition, matching the gateway pattern.
 
 **UI**: [`/src/pages/providers/ManualKeyProviders.tsx`](/src/pages/providers/ManualKeyProviders.tsx)  
 **Dialog**: [`/src/pages/api-keys/ApiKeyDialog.tsx`](/src/pages/api-keys/ApiKeyDialog.tsx)
