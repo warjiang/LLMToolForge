@@ -33,6 +33,10 @@ import type {
 import { cn } from "@/lib/utils";
 import { getAdapter } from "@/lib/providers";
 import type { ModelInfo } from "@/lib/providers/types";
+import {
+  dedupeModels,
+  ProviderModelCandidateList,
+} from "./ProviderModelCandidateList";
 import { GatewayConnectionDialog } from "./GatewayConnectionDialog";
 
 export function GatewayProviders({
@@ -161,13 +165,37 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
   const { t } = useTranslation("pages");
   const edit = useGatewayStore((s) => s.edit);
   const [models, setModels] = useState<ModelInfo[]>(connection.models ?? []);
+  const [candidateModels, setCandidateModels] = useState<ModelInfo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setModels(connection.models ?? []);
+    setCandidateModels([]);
     setError(null);
   }, [connection.id, connection.models]);
+
+  const saveModels = async (next: ModelInfo[]) => {
+    setModels(next);
+    await edit(connection.id, { models: next });
+  };
+
+  const addCandidateModel = async (model: ModelInfo) => {
+    if (models.some((m) => m.id === model.id)) return;
+    try {
+      await saveModels([...models, model]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("gw_fetch_failed"));
+    }
+  };
+
+  const removeModel = async (id: string) => {
+    try {
+      await saveModels(models.filter((m) => m.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("gw_fetch_failed"));
+    }
+  };
 
   const fetchModels = async () => {
     setError(null);
@@ -179,8 +207,7 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
         baseUrl: connection.baseUrl,
         apiKey: connection.apiKey,
       });
-      setModels(list);
-      await edit(connection.id, { models: list });
+      setCandidateModels(dedupeModels(list));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("gw_fetch_failed"));
     } finally {
@@ -217,15 +244,33 @@ function ConnectionDetail({ connection }: { connection: GatewayConnection }) {
       ) : (
         <div className="flex flex-col divide-y divide-border">
           {models.map((m) => (
-            <div key={m.id} className="flex flex-col gap-1.5 py-3">
-              <div className="flex items-center gap-2">
-                <ModelIcon model={m} className="h-4 w-4" />
-                <span className="text-label-14 font-medium">{m.name}</span>
+            <div key={m.id} className="flex items-start gap-3 py-3">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <ModelIcon model={m} className="h-4 w-4" />
+                  <span className="text-label-14 font-medium">{m.name}</span>
+                </div>
+                <ModelFeatureBadges model={m} />
               </div>
-              <ModelFeatureBadges model={m} />
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                aria-label={t("provider_delete_model", { id: m.id })}
+                onClick={() => void removeModel(m.id)}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
             </div>
           ))}
         </div>
+      )}
+      {candidateModels.length > 0 && (
+        <ProviderModelCandidateList
+          models={models}
+          candidates={candidateModels}
+          onAdd={addCandidateModel}
+        />
       )}
     </Card>
   );

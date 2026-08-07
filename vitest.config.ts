@@ -17,6 +17,8 @@ export default defineConfig({
       "src/pages/agent/tests/attachment-input.test.ts",
       "src/pages/agent/tests/summary-report-artifacts.test.ts",
       "src/pages/agent/tests/summary-report-links.test.tsx",
+      "src/pages/api-keys/tests/api-key-dialog.test.tsx",
+      "src/pages/providers/tests/provider-model-candidates.test.tsx",
       "src/pages/tools/tests/tools-page.test.ts",
       "src/pages/tools/tests/creativity-*.test.{ts,tsx}",
     ],

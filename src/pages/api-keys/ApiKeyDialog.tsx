@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Loader2, Plus, X } from "lucide-react";
+import { Check, Loader2, Plus, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import {
   Dialog,
@@ -47,6 +47,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
   const edit = useApiKeyStore((s) => s.edit);
   const [form, setForm] = useState(empty);
   const [models, setModels] = useState<string[]>([]);
+  const [candidateModels, setCandidateModels] = useState<string[]>([]);
   const [modelInput, setModelInput] = useState("");
   const [fetching, setFetching] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -55,6 +56,7 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
     if (open) {
       setError(null);
       setModelInput("");
+      setCandidateModels([]);
       setModels(editing?.models ?? []);
       setForm(
         editing
@@ -92,11 +94,9 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
         baseUrl: form.baseUrl.trim(),
         apiKey: form.key.trim(),
       });
-      setModels((prev) => {
-        const merged = new Set(prev);
-        for (const m of list) merged.add(m.id);
-        return [...merged];
-      });
+      setCandidateModels([
+        ...new Set(list.map((m) => m.id.trim()).filter(Boolean)),
+      ]);
     } catch (e) {
       setError(e instanceof Error ? e.message : t("api_key_fetch_failed"));
     } finally {
@@ -219,6 +219,51 @@ export function ApiKeyDialog({ open, onOpenChange, editing }: Props) {
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            {candidateModels.length > 0 && (
+              <div className="grid gap-1.5 pt-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-label-12 font-medium text-muted-foreground">
+                    {t("api_key_candidate_models_label")}
+                  </span>
+                  <span className="text-label-12 text-muted-foreground">
+                    {t("api_key_candidate_models_count", { count: candidateModels.length })}
+                  </span>
+                </div>
+                <div
+                  aria-label={t("api_key_candidate_models_label")}
+                  className="flex max-h-44 flex-wrap gap-1.5 overflow-y-auto rounded-sm border border-border bg-muted/20 p-2"
+                >
+                  {candidateModels.map((m) => {
+                    const selected = models.includes(m);
+                    return (
+                      <Button
+                        key={m}
+                        type="button"
+                        size="sm"
+                        variant={selected ? "secondary" : "tertiary"}
+                        className="h-7 gap-1.5 rounded-full px-2 text-label-12"
+                        disabled={selected}
+                        onClick={() => addModel(m)}
+                        aria-label={t(
+                          selected
+                            ? "api_key_candidate_model_added"
+                            : "api_key_add_candidate_model",
+                          { id: m }
+                        )}
+                      >
+                        {selected ? (
+                          <Check className="h-3 w-3" />
+                        ) : (
+                          <Plus className="h-3 w-3" />
+                        )}
+                        <ModelIcon model={m} className="h-3.5 w-3.5" />
+                        {m}
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {models.length > 0 && (
               <div className="flex flex-wrap gap-1.5 pt-1">
                 {models.map((m) => (

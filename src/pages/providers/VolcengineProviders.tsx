@@ -36,6 +36,10 @@ import {
   listApiKeys,
   listEndpoints,
 } from "@/lib/providers/volcengine";
+import {
+  dedupeModels,
+  ProviderModelCandidateList,
+} from "./ProviderModelCandidateList";
 import { VolcCredentialDialog } from "./VolcCredentialDialog";
 
 export function VolcengineProviders() {
@@ -154,12 +158,14 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
   const { t } = useTranslation("pages");
   const edit = useVolcCredentialStore((s) => s.edit);
   const [models, setModels] = useState<ModelInfo[]>(credential.models ?? []);
+  const [candidateModels, setCandidateModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [keysLoading, setKeysLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     setModels(credential.models ?? []);
+    setCandidateModels([]);
   }, [credential.id, credential.models]);
 
   const cred = useMemo(
@@ -172,13 +178,34 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
     [credential]
   );
 
+  const saveModels = async (next: ModelInfo[]) => {
+    setModels(next);
+    await edit(credential.id, { models: next });
+  };
+
+  const addCandidateModel = async (model: ModelInfo) => {
+    if (models.some((m) => m.id === model.id)) return;
+    try {
+      await saveModels([...models, model]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("volc_fetch_failed"));
+    }
+  };
+
+  const removeModel = async (id: string) => {
+    try {
+      await saveModels(models.filter((m) => m.id !== id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : t("volc_fetch_failed"));
+    }
+  };
+
   const fetchModels = async () => {
     setError(null);
     setModelsLoading(true);
     try {
       const list = await listEndpoints(cred);
-      setModels(list);
-      await edit(credential.id, { models: list });
+      setCandidateModels(dedupeModels(list));
     } catch (e) {
       setError(e instanceof Error ? e.message : t("volc_fetch_models_failed"));
     } finally {
@@ -250,18 +277,36 @@ function CredentialDetail({ credential }: { credential: VolcCredential }) {
           ) : (
             <div className="flex flex-col divide-y divide-border">
               {models.map((m) => (
-                <div key={m.id} className="flex flex-col gap-1.5 py-3">
-                  <div className="flex items-center gap-2">
-                    <ModelIcon model={m} className="h-4 w-4" />
-                    <span className="text-label-14 font-medium">{m.name}</span>
-                    <code className="font-mono text-label-12 text-muted-foreground">
-                      {m.id}
-                    </code>
+                <div key={m.id} className="flex items-start gap-3 py-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <ModelIcon model={m} className="h-4 w-4" />
+                      <span className="text-label-14 font-medium">{m.name}</span>
+                      <code className="font-mono text-label-12 text-muted-foreground">
+                        {m.id}
+                      </code>
+                    </div>
+                    <ModelFeatureBadges model={m} />
                   </div>
-                  <ModelFeatureBadges model={m} />
+                  <Button
+                    type="button"
+                    size="icon-sm"
+                    variant="ghost"
+                    aria-label={t("provider_delete_model", { id: m.id })}
+                    onClick={() => void removeModel(m.id)}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
                 </div>
               ))}
             </div>
+          )}
+          {candidateModels.length > 0 && (
+            <ProviderModelCandidateList
+              models={models}
+              candidates={candidateModels}
+              onAdd={addCandidateModel}
+            />
           )}
         </TabsContent>
 
