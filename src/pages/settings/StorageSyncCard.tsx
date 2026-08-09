@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   History,
   RotateCcw,
+  Trash2,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,10 +40,12 @@ export function StorageSyncCard() {
   const restore = useSyncStore((s) => s.restore);
   const loadSnapshots = useSyncStore((s) => s.loadSnapshots);
   const restoreSnapshot = useSyncStore((s) => s.restoreSnapshot);
+  const deleteSnapshot = useSyncStore((s) => s.deleteSnapshot);
 
   const [confirmRestore, setConfirmRestore] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [pendingSnapshot, setPendingSnapshot] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const desktop = isTauri();
   const busy =
     phase === "testing" || phase === "syncing" || phase === "restoring";
@@ -249,6 +252,7 @@ export function StorageSyncCard() {
                   snapshot={snap}
                   disabled={!ready}
                   onRestore={() => setPendingSnapshot(snap.id)}
+                  onDelete={() => setPendingDelete(snap.id)}
                 />
               ))}
             </ul>
@@ -282,6 +286,21 @@ export function StorageSyncCard() {
           if (id) void restoreSnapshot(id);
         }}
       />
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title={t("sync_history_delete_confirm_title")}
+        description={t("sync_history_delete_confirm_desc")}
+        confirmLabel={t("sync_history_delete_confirm_ok")}
+        onConfirm={() => {
+          const id = pendingDelete;
+          setPendingDelete(null);
+          if (id) void deleteSnapshot(id);
+        }}
+      />
     </Card>
   );
 }
@@ -290,10 +309,12 @@ function SnapshotRow({
   snapshot,
   disabled,
   onRestore,
+  onDelete,
 }: {
   snapshot: SnapshotIndexEntry;
   disabled: boolean;
   onRestore: () => void;
+  onDelete: () => void;
 }) {
   const { t } = useTranslation("pages");
   const totalItems = Object.values(snapshot.resourceCounts).reduce(
@@ -315,15 +336,27 @@ function SnapshotRow({
           {t("sync_history_items", { count: totalItems })}
         </p>
       </div>
-      <Button
-        variant="secondary"
-        size="sm"
-        onClick={onRestore}
-        disabled={disabled}
-      >
-        <RotateCcw className="h-3.5 w-3.5" />
-        {t("sync_history_restore")}
-      </Button>
+      <div className="flex shrink-0 items-center gap-2">
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={onRestore}
+          disabled={disabled}
+        >
+          <RotateCcw className="h-3.5 w-3.5" />
+          {t("sync_history_restore")}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onDelete}
+          disabled={disabled}
+          aria-label={t("sync_history_delete")}
+          className="text-muted-foreground hover:text-destructive"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </Button>
+      </div>
     </li>
   );
 }

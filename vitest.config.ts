@@ -14,6 +14,7 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     include: [
       "src/components/agent/BrowserPreview.test.tsx",
+      "src/data/sync/tests/snapshot-delete.test.ts",
       "src/pages/agent/tests/attachment-input.test.ts",
       "src/pages/agent/tests/summary-report-artifacts.test.ts",
       "src/pages/agent/tests/summary-report-links.test.tsx",

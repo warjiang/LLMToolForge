@@ -313,3 +313,32 @@ export async function restoreFromSnapshot(
     saltB64,
   };
 }
+
+/**
+ * Delete one history snapshot: remove the immutable archive `snapshots/<id>.enc`
+ * and drop its entry from the plaintext `snapshots/index.json` cache. The main
+ * backup path (`manifest.json` + `resources/*.enc`) is never touched.
+ *
+ * The index is only a cache: if it is missing/unreadable we still delete the
+ * object (the listing fallback stops surfacing it once the object is gone) and
+ * skip the rewrite. Deleting an id that is absent from the index is a no-op for
+ * the rewrite but still removes any lingering object.
+ */
+export async function deleteSnapshot(
+  config: StorageConfig,
+  snapshotId: string
+): Promise<void> {
+  await storageBackend.deleteObject(config, snapshotKey(snapshotId));
+
+  const existing = await readSnapshotIndex(config);
+  if (!existing?.snapshots?.length) return;
+
+  const snapshots = existing.snapshots.filter((s) => s.id !== snapshotId);
+  if (snapshots.length === existing.snapshots.length) return;
+
+  const index: SnapshotIndex = {
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    snapshots,
+  };
+  await storageBackend.putText(config, SNAPSHOTS_INDEX_KEY, JSON.stringify(index));
+}
