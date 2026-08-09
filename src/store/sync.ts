@@ -2,6 +2,7 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { uid } from "@/lib/utils";
 import {
+  deleteSnapshot,
   listSnapshots,
   restoreFromRemote,
   restoreFromSnapshot,
@@ -54,6 +55,8 @@ interface SyncStore {
   loadSnapshots: () => Promise<boolean>;
   /** Restore local collections from a chosen history snapshot. */
   restoreSnapshot: (snapshotId: string) => Promise<boolean>;
+  /** Delete a chosen history snapshot from the remote. */
+  deleteSnapshot: (snapshotId: string) => Promise<boolean>;
 }
 
 function messageOf(e: unknown): string {
@@ -198,6 +201,24 @@ export const useSyncStore = create<SyncStore>()(
           return true;
         } catch (e) {
           set({ phase: "error", error: messageOf(e) });
+          return false;
+        }
+      },
+
+      deleteSnapshot: async (snapshotId) => {
+        if (!get().isConfigured()) {
+          set({ error: "storage sync is not fully configured" });
+          return false;
+        }
+        set({ error: null });
+        try {
+          await deleteSnapshot(get().config, snapshotId);
+          set((s) => ({
+            snapshots: s.snapshots.filter((snap) => snap.id !== snapshotId),
+          }));
+          return true;
+        } catch (e) {
+          set({ error: messageOf(e) });
           return false;
         }
       },
