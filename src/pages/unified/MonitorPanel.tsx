@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Download, Eraser, Trash2 } from "lucide-react";
+import { Download, Eraser, FolderOpen, Trash2 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +19,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useUnifiedStore } from "@/store/unified";
-import { getCallBody, type CallBody, type CallLogRecord } from "@/lib/unifiedApi";
+import { getCallBody, openLogsDir, type CallBody, type CallLogRecord } from "@/lib/unifiedApi";
 
 function isOk(r: CallLogRecord): boolean {
   return !r.error && r.status >= 200 && r.status < 400;
@@ -313,6 +313,14 @@ export function MonitorPanel() {
             </Select>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => void openLogsDir()}
+              title={t("monitor_open_logs_hint")}
+            >
+              <FolderOpen className="h-3.5 w-3.5" /> {t("monitor_open_logs")}
+            </Button>
             <Button
               variant="secondary"
               size="sm"

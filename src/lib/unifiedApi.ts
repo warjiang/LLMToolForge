@@ -396,6 +396,14 @@ export async function clearCallBodies(): Promise<void> {
   return invoke<void>("unified_api_clear_bodies");
 }
 
+/**
+ * Reveal the sidecar's rolling JSONL log directory in the OS file manager.
+ * Returns the opened directory path (for display/confirmation).
+ */
+export async function openLogsDir(): Promise<string> {
+  return invoke<string>("unified_api_open_logs_dir");
+}
+
 export async function onCallLog(
   cb: (rec: CallLogRecord) => void
 ): Promise<() => void> {

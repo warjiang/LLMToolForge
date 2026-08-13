@@ -125,6 +125,7 @@ import {
   filterAttachmentsForImageInput,
   filterFilesForImageInput,
 } from "./attachmentInput";
+import { normalizeAgentErrorMessage } from "./agentError";
 import { SummaryReportLinks } from "./SummaryReportLinks";
 import {
   summaryReportArtifactsByMessage,
@@ -296,24 +297,6 @@ function persistConfigWidth(width: number): number {
 // handled in CSS, so it's safe to apply unconditionally.
 const SHIMMER_TEXT_CLASS = "shimmer-text";
 
-// Agent runtimes/SDKs sometimes surface errors as a quote-wrapped JSON string
-// (e.g. `"Request cancelled"`). Strip the surrounding quotes and localize the
-// known user-cancellation message so the chat never shows a raw, quoted string.
-function normalizeAgentErrorMessage(
-  raw: string,
-  t: (key: string) => string
-): string {
-  let msg = (raw ?? "").trim();
-  if (msg.length >= 2) {
-    const first = msg[0];
-    const last = msg[msg.length - 1];
-    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
-      msg = msg.slice(1, -1).trim();
-    }
-  }
-  if (/^request cancell?ed$/i.test(msg)) return t("agent_request_cancelled");
-  return msg;
-}
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
@@ -2539,7 +2522,11 @@ export function AgentChatView() {
       },
       onError: async (raw) => {
         const st = agentTurnRef.current;
-        const message = normalizeAgentErrorMessage(raw, t);
+        const message = normalizeAgentErrorMessage(
+          raw,
+          t,
+          def.kind !== "external",
+        );
         if (st?.assistantId) {
           await chat.updateMessage(st.assistantId, {
             status: "error",

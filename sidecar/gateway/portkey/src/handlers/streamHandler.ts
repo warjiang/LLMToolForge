@@ -339,16 +339,16 @@ export function handleStreamingMode(
         )) {
           await writer.write(encoder.encode(chunk));
         }
+        await writer.close();
       } catch (error) {
         console.error('Error during stream processing:', proxyProvider, error);
-      } finally {
         try {
-          await writer.close();
-        } catch (closeError) {
+          await writer.abort(error);
+        } catch (abortError) {
           console.error(
-            'Failed to close the writer:',
+            'Failed to abort the writer:',
             proxyProvider,
-            closeError
+            abortError
           );
         }
       }
@@ -373,16 +373,16 @@ export function handleStreamingMode(
         )) {
           await writer.write(encoder.encode(chunk));
         }
+        await writer.close();
       } catch (error) {
         console.error('Error during stream processing:', proxyProvider, error);
-      } finally {
         try {
-          await writer.close();
-        } catch (closeError) {
+          await writer.abort(error);
+        } catch (abortError) {
           console.error(
-            'Failed to close the writer:',
+            'Failed to abort the writer:',
             proxyProvider,
-            closeError
+            abortError
           );
         }
       }

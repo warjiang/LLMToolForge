@@ -16,6 +16,7 @@ export default defineConfig({
       "src/components/agent/BrowserPreview.test.tsx",
       "src/data/sync/tests/snapshot-delete.test.ts",
       "src/pages/agent/tests/attachment-input.test.ts",
+      "src/pages/agent/tests/agent-error.test.ts",
       "src/pages/agent/tests/summary-report-artifacts.test.ts",
       "src/pages/agent/tests/summary-report-links.test.tsx",
       "src/pages/api-keys/tests/api-key-dialog.test.tsx",
