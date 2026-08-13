@@ -463,7 +463,7 @@ fn open_session_workspace(
 /// Unix-like systems. The child is spawned without waiting; `explorer`
 /// notably returns a non-zero exit code even on success, so the status is
 /// intentionally not inspected.
-fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
+pub(crate) fn open_in_file_manager(path: &std::path::Path) -> Result<(), String> {
     use std::process::Command;
     #[cfg(target_os = "macos")]
     let mut cmd = {
@@ -1058,6 +1058,7 @@ pub fn run() {
             unified::unified_api_clear_logs,
             unified::unified_api_call_body,
             unified::unified_api_clear_bodies,
+            unified::unified_api_open_logs_dir,
             unified::unified_api_stats,
             tray::tray_set_language,
             connector::connector_start,

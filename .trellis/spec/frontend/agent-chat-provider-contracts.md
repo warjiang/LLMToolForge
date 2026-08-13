@@ -474,3 +474,112 @@ await chat.recordToolCall({
   argumentsJson: JSON.stringify({ goal, ...toolArgs }),
 });
 ```
+
+## Scenario: Gateway Stream Failures And Chat Error Surfacing
+
+### 1. Scope / Trigger
+- Trigger: in-app agent LLM calls stream from the local Portkey gateway sidecar
+  over `http://127.0.0.1:<port>/v1` through the `gatewayFetch.ts` plugin-http
+  shim; an upstream stream can break after the gateway already sent `200
+  text/event-stream`.
+- Apply this spec when changing the gateway streaming paths
+  (`instrumentResponse`, the Anthropic `/v1/messages` translator loop), the
+  sidecar logging sink, or the chat error normalization in `AgentChatView.tsx`.
+
+### 2. Signatures
+- `openAIStreamErrorFrames(message): string[]` / `anthropicStreamErrorFrames(message): string[]`
+  in `sidecar/gateway/wrapper/gateway.ts`.
+- `streamErrorBody(seen, error): string` (annotates the empty-body case).
+- `classifyAgentError(raw: string): string | null` in `src/pages/agent/agentError.ts`.
+- `normalizeAgentErrorMessage(raw, translate, classifyGatewayErrors)` applies
+  gateway classification only when the runtime uses the Unified gateway.
+- `formatGatewayDiagnostic(args)` / `streamLogStatus(upstreamStatus, outcome)`
+  in `sidecar/gateway/wrapper/observability.ts`.
+- `emitCallLog(rec)` / `emitDiagnostic(message)` / `initDiskLog(configPath)` in
+  `sidecar/gateway/wrapper/logging.ts`.
+
+### 3. Contracts
+- A streaming path that broke mid-flight must enqueue a structured SSE error
+  terminator before closing: OpenAI streams emit `data: {"error":{...}}` then
+  `data: [DONE]`; Anthropic streams emit an `event: error` frame then the normal
+  `message_delta`/`message_stop` close. Never tear the stream down silently — a
+  torn stream surfaces to the client as Tauri's opaque `The resource id <n> is
+  invalid.` Portkey's inner stream transform must abort its writer on read
+  failure so the wrapper can observe and translate the error.
+- A failed stream must `finishLog` with status `502` and the seen upstream body;
+  when nothing was received, persist an annotated placeholder so the record is
+  not dropped as empty.
+- A client/downstream cancellation must be logged as status `499`, never `502`,
+  so it is distinguishable from an upstream failure.
+- `classifyAgentError` maps the known failure family — Tauri `resource id <n> is
+  invalid`, `socket connection was closed unexpectedly` / closed-connection, and
+  `Failed to parse JSON` — to a stable i18n key; unrelated errors return `null`
+  so the raw text still shows. It is a pure, `t`-free function (unit-tested);
+  `normalizeAgentErrorMessage` resolves the key via i18n for built-in Pi
+  runtimes. External AAP agent errors remain verbatim because the same text can
+  describe the child process or AAP transport.
+- The sidecar's on-disk log is default-quiet: `emitCallLog` writes to
+  `logs/gateway-YYYYMMDD.jsonl` only when `status >= 400` or `error != null`,
+  unless `GATEWAY_LOG_ALL=1`. The log dir is derived from the config file's
+  directory (no new sidecar arg). Bodies are omitted from this compact log (the
+  Rust supervisor already persists full bodies to `unified-bodies/`).
+- Portkey's `console.error`/`console.warn` diagnostics (`retryRequest`,
+  `tryTargetsRecursively`) are mirrored into the same JSONL as `level: "warn"`
+  records so a break correlates with its cause; stderr forwarding is preserved.
+  Persistent capture uses an explicit diagnostic-prefix allowlist, retains only
+  `Error` summaries, redacts credential-shaped values, and never serializes raw
+  chunks, headers, response objects, or arbitrary console arguments.
+- Diagnostic strings are capped at 4096 characters. Daily JSONL files rotate at
+  1 MB with one backup and are retained for 14 days.
+- All disk logging is best-effort and must never throw into a request path.
+
+### 4. Validation & Error Matrix
+- Upstream stream breaks after 200 -> SSE error frame emitted, client shows a
+  readable localized message, call logged at 502 with the seen body.
+- Client closes a stream -> call logged at 499, not as an upstream 502.
+- External AAP runtime emits `connection closed` / `Failed to parse JSON` -> raw
+  message is preserved instead of being rewritten as a Unified gateway error.
+- Pre-routing client error (unknown model, bad JSON, auth) -> returned as a JSON
+  error Response before `finishLog`; no `call` record is written.
+- Unknown/unmatched raw error string -> `classifyAgentError` returns `null`; the
+  chat shows the raw message unchanged.
+- Disk write fails -> swallowed; stdout call-log and the request are unaffected.
+
+### 5. Good/Base/Bad Cases
+- Good: DeepSeek/new-api stream drops mid-token; chat shows "上游模型连接中断…请
+  稍后重试", and `logs/gateway-YYYYMMDD.jsonl` holds the 502 call plus the
+  preceding `retryRequest`/`Failed to parse JSON` warn lines.
+- Base: a healthy stream completes; nothing is written to disk under the default
+  quiet rule.
+- Bad: catching the stream error and only closing the controller (client sees
+  `resource id is invalid`), or logging every successful call to disk by default.
+
+### 6. Tests Required
+- Unit tests for `classifyAgentError`: each recognized pattern maps to its key,
+  case-insensitive, and unrelated/empty strings return `null`.
+- Bun tests must cover inner stream failure propagation, safe diagnostic
+  formatting, stream outcome status mapping, retention cleanup, and size
+  rotation.
+- New test files must be added to the `vitest.config.ts` `include` allowlist.
+- `pnpm build` and `pnpm test` must pass; sidecar changes require
+  `pnpm run sidecar:gateway:build` since `tauri dev` runs the compiled binary.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+} catch (e) {
+  done((e as Error).message); // client sees a torn stream → "resource id is invalid"
+  controller.close();
+}
+```
+
+#### Correct
+```typescript
+} catch (e) {
+  const msg = (e as Error).message;
+  for (const frame of openAIStreamErrorFrames(msg))
+    controller.enqueue(new TextEncoder().encode(frame));
+  done('upstream_error', msg); // finishLog at 502 with the seen body
+  controller.close();
+}
+```

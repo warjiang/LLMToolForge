@@ -340,6 +340,19 @@ fn bodies_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     Ok(dir)
 }
 
+/// Resolve (and create) the directory holding the sidecar's rolling JSONL logs.
+/// Mirrors the sidecar's own derivation (`<app_config_dir>/logs`), so the
+/// "open logs" UI reveals exactly the files the gateway writes.
+fn logs_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let dir = app
+        .path()
+        .app_config_dir()
+        .map_err(|e| format!("无法获取应用配置目录：{e}"))?
+        .join("logs");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("无法创建日志目录：{e}"))?;
+    Ok(dir)
+}
+
 /// Atomically write the routing config the sidecar reads (temp file + rename so
 /// the watcher never observes a partial write).
 fn write_config_file(path: &Path, shared: &SharedState) -> Result<(), String> {
@@ -577,6 +590,16 @@ pub async fn unified_api_clear_bodies(
         r.has_response_body = false;
     }
     Ok(())
+}
+
+/// Reveal the sidecar's rolling JSONL log directory in the native file manager
+/// so users can inspect gateway call logs and Portkey diagnostics on disk.
+/// Returns the opened directory path for display/confirmation.
+#[tauri::command]
+pub async fn unified_api_open_logs_dir(app: tauri::AppHandle) -> Result<String, String> {
+    let dir = logs_dir(&app)?;
+    crate::open_in_file_manager(&dir)?;
+    Ok(dir.display().to_string())
 }
 
 #[tauri::command]

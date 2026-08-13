@@ -22,6 +22,8 @@ import portkeyApp from '../portkey/src/index.ts';
 import { initConfig, getConfig, lookupRoute, type RouteEntry } from './config.ts';
 import {
   emitCallLog,
+  emitDiagnostic,
+  initDiskLog,
   usageFromJson,
   truncateBody,
   MAX_BODY_CHARS,
@@ -34,6 +36,11 @@ import {
   AnthropicStreamTranslator,
 } from './anthropic.ts';
 import { buildSpec, REDOC_HTML } from './openapi.ts';
+import {
+  formatGatewayDiagnostic,
+  streamLogStatus,
+  type StreamOutcome,
+} from './observability.ts';
 
 // --- args / env ------------------------------------------------------------
 
@@ -50,6 +57,29 @@ function parseArgs(): { port: number; configPath?: string } {
 
 const { port, configPath } = parseArgs();
 initConfig(configPath);
+initDiskLog(configPath);
+
+// Mirror the sidecar's own diagnostics (banners, config errors) and — more
+// importantly — Portkey's `console.error`/`console.warn` lines (`retryRequest`,
+// `tryTargetsRecursively`, `Failed to parse JSON`) into the rolling JSONL log,
+// so a failure's cause is inspectable on disk alongside the call it broke.
+// stderr forwarding is preserved so `pnpm tauri:dev` output is unchanged.
+function installDiagnosticCapture(): void {
+  const wrap = (orig: (...a: unknown[]) => void) =>
+    (...args: unknown[]): void => {
+      try {
+        const diagnostic = formatGatewayDiagnostic(args);
+        if (diagnostic) emitDiagnostic(diagnostic);
+      } catch {
+        // never let capture break logging
+      }
+      orig(...args);
+    };
+  console.error = wrap(console.error.bind(console));
+  console.warn = wrap(console.warn.bind(console));
+}
+
+installDiagnosticCapture();
 
 // --- helpers ---------------------------------------------------------------
 
@@ -154,6 +184,40 @@ class BodyAccumulator {
   }
 }
 
+/**
+ * When a stream we already answered with `200 text/event-stream` breaks
+ * mid-flight, the client (pi-ai via the plugin-http shim) would otherwise see a
+ * torn stream — which surfaces as an opaque Tauri `resource id ... is invalid`
+ * error rather than the real cause. Emit a proper SSE error terminator so the
+ * client parses a structured error and reports it verbatim.
+ */
+function openAIStreamErrorFrames(message: string): string[] {
+  const err = JSON.stringify({
+    error: { message, type: 'upstream_stream_error', code: 502 },
+  });
+  return [`data: ${err}\n\n`, 'data: [DONE]\n\n'];
+}
+
+/** Anthropic Messages SSE variant of {@link openAIStreamErrorFrames}. */
+function anthropicStreamErrorFrames(message: string): string[] {
+  const err = JSON.stringify({
+    type: 'error',
+    error: { type: 'api_error', message },
+  });
+  return [`event: error\ndata: ${err}\n\n`];
+}
+
+/**
+ * Body to persist for a stream that ended in error: keep whatever upstream text
+ * was seen, but annotate the (common) empty case so the on-disk record is not
+ * dropped as empty and the break is still diagnosable.
+ */
+function streamErrorBody(seen: string, error: string | undefined): string {
+  if (!error) return seen;
+  if (seen) return seen;
+  return `[no upstream body received before stream error: ${error}]`;
+}
+
 // --- app -------------------------------------------------------------------
 
 const app = new Hono();
@@ -253,10 +317,16 @@ app.post('/v1/messages', async (c) => {
     const reader = upstream.body.getReader();
     const respAcc = new BodyAccumulator();
     let logged = false;
-    const done = (error?: string) => {
+    const done = (outcome: StreamOutcome, error?: string) => {
       if (logged) return;
       logged = true;
-      finishLog(meta, 200, translator.tokens(), error, respAcc.value());
+      finishLog(
+        meta,
+        streamLogStatus(200, outcome),
+        translator.tokens(),
+        error,
+        streamErrorBody(respAcc.value(), error)
+      );
     };
     const out = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -266,7 +336,7 @@ app.post('/v1/messages', async (c) => {
             if (rdone) {
               for (const frame of translator.finish())
                 controller.enqueue(encoder.encode(frame));
-              done();
+              done('success');
               controller.close();
               return;
             }
@@ -277,22 +347,28 @@ app.post('/v1/messages', async (c) => {
             // Upstream connections (via Portkey) may stay open after `[DONE]`;
             // close as soon as the translator has emitted its terminal frames.
             if (translator.isFinished()) {
-              done();
+              done('success');
               controller.close();
               reader.cancel().catch(() => {});
               return;
             }
           }
         } catch (e) {
+          const msg = (e as Error).message;
+          // Surface the break as a structured Anthropic SSE error, then close
+          // out the message cleanly so the client sees a real error instead of
+          // a truncated stream.
+          for (const frame of anthropicStreamErrorFrames(msg))
+            controller.enqueue(encoder.encode(frame));
           for (const frame of translator.finish())
             controller.enqueue(encoder.encode(frame));
-          done((e as Error).message);
+          done('upstream_error', msg);
           controller.close();
         }
       },
       cancel(reason) {
         reader.cancel(reason).catch(() => {});
-        done('client closed');
+        done('client_cancelled', 'client closed');
       },
     });
     return new Response(out, {
@@ -407,17 +483,23 @@ async function instrumentResponse(
     const reader = upstream.body.getReader();
     const respAcc = new BodyAccumulator();
     let logged = false;
-    const done = (error?: string) => {
+    const done = (outcome: StreamOutcome, error?: string) => {
       if (logged) return;
       logged = true;
-      finishLog(meta, upstream.status, parser.tokens(), error, respAcc.value());
+      finishLog(
+        meta,
+        streamLogStatus(upstream.status, outcome),
+        parser.tokens(),
+        error,
+        streamErrorBody(respAcc.value(), error)
+      );
     };
     const out = new ReadableStream<Uint8Array>({
       async pull(controller) {
         try {
           const { done: rdone, value } = await reader.read();
           if (rdone) {
-            done();
+            done('success');
             controller.close();
             return;
           }
@@ -426,13 +508,20 @@ async function instrumentResponse(
           respAcc.push(chunk);
           controller.enqueue(value);
         } catch (e) {
-          done((e as Error).message);
+          const msg = (e as Error).message;
+          // The upstream stream broke after we already sent a 200. Emit a
+          // structured SSE error terminator so the client parses a real error
+          // instead of an opaque torn-stream / invalid-resource failure.
+          const encoder = new TextEncoder();
+          for (const frame of openAIStreamErrorFrames(msg))
+            controller.enqueue(encoder.encode(frame));
+          done('upstream_error', msg);
           controller.close();
         }
       },
       cancel(reason) {
         reader.cancel(reason).catch(() => {});
-        done('client closed');
+        done('client_cancelled', 'client closed');
       },
     });
     const headers = new Headers(upstream.headers);

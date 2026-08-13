@@ -12,6 +12,7 @@ src-tauri/target/
 
 # Compiled gateway sidecar binaries (built in CI from sidecar/, ~60MB each)
 src-tauri/binaries/portkey-gateway-*
+src-tauri/binaries/*.map
 sidecar/gateway/portkey/patches/*.orig
 
 # OpenConnector sidecar: vendored upstream checkout + build outputs
