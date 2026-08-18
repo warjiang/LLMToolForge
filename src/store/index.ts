@@ -9,6 +9,7 @@ import {
   gatewayConnectionRepo,
   agentDefinitionRepo,
   sshHostRepo,
+  promptTemplateRepo,
 } from "@/data/repositories";
 
 export const useApiKeyStore = createCollectionStore(apiKeyRepo);
@@ -21,6 +22,7 @@ export const useVolcCredentialStore = createCollectionStore(volcCredentialRepo);
 export const useGatewayStore = createCollectionStore(gatewayConnectionRepo);
 export const useAgentDefStore = createCollectionStore(agentDefinitionRepo);
 export const useSshHostStore = createCollectionStore(sshHostRepo);
+export const usePromptStore = createCollectionStore(promptTemplateRepo);
 export { useChatStore } from "./chat";
 export { useDebugStore } from "./debug";
 export { useConnectorStore } from "./connector";
@@ -30,6 +32,11 @@ export { useMarketSettingsStore } from "./marketSettings";
 export { useSshSessionStore } from "./sshSessions";
 export type { TerminalTab } from "./sshSessions";
 export { useBuiltinMcpStore, getActiveBuiltinServers } from "./builtinMcp";
+export {
+  projectRecentPrompts,
+  recordRecentPromptId,
+  usePromptRecentStore,
+} from "./promptRecent";
 
 /**
  * Every MCP server the app knows about: user-defined (synced repo) plus the
@@ -49,6 +56,7 @@ const syncedCollectionStores = [
   useGatewayStore,
   useAgentDefStore,
   useSshHostStore,
+  usePromptStore,
 ];
 
 /** Reload all synced collections from storage (after a sync/restore). */

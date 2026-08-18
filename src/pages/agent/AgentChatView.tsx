@@ -97,6 +97,7 @@ import {
   useMcpStore,
   useAgentDefStore,
   useBuiltinMcpStore,
+  usePromptStore,
 } from "@/store";
 import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
@@ -126,6 +127,9 @@ import {
   filterFilesForImageInput,
 } from "./attachmentInput";
 import { normalizeAgentErrorMessage } from "./agentError";
+import { PromptManagerDialog } from "./prompts/PromptManagerDialog";
+import { PromptPicker } from "./prompts/PromptPicker";
+import { usePromptComposerApply } from "./prompts/usePromptComposerApply";
 import { SummaryReportLinks } from "./SummaryReportLinks";
 import {
   summaryReportArtifactsByMessage,
@@ -881,6 +885,7 @@ export function AgentChatView() {
   const skills = useSkillStore();
   const mcp = useMcpStore();
   const builtinMcp = useBuiltinMcpStore();
+  const prompts = usePromptStore();
   // User-defined MCP servers plus installed built-ins, both selectable per agent.
   // Only installed servers are offered (legacy servers have installed===undefined).
   const mcpItems = useMemo(
@@ -948,10 +953,12 @@ export function AgentChatView() {
   const [models, setModels] = useState<ModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [input, setInput] = useState("");
+  const [titleHint, setTitleHint] = useState<string | undefined>();
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [configOpen, setConfigOpen] = useState(false);
+  const [promptManagerOpen, setPromptManagerOpen] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingDraft, setEditingDraft] = useState("");
   const [activeTurnId, setActiveTurnId] = useState<string | null>(null);
@@ -1003,6 +1010,11 @@ export function AgentChatView() {
   const videoPollingRef = useRef<Set<string>>(new Set());
   const runErroredRef = useRef(false);
   const runStatusSessionRef = useRef<string | null>(null);
+  const { textareaRef, applyPrompt } = usePromptComposerApply({
+    input,
+    onInputChange: setInput,
+    onTitleHintChange: setTitleHint,
+  });
 
   const settings = chat.settings;
   const unifiedModels = useUnifiedStore((s) => s.models);
@@ -1023,6 +1035,7 @@ export function AgentChatView() {
     useApiKeyStore.getState().load();
     useSkillStore.getState().load();
     useMcpStore.getState().load();
+    usePromptStore.getState().load();
     useChatStore.getState().init();
     useAgentDefStore.getState().load();
     void useUnifiedStore.getState().init();
@@ -2706,17 +2719,20 @@ export function AgentChatView() {
     setSending(true);
 
     try {
+      const messageTitleHint = titleHint;
       const pendingAttachments = await saveAttachmentsForExecution(attachments);
       const parts = partsFromInput(content, pendingAttachments);
       const turnAgent = resolveTurnAgent();
       const priorHistory = useChatStore.getState().messages;
       setInput("");
+      setTitleHint(undefined);
       setAttachments([]);
       const userMsg = await chat.addMessage({
         role: "user",
         content,
         parts,
         attachments: pendingAttachments,
+        titleHint: messageTitleHint,
       });
       if (turnAgent) {
         await runAgentTurn(
@@ -3267,13 +3283,17 @@ export function AgentChatView() {
                 </div>
               )}
               <Textarea
+                ref={textareaRef}
                 className={cn(
                   "h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none",
                   attachments.length > 0 && "pt-2.5"
                 )}
                 placeholder={t("agent_textarea_placeholder")}
                 value={input}
-                onChange={(e) => setInput(e.target.value)}
+                onChange={(e) => {
+                  setTitleHint(undefined);
+                  setInput(e.target.value);
+                }}
                 onPaste={handleComposerPaste}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" && !e.shiftKey) {
@@ -3326,6 +3346,13 @@ export function AgentChatView() {
                 </div>
 
                 <div className="flex min-w-0 flex-wrap items-center justify-end gap-1.5">
+                  <PromptPicker
+                    prompts={prompts.items}
+                    loading={prompts.loading}
+                    error={prompts.error}
+                    onApply={applyPrompt}
+                    onManage={() => setPromptManagerOpen(true)}
+                  />
                   <ComposerToolMenu
                     icon={Boxes}
                     label="Skills"
@@ -3518,6 +3545,10 @@ export function AgentChatView() {
           </div>
           </>
         )}
+        <PromptManagerDialog
+          open={promptManagerOpen}
+          onOpenChange={setPromptManagerOpen}
+        />
     </div>
   );
 }

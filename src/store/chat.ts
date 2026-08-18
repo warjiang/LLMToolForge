@@ -46,6 +46,8 @@ interface ChatState {
     provider?: string;
     modelId?: string;
     paramsJson?: string;
+    /** Transient title source for the first user message; never persisted. */
+    titleHint?: string;
   }) => Promise<PersistedChatMessage>;
   updateMessage: (
     id: string,
@@ -82,6 +84,13 @@ function titleFromFirstMessage(content: string): string {
   if (!normalized) return i18n.t("pages:chat_new_session");
   const title = normalized.slice(0, 28);
   return normalized.length > 28 ? `${title}…` : title;
+}
+
+export function titleForFirstUserMessage(
+  content: string,
+  titleHint?: string
+): string {
+  return titleFromFirstMessage(titleHint?.trim() || content);
 }
 
 async function loadIntoState(set: (patch: Partial<ChatState>) => void, id: string) {
@@ -223,6 +232,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const isFirstUserMessage =
       input.role === "user" &&
       !get().messages.some((m) => m.role === "user");
+    const { titleHint, ...messageInput } = input;
     const normalizedParts =
       input.parts ??
       (input.content
@@ -236,14 +246,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ]
         : []);
     const message = await chatRepo.createMessage({
-      ...input,
+      ...messageInput,
       sessionId,
       parts: normalizedParts,
     });
     const messages = [...get().messages, message];
     set({ messages });
     if (isFirstUserMessage && input.content.trim()) {
-      const title = titleFromFirstMessage(input.content);
+      const title = titleForFirstUserMessage(input.content, titleHint);
       await get().renameSession(sessionId, title);
     }
     set({ sessions: await chatRepo.listSessions() });
