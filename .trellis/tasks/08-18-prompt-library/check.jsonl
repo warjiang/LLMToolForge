@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范入口与最终 Quality Check 范围"}
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "验收前的质量门禁：tsc strict、测试、构建与代码一致性检查"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "核对 PromptTemplate 与纯函数的类型严格性"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "核对持久化 Prompt store 与非持久化最近使用状态边界"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "核对 Picker/Manager/Editor 组件与 a11y、布局约定"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "核对 repository、sync、store、composer 与 chat title 数据流"}
+{"file": ".trellis/spec/frontend/agent-chat-provider-contracts.md", "reason": "核对 Prompt 套用不改变 direct/Pi/外部 Agent 与 retry 契约"}

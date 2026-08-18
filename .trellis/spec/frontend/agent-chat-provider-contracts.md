@@ -583,3 +583,72 @@ await chat.recordToolCall({
   controller.close();
 }
 ```
+
+## Scenario: Prompt Library Composer Application
+
+### 1. Scope / Trigger
+- Trigger: a reusable plain-text Prompt is created, synchronized, selected in
+  the Agent composer, or used to derive a first-message session title.
+
+### 2. Signatures
+- `PromptTemplate extends BaseEntity`
+- `applyPromptTemplate(template, { text, selectionStart, selectionEnd })`
+- `usePromptStore = createCollectionStore(promptTemplateRepo)`
+- `reloadSyncedData(): Promise<void>`
+- `chat.addMessage({ ..., titleHint?: string })`
+
+### 3. Contracts
+- `promptTemplateRepo.storeKey` is `promptTemplates`; it must be registered in
+  both `syncRegistry` and `syncedCollectionStores`. The first enables encrypted
+  resource and snapshot handling; the second refreshes the visible collection
+  after sync or restore.
+- Prompt content is always expanded into the visible composer before send. It
+  never becomes an Agent system prompt, runtime argument, or protocol field.
+- Empty or whitespace-only composer text replaces the composer. A non-empty
+  composer fills every `{{input}}` placeholder, or inserts a placeholder-free
+  template at the current selection.
+- Recent Prompt IDs are process-local MRU state only. They are never persisted,
+  synchronized, or used to update a Prompt's `updatedAt`.
+- `titleHint` is transient. `chat.addMessage` must remove it before
+  `chatRepo.createMessage`; it affects only the first session title.
+
+### 4. Validation & Error Matrix
+- Missing name or content -> field validation error; editor remains open.
+- Source URL is non-empty but not HTTP/HTTPS -> field validation error.
+- Prompt collection load fails -> picker/manager show a localized error while
+  normal message composition remains usable.
+- Snapshot write fails -> preserve the successful primary resource sync under
+  the existing best-effort snapshot behavior.
+- Prompt definition is edited or deleted after application -> retry uses the
+  already persisted expanded message text.
+
+### 5. Good/Base/Bad Cases
+- Good: applying `Review {{input}}` to `Explain this` persists
+  `Review Explain this`, while the first session title is `Explain this`.
+- Base: applying a placeholder-free Prompt to an empty composer places the
+  caret at the end and leaves title derivation unchanged.
+- Bad: registering a new collection only in `syncRegistry`, which makes sync
+  succeed while an open picker keeps stale records.
+
+### 6. Tests Required
+- Unit-test Prompt normalization, each application rule, Unicode selection
+  offsets, and title-hint fallback.
+- Test MRU cap/deduplication and prove it writes neither repository updates nor
+  local persistence.
+- Test registry membership, reload participation, merge/tombstone behavior, and
+  Prompt payload inclusion in successful snapshots.
+- Component-test search scope, manager save/delete behavior, picker keyboard
+  behavior, error/loading states, and composer selection restoration.
+- Add every Prompt test file to `vitest.config.ts` `test.include`.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+syncRegistry.push({ id: repo.storeKey, labelKey: "sync_res_prompts", repo });
+```
+
+#### Correct
+```typescript
+syncRegistry.push({ id: repo.storeKey, labelKey: "sync_res_prompts", repo });
+const syncedCollectionStores = [...existingStores, usePromptStore];
+```
