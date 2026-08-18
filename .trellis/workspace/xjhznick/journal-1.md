@@ -38,3 +38,36 @@
 ### Next Steps
 
 - None - task complete
+
+
+## Session 2: Agent composer adaptive sizing
+
+**Date**: 2026-08-19
+**Task**: Agent composer adaptive sizing
+**Branch**: `feat/agent-composer-auto-grow`
+
+### Summary
+
+Implemented auto-growing Agent input with focused expansion, internal geometry observation, lifecycle resets, localized accessibility labels, regression tests, and desktop/narrow viewport verification.
+
+### Main Changes
+
+(Add details)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `2967605` | (see git log) |
+
+### Testing
+
+- [OK] (Add test results)
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- None - task complete
