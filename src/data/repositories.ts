@@ -8,6 +8,7 @@ import type {
   GatewayConnection,
   AgentDefinition,
   SshHost,
+  PromptTemplate,
 } from "@/types";
 
 export const apiKeyRepo = new Repository<ApiKey>("apiKeys", "key");
@@ -32,3 +33,8 @@ export const agentDefinitionRepo = new Repository<AgentDefinition>(
 );
 
 export const sshHostRepo = new Repository<SshHost>("sshHosts", "ssh");
+
+export const promptTemplateRepo = new Repository<PromptTemplate>(
+  "promptTemplates",
+  "prompt"
+);

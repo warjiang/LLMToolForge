@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "前端规范入口与适用层索引"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "PromptTemplate 类型与 applyPromptTemplate 纯函数需遵循严格类型约定"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "usePromptStore(createCollectionStore) 与内存最近使用遵循 Zustand store 约定"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "PromptPicker/PromptManagerDialog/PromptEditor 及工具栏按钮遵循组件与布局约定"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "复用 Repository/createCollectionStore/sync registry/reloadSyncedData 而非重复造轮子"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "两处注册(registry + syncedCollectionStores)与 titleHint 跨 composer/chat store 的数据流"}
+{"file": ".trellis/spec/frontend/agent-chat-provider-contracts.md", "reason": "Composer 集成与 send() 链路不得改动运行时契约"}

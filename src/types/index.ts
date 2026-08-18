@@ -6,6 +6,15 @@ export interface BaseEntity {
   updatedAt: string;
 }
 
+export interface PromptTemplate extends BaseEntity {
+  name: string;
+  description: string;
+  content: string;
+  tags: string[];
+  sourceUrl?: string;
+  favorite: boolean;
+}
+
 export interface ApiKey extends BaseEntity {
   name: string;
   provider: string;

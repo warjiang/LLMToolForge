@@ -8,15 +8,16 @@ import {
   gatewayConnectionRepo,
   agentDefinitionRepo,
   sshHostRepo,
+  promptTemplateRepo,
 } from "../repositories";
 
 /**
  * Registry of all syncable resources.
  *
- * To make a new collection syncable, add a single entry here (its `id` must
+ * To make a new collection syncable, add an entry here (its `id` must
  * equal the repository's `storeKey`, and `labelKey` is an i18n key under the
- * `pages` namespace). The sync engine and UI pick it up automatically — no
- * other change is required.
+ * `pages` namespace). Collection stores that must refresh after sync or restore
+ * also need registration in `syncedCollectionStores`.
  */
 export const syncRegistry: SyncableResource[] = [
   { id: apiKeyRepo.storeKey, labelKey: "sync_res_api_keys", repo: apiKeyRepo },
@@ -43,4 +44,9 @@ export const syncRegistry: SyncableResource[] = [
     repo: agentDefinitionRepo,
   },
   { id: sshHostRepo.storeKey, labelKey: "sync_res_ssh", repo: sshHostRepo },
+  {
+    id: promptTemplateRepo.storeKey,
+    labelKey: "sync_res_prompts",
+    repo: promptTemplateRepo,
+  },
 ];
