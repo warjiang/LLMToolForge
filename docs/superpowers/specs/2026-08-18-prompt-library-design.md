@@ -60,7 +60,11 @@ copies it into an Agent definition.
   - Select a Prompt, then fill its input placeholder.
 - Work identically for direct chat, the built-in Pi Agent, and external Agents.
 - Store Prompts locally using the existing repository abstraction.
-- Include Prompt records in encrypted data sync.
+- Back up Prompt records to the configured S3 or S3-compatible object storage
+  through the existing encrypted data-sync system.
+- Merge and reuse the same Prompt collection across multiple terminals.
+- Include Prompt records in immutable encrypted history snapshots so a previous
+  collection can be restored.
 - Ship a bidirectional steelman Prompt as the initial curated example.
 - Keep template expansion in a pure, independently tested function.
 
@@ -77,6 +81,11 @@ The first release will not include:
 - Automatically applying a Prompt to every turn in a session.
 - Hidden system/developer-message injection.
 - Automatic conversion between Prompts, Agents, and Skills.
+- A separate Prompt cloud account, backend service, or synchronization
+  credential.
+- Automatic or scheduled synchronization. Prompt backup follows the existing
+  manual data-sync trigger.
+- Real-time collaborative Prompt editing.
 
 ## 5. Product Model
 
@@ -102,7 +111,6 @@ interface PromptTemplate extends BaseEntity {
   tags: string[];
   sourceUrl?: string;
   favorite: boolean;
-  lastUsedAt?: string;
 }
 ```
 
@@ -115,10 +123,15 @@ Rules:
   case-insensitive duplicates.
 - `sourceUrl` is optional. When present, it must be an HTTP or HTTPS URL.
 - `favorite` controls the pinned section in the picker.
-- `lastUsedAt` is updated after a successful insertion into the composer.
 
 The persisted collection uses the existing `Repository<T>` and collection
 store patterns. Its store key also becomes its data-sync resource ID.
+
+Recent-use timestamps are device-local picker metadata rather than fields on
+the synced Prompt entity. Applying a Prompt therefore does not bump its
+`updatedAt` timestamp. This prevents routine use on one terminal from winning a
+last-write-wins conflict and overwriting a real content edit made on another
+terminal.
 
 ## 6. Template Syntax
 
@@ -189,7 +202,7 @@ Selecting a row:
 3. Replaces the composer text with the expanded result.
 4. Closes the picker.
 5. Focuses the composer and restores the calculated selection or cursor.
-6. Records `lastUsedAt`.
+6. Records device-local recent usage without modifying the synced Prompt.
 
 There is no confirmation dialog.
 
@@ -246,9 +259,11 @@ Content:
 {{input}}
 ```
 
-The seed is inserted once. Deleting it must not cause it to reappear on every
-launch. A local seed-version marker prevents repeated insertion. Synced
-records remain normal editable Prompt records after creation.
+The seed uses a deterministic ID and fixed release timestamp shared by every
+terminal. It is inserted once per local store. Deleting it creates a newer
+tombstone, so a fresh terminal's fixed, older seed cannot resurrect it during
+sync. A local seed-version marker prevents repeated insertion on launch.
+Synced records remain normal editable Prompt records after creation.
 
 ## 8. Architecture
 
@@ -261,12 +276,75 @@ Add:
 - A collection store using `createCollectionStore`.
 - A sync registry entry and localized sync-resource label.
 - A small first-run seeding function for the curated Prompt.
+- A small device-local recent-usage store that is intentionally excluded from
+  object-storage sync.
 
 No Rust command or SQLite chat migration is required. Prompt definitions use
 the Tauri Store abstraction, with the existing localStorage fallback during
 browser development.
 
-### 8.2 Template expansion
+### 8.2 Object-storage backup and multi-terminal sync
+
+Prompt synchronization reuses the existing Settings > Data Storage
+configuration and sync actions. It does not add another provider configuration
+or a Prompt-specific remote service.
+
+Register the Prompt repository as a normal sync resource:
+
+```text
+resource id: promptTemplates
+remote object: resources/promptTemplates.json.enc
+payload:
+  items: PromptTemplate[]
+  tombstones: Tombstone[]
+```
+
+The Settings sync-resource list shows a localized label such as "Prompt
+收藏". Once object storage and an encryption passphrase are configured:
+
+1. A user creates, edits, favorites, or deletes a Prompt on terminal A.
+2. The next normal data sync encrypts and uploads the Prompt resource alongside
+   the application's other configuration resources.
+3. Terminal B points to the same bucket, prefix, and passphrase, then runs
+   normal sync.
+4. The sync engine decrypts the remote Prompt payload, merges it with terminal
+   B's local collection, persists the merged result, and reloads the Prompt
+   store.
+5. Terminal B can immediately find and apply the synchronized Prompt.
+
+Security and storage behavior are inherited from the existing sync engine:
+
+- Prompt names, descriptions, bodies, tags, source URLs, and favorite state
+  are contained only in the encrypted per-resource object and encrypted
+  snapshots.
+- The plaintext manifest contains resource metadata, hashes, timestamps, and
+  the non-secret KDF salt, but no Prompt content.
+- The encryption passphrase is not uploaded in plaintext.
+- The configured object-store prefix isolates all LLMToolForge objects in the
+  same way as existing configuration backup.
+
+Conflict behavior also follows the existing entity merge contract:
+
+- Different Prompt IDs are combined.
+- Concurrent edits to the same Prompt use whole-record last-write-wins based on
+  `updatedAt`.
+- Exact timestamp ties prefer the local record.
+- A deletion creates a tombstone; the newest signal between the Prompt and its
+  tombstone wins.
+- Favoriting is a real Prompt edit and therefore synchronizes.
+- Recent usage is local-only and never participates in merge conflicts.
+
+Every successful sync includes the merged Prompt payload in the immutable
+whole-archive history snapshot. Restoring the latest backup or a selected
+history snapshot restores both Prompt records and tombstones. Prompt data that
+is absent from an older archive is left untouched under the sync engine's
+existing absent-resource rule.
+
+After sync or restore, `reloadSyncedData()` must reload the Prompt collection
+store with the other registered collection stores so the picker updates
+without restarting the application.
+
+### 8.3 Template expansion
 
 Add a pure domain function similar to:
 
@@ -297,7 +375,7 @@ If the user selected a Prompt before writing any input, normal title generation
 remains the fallback. Automatic title inference from arbitrary Prompt text is
 out of scope.
 
-### 8.3 UI components
+### 8.4 UI components
 
 Keep Prompt-specific UI outside the already large `AgentChatView.tsx`.
 Suggested boundaries:
@@ -314,7 +392,7 @@ Suggested boundaries:
 - Applying returned text and selection.
 - Holding the temporary session-title hint.
 
-### 8.4 Existing send path
+### 8.5 Existing send path
 
 The send path remains authoritative:
 
@@ -341,6 +419,18 @@ Prompt repository
   -> direct chat / Pi Agent / external Agent
 ```
 
+Object-storage synchronization is an independent persistence flow:
+
+```text
+Prompt repository + tombstones
+  -> existing sync registry
+  -> merge local and remote by updatedAt
+  -> AES-256-GCM encrypted Prompt resource
+  -> S3 / S3-compatible object storage
+  -> encrypted whole-archive history snapshot
+  -> reload Prompt store on each terminal
+```
+
 Editing, retrying, and replaying a sent user message operate on the already
 expanded text. They do not need the original Prompt definition, so later edits
 or deletion of that definition cannot change conversation history.
@@ -353,9 +443,14 @@ or deletion of that definition cannot change conversation history.
 - Persistence failure: keep all entered editor values and show a concise error.
 - Missing Prompt after concurrent deletion: close the picker row action and
   show a non-blocking "Prompt no longer exists" error.
-- Usage timestamp failure: do not roll back successful composer insertion.
+- Device-local recent-usage write failure: do not roll back successful composer
+  insertion.
 - Sync conflict: use the existing entity `updatedAt` merge and tombstone
   behavior.
+- Prompt resource pull, decryption, or parse failure: retain the current local
+  Prompt collection and report the existing sync error.
+- History-snapshot write failure: preserve the successful primary Prompt sync,
+  matching the existing non-fatal snapshot behavior.
 - Empty composer plus a template containing `{{input}}`: insertion succeeds;
   the placeholder remains visibly selected rather than sending automatically.
 
@@ -412,6 +507,18 @@ Cover normalization and validation:
   deleted.
 - The first-message title uses the pre-expansion question when available.
 - Prompt records and tombstones participate in the sync registry.
+- Prompt content is present only in encrypted resource objects and encrypted
+  history snapshots, not in the plaintext manifest.
+- Terminal A create/edit/favorite followed by sync, then terminal B sync,
+  produces the same Prompt record on terminal B.
+- Terminal A deletion followed by sync propagates the tombstone to terminal B
+  and does not resurrect the Prompt.
+- Concurrent edits to different Prompt IDs are preserved.
+- Same-ID edits follow the documented `updatedAt` last-write-wins behavior.
+- Applying a Prompt updates only local recent usage and does not alter the
+  synced entity's `updatedAt`.
+- Restoring a selected history snapshot restores Prompt records and tombstones,
+  then refreshes the open picker without an application restart.
 
 ## 13. Acceptance Criteria
 
@@ -425,7 +532,14 @@ Cover normalization and validation:
 - Conversation retry remains stable if a Prompt definition later changes.
 - The curated bidirectional steelman Prompt is available on first use and is
   not repeatedly recreated after deletion.
-- Prompt definitions participate in encrypted sync.
+- Prompt definitions are backed up as a dedicated encrypted object-storage
+  resource through the existing data-sync configuration.
+- Prompt records, favorite state, edits, and deletions synchronize across
+  terminals that use the same bucket, prefix, and passphrase.
+- Each successful sync includes Prompt data in the encrypted history snapshot,
+  and snapshot restore reloads it into the Prompt picker.
+- Prompt bodies and source URLs never appear in the plaintext sync manifest.
+- Device-local recent usage cannot overwrite remote Prompt content.
 - No Agent definition, Skill protocol, sandbox mode, or AAP protocol behavior
   changes.
 
