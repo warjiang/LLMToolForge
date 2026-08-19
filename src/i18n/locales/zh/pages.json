@@ -851,6 +851,8 @@
   "agent_starter_plan_title": "拆解一个任务",
   "agent_starter_plan_text": "把开发一个小型命令行待办应用拆解成清晰、有序的步骤。",
   "agent_textarea_placeholder": "输入消息，Enter 发送，Shift+Enter 换行",
+  "agent_composer_expand": "展开编辑区",
+  "agent_composer_collapse": "收起编辑区",
   "agent_add_attachment": "添加图片或文件",
   "agent_add_file_only": "添加文件（当前模型不支持图片）",
   "agent_image_preview_open": "点击放大查看",

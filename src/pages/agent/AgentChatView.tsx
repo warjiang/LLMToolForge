@@ -36,7 +36,9 @@ import {
   Lightbulb,
   ListChecks,
   Loader2,
+  Maximize2,
   MessageCircleQuestion,
+  Minimize2,
   Paperclip,
   Pencil,
   Plus,
@@ -130,6 +132,7 @@ import { normalizeAgentErrorMessage } from "./agentError";
 import { PromptManagerDialog } from "./prompts/PromptManagerDialog";
 import { PromptPicker } from "./prompts/PromptPicker";
 import { usePromptComposerApply } from "./prompts/usePromptComposerApply";
+import { useComposerAutoResize } from "./composer/useComposerAutoResize";
 import { SummaryReportLinks } from "./SummaryReportLinks";
 import {
   summaryReportArtifactsByMessage,
@@ -954,6 +957,7 @@ export function AgentChatView() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [input, setInput] = useState("");
   const [titleHint, setTitleHint] = useState<string | undefined>();
+  const [composerExpanded, setComposerExpanded] = useState(false);
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1015,6 +1019,11 @@ export function AgentChatView() {
     onInputChange: setInput,
     onTitleHintChange: setTitleHint,
   });
+  useComposerAutoResize({
+    textareaRef,
+    value: input,
+    expanded: composerExpanded,
+  });
 
   const settings = chat.settings;
   const unifiedModels = useUnifiedStore((s) => s.models);
@@ -1054,6 +1063,10 @@ export function AgentChatView() {
   }, [selectedAgentId, settings, agentDefs.items]);
 
   const activeSession = chat.sessions.find((s) => s.id === chat.activeSessionId);
+
+  useEffect(() => {
+    setComposerExpanded(false);
+  }, [activeSession?.id]);
 
   // Restore the committed/pending agent whenever the active session or its
   // sidebar-controlled agent selection changes.
@@ -2717,6 +2730,7 @@ export function AgentChatView() {
 
     setError(null);
     setSending(true);
+    setComposerExpanded(false);
 
     try {
       const messageTitleHint = titleHint;
@@ -2996,7 +3010,10 @@ export function AgentChatView() {
 
   return (
     <div className="flex h-full min-h-0 w-full overflow-hidden [&_[role=button]]:focus-visible:!outline-none [&_[role=button]]:focus-visible:!shadow-none [&_button]:focus-visible:!outline-none [&_button]:focus-visible:!shadow-none">
-      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-background">
+      <section
+        data-agent-composer-boundary
+        className="flex min-h-0 min-w-0 flex-1 flex-col bg-background"
+      >
         <div className="flex h-14 shrink-0 items-center justify-between gap-3 border-b border-border px-4">
           <div className="flex min-w-0 items-center gap-2.5">
             <div className="min-w-0">
@@ -3188,7 +3205,10 @@ export function AgentChatView() {
           )}
           </div>
 
-          <div className="min-h-0 shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2">
+          <div
+            data-agent-composer-footer
+            className="min-h-0 shrink-0 bg-gradient-to-t from-background via-background to-background/75 px-4 pb-4 pt-2"
+          >
             <AnimatePresence>
               {activeCheckpoint && (
                 <motion.div
@@ -3282,26 +3302,56 @@ export function AgentChatView() {
                   </button>
                 </div>
               )}
-              <Textarea
-                ref={textareaRef}
-                className={cn(
-                  "h-[52px] min-h-0 max-h-32 resize-none border-0 bg-transparent px-4 py-3.5 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none",
-                  attachments.length > 0 && "pt-2.5"
-                )}
-                placeholder={t("agent_textarea_placeholder")}
-                value={input}
-                onChange={(e) => {
-                  setTitleHint(undefined);
-                  setInput(e.target.value);
-                }}
-                onPaste={handleComposerPaste}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey) {
-                    e.preventDefault();
-                    send();
+              <div className="relative">
+                <Textarea
+                  ref={textareaRef}
+                  className={cn(
+                    "h-[52px] min-h-0 resize-none border-0 bg-transparent px-4 py-3.5 pr-12 text-copy-14 shadow-none hover:border-transparent focus-visible:border-transparent focus-visible:shadow-none",
+                    attachments.length > 0 && "pt-2.5"
+                  )}
+                  placeholder={t("agent_textarea_placeholder")}
+                  value={input}
+                  onChange={(e) => {
+                    setTitleHint(undefined);
+                    setInput(e.target.value);
+                  }}
+                  onPaste={handleComposerPaste}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      send();
+                    }
+                  }}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-sm"
+                  aria-label={
+                    composerExpanded
+                      ? t("agent_composer_collapse")
+                      : t("agent_composer_expand")
                   }
-                }}
-              />
+                  aria-pressed={composerExpanded}
+                  title={
+                    composerExpanded
+                      ? t("agent_composer_collapse")
+                      : t("agent_composer_expand")
+                  }
+                  className="absolute right-2 top-2 h-7 w-7 text-muted-foreground"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => {
+                    setComposerExpanded((expanded) => !expanded);
+                    textareaRef.current?.focus();
+                  }}
+                >
+                  {composerExpanded ? (
+                    <Minimize2 className="h-3.5 w-3.5" />
+                  ) : (
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </div>
               <div className="flex flex-wrap items-center justify-between gap-2 px-2.5 pb-2 pt-2">
                 <div className="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
                   <Button

@@ -21,6 +21,7 @@ export default defineConfig({
       "src/pages/agent/tests/agent-error.test.ts",
       "src/pages/agent/tests/summary-report-artifacts.test.ts",
       "src/pages/agent/tests/summary-report-links.test.tsx",
+      "src/pages/agent/composer/tests/use-composer-auto-resize.test.tsx",
       "src/pages/agent/prompts/tests/prompt-list.test.ts",
       "src/pages/agent/prompts/tests/prompt-components.test.tsx",
       "src/pages/agent/prompts/tests/prompt-composer-apply.test.tsx",

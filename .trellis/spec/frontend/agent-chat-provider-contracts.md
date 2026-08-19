@@ -652,3 +652,59 @@ syncRegistry.push({ id: repo.storeKey, labelKey: "sync_res_prompts", repo });
 syncRegistry.push({ id: repo.storeKey, labelKey: "sync_res_prompts", repo });
 const syncedCollectionStores = [...existingStores, usePromptStore];
 ```
+
+## Scenario: Agent Composer Adaptive Sizing
+
+### 1. Scope / Trigger
+- Trigger: Agent composer content, viewport dimensions, pane width, attachment
+  layout, or toolbar wrapping changes the textarea's required height.
+
+### 2. Signatures
+- `useComposerAutoResize({ textareaRef, value, expanded }): void`
+- Compact height: `clamp(30vh, 52px, 240px)`
+- Focused target: `clamp(55vh, 240px, 560px)`
+
+### 3. Contracts
+- Empty and one-line input stays at `52px`; compact input grows with content
+  until its cap, then scrolls internally.
+- Focused mode keeps the complete composer footer visible. If the target height
+  would cross the Agent pane boundary, textarea height yields to the toolbar.
+- Recalculate after controlled value changes, focus-mode changes, window
+  resizing, and observed Agent-pane/composer-footer geometry changes.
+- Internal layout changes such as config/preview rail resizing, attachments, or
+  toolbar wrapping must not depend on a `window.resize` event.
+- Expanding or collapsing keeps textarea focus. Sending and changing sessions
+  restore compact mode.
+
+### 4. Validation & Error Matrix
+- Content below compact cap -> no internal scrollbar.
+- Content above compact cap -> stable cap with internal scrolling.
+- Focused target fits pane -> use viewport-derived focused height.
+- Focused footer would overflow -> subtract measured overflow, never below
+  `52px`.
+- `ResizeObserver` unavailable -> value/focus/window resize behavior still
+  works.
+
+### 5. Good/Base/Bad Cases
+- Good: opening the config rail narrows the composer; wrapped content is
+  remeasured without resizing the window.
+- Base: a one-line prompt remains compact and the toolbar does not move.
+- Bad: setting only `max-height` without updating textarea height, or observing
+  only the window while internal panels resize.
+
+### 6. Tests Required
+- Unit-test compact minimum/growth/cap, focused clamping, footer boundary
+  fitting, collapse, window resize, and `ResizeObserver` recalculation.
+- Preserve Prompt application focus/selection tests.
+- Browser-check narrow and desktop viewports for overlap and toolbar visibility.
+
+### 7. Wrong vs Correct
+#### Wrong
+```typescript
+<Textarea className="h-[52px] max-h-32 resize-none" />
+```
+
+#### Correct
+```typescript
+useComposerAutoResize({ textareaRef, value: input, expanded });
+```
