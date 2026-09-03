@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Use the frontend quality checklist when reviewing the integrated tool."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Verify raw IPC payloads are decoded once and components consume typed events."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Verify command, event, persistence, and UI contracts agree across layers."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check that established project facilities are reused and event parsing is not duplicated."}
+{"file": ".trellis/tasks/09-03-shell-notebook-tool/research/dependency-options.md", "reason": "Review implementation against the verified dependency capabilities and constraints."}
