@@ -459,15 +459,28 @@ async fn write_script(
     Ok(path)
 }
 
-async fn run_session_actor(
+struct SessionActorInput {
     session_id: String,
     token: String,
     config: ShellNotebookConfig,
     on_event: Channel<ShellNotebookEvent>,
     ready: oneshot::Sender<ShellResult<ShellNotebookSessionInfo>>,
-    mut commands: mpsc::UnboundedReceiver<SessionCommand>,
+    commands: mpsc::UnboundedReceiver<SessionCommand>,
     reader_sender: mpsc::UnboundedSender<ReaderMessage>,
-    mut reader_messages: mpsc::UnboundedReceiver<ReaderMessage>,
+    reader_messages: mpsc::UnboundedReceiver<ReaderMessage>,
+}
+
+async fn run_session_actor(
+    SessionActorInput {
+        session_id,
+        token,
+        config,
+        on_event,
+        ready,
+        mut commands,
+        reader_sender,
+        mut reader_messages,
+    }: SessionActorInput,
 ) {
     let initial_directory = match normalize_start_directory(&config.start_directory) {
         Ok(directory) => directory,
@@ -794,18 +807,16 @@ async fn handle_reader_message(
         ReaderMessage::Closed {
             generation: message_generation,
             stream: _stream,
-        } if message_generation == generation => {
-            if !*session_lost {
-                *session_lost = true;
-                let run_id = active.as_ref().map(|run| run.run_id.clone());
-                if let Some(finished) = active.take() {
-                    let _ = tokio::fs::remove_file(&finished.script_path).await;
-                }
-                let _ = on_event.send(ShellNotebookEvent::SessionTerminated {
-                    run_id,
-                    reason: "bash exited".to_string(),
-                });
+        } if message_generation == generation && !*session_lost => {
+            *session_lost = true;
+            let run_id = active.as_ref().map(|run| run.run_id.clone());
+            if let Some(finished) = active.take() {
+                let _ = tokio::fs::remove_file(&finished.script_path).await;
             }
+            let _ = on_event.send(ShellNotebookEvent::SessionTerminated {
+                run_id,
+                reason: "bash exited".to_string(),
+            });
         }
         _ => {}
     }
@@ -824,18 +835,18 @@ pub async fn shell_notebook_open(
     let (ready_sender, ready_receiver) = oneshot::channel();
     manager.insert(session_id.clone(), sender);
     let actor_session_id = session_id.clone();
-    tokio::spawn(run_session_actor(
-        actor_session_id,
-        format!("{:032x}", rand::random::<u128>()),
-        ShellNotebookConfig {
+    tokio::spawn(run_session_actor(SessionActorInput {
+        session_id: actor_session_id,
+        token: format!("{:032x}", rand::random::<u128>()),
+        config: ShellNotebookConfig {
             start_directory: start_directory.display().to_string(),
         },
         on_event,
-        ready_sender,
-        receiver,
+        ready: ready_sender,
+        commands: receiver,
         reader_sender,
-        reader_receiver,
-    ));
+        reader_messages: reader_receiver,
+    }));
     match ready_receiver.await {
         Ok(Ok(info)) => Ok(info),
         Ok(Err(error)) => {
@@ -1107,18 +1118,18 @@ mod tests {
         let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
         let events = tauri::ipc::Channel::new(|_| Ok(()));
 
-        tokio::spawn(super::run_session_actor(
-            "actor-stop".to_string(),
-            "test-token".to_string(),
-            super::ShellNotebookConfig {
+        tokio::spawn(super::run_session_actor(super::SessionActorInput {
+            session_id: "actor-stop".to_string(),
+            token: "test-token".to_string(),
+            config: super::ShellNotebookConfig {
                 start_directory: std::env::temp_dir().display().to_string(),
             },
-            events,
-            ready_sender,
-            command_receiver,
+            on_event: events,
+            ready: ready_sender,
+            commands: command_receiver,
             reader_sender,
-            reader_receiver,
-        ));
+            reader_messages: reader_receiver,
+        }));
 
         tokio::time::timeout(Duration::from_secs(2), ready_receiver)
             .await
