@@ -25,6 +25,7 @@ import {
   NotebookText,
   RotateCcw,
   Sparkles,
+  Terminal,
   Type,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -41,6 +42,7 @@ import { MarkdownTool } from "./MarkdownTool";
 import { TranslateTool } from "./TranslateTool";
 import { TextEditorTool } from "./TextEditorTool";
 import { CreativityTool } from "./creativity/CreativityTool";
+import { ShellNotebookTool } from "./ShellNotebookTool";
 
 export const TOOL_TAB_ORDER = [
   "url",
@@ -53,6 +55,7 @@ export const TOOL_TAB_ORDER = [
   "unicode",
   "creativity",
   "translate",
+  "shell-notebook",
 ] as const;
 
 export type ToolTabValue = (typeof TOOL_TAB_ORDER)[number];
@@ -205,6 +208,12 @@ export function ToolsPage() {
         Comp: CreativityTool,
       },
       { value: "translate", label: t("translate_tool"), icon: Languages, Comp: TranslateTool },
+      {
+        value: "shell-notebook",
+        label: t("shell_notebook_tool"),
+        icon: Terminal,
+        Comp: ShellNotebookTool,
+      },
     ],
     [t]
   );
@@ -286,13 +295,27 @@ export function ToolsPage() {
         </div>
 
         <div className="flex-1 overflow-hidden">
-          {tabs.map(({ value, Comp }) => (
-            <TabsContent key={value} value={value} className="h-full overflow-hidden">
+          {tabs.map(({ value, Comp }) => {
+            const content = (
               <div className="h-full overflow-hidden">
                 <Comp />
               </div>
-            </TabsContent>
-          ))}
+            );
+            return value === "shell-notebook" ? (
+              <TabsContent
+                key={value}
+                value={value}
+                forceMount
+                className="h-full overflow-hidden"
+              >
+                {content}
+              </TabsContent>
+            ) : (
+              <TabsContent key={value} value={value} className="h-full overflow-hidden">
+                {content}
+              </TabsContent>
+            );
+          })}
         </div>
       </Tabs>
     </div>

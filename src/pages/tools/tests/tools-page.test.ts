@@ -42,6 +42,7 @@ describe("ToolsPage tabs", () => {
       "unicode",
       "creativity",
       "translate",
+      "shell-notebook",
     ]);
   });
 
@@ -63,6 +64,7 @@ describe("ToolsPage tabs", () => {
       "escape",
       "unicode",
       "creativity",
+      "shell-notebook",
     ]);
   });
 
@@ -85,6 +87,7 @@ describe("ToolsPage tabs", () => {
       "escape",
       "unicode",
       "creativity",
+      "shell-notebook",
     ]);
   });
 

@@ -29,6 +29,8 @@ export default defineConfig({
       "src/pages/providers/tests/provider-model-candidates.test.tsx",
       "src/pages/tools/tests/tools-page.test.ts",
       "src/pages/tools/tests/creativity-*.test.{ts,tsx}",
+      "src/pages/tools/tests/shell-notebook-*.test.{ts,tsx}",
+      "src/lib/tests/shell-notebook.test.ts",
       "src/lib/prompt/tests/prompt-domain.test.ts",
       "src/store/tests/chat-title-hint.test.ts",
       "src/store/tests/prompt-recent.test.ts",
