@@ -18,6 +18,7 @@ mod fs_tools;
 mod mcp;
 mod preview;
 mod proc_env;
+mod shell_notebook;
 mod ssh;
 mod storage;
 mod tray;
@@ -984,6 +985,7 @@ pub fn run() {
         .manage(mcp::McpSessions::default())
         .manage(browser::BrowserState::default())
         .manage(preview::PreviewState::default())
+        .manage(shell_notebook::ShellNotebookManager::default())
         .manage(ssh::SshManager::default())
         .manage(tray::TrayState::default())
         .setup(|app| {
@@ -1088,6 +1090,12 @@ pub fn run() {
             config_io::model_config_export,
             config_io::model_config_import,
             config_io::text_file_open,
+            shell_notebook::shell_notebook_open,
+            shell_notebook::shell_notebook_execute,
+            shell_notebook::shell_notebook_stop,
+            shell_notebook::shell_notebook_restart,
+            shell_notebook::shell_notebook_close,
+            shell_notebook::shell_notebook_export_markdown,
             storage::storage_test_connection,
             storage::storage_put_text,
             storage::storage_get_text,
@@ -1116,6 +1124,9 @@ pub fn run() {
             tauri::RunEvent::Exit => {
                 app_handle.state::<unified::UnifiedManager>().shutdown();
                 app_handle.state::<connector::ConnectorManager>().shutdown();
+                app_handle
+                    .state::<shell_notebook::ShellNotebookManager>()
+                    .shutdown();
             }
             // Clicking the Dock icon (or `open`-ing the app again) while the
             // window is hidden to the tray fires applicationShouldHandleReopen.

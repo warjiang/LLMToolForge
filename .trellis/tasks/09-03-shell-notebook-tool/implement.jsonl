@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend package guidance and quality-check entry point for the new Tools UI."}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Typed IPC events must be normalized once at the frontend boundary."}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "The feature spans React, Tauri IPC, Rust process management, persistence, and export."}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Reuse storage, PATH recovery, Channel transport, dialog, and tool-tab patterns without duplicating contracts."}
+{"file": ".trellis/tasks/09-03-shell-notebook-tool/research/dependency-options.md", "reason": "Verified CodeMirror and cross-platform process-group dependency choices."}

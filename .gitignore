@@ -2,6 +2,7 @@
 .superpowers/
 # Dependencies
 node_modules/
+.worktrees/
 
 # Build output
 dist/

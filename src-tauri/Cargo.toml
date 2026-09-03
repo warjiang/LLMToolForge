@@ -48,3 +48,4 @@ keyring = { version = "3", default-features = false, features = ["apple-native",
 dirs = "5"
 # Native clipboard access for the system-tray "copy connector key" action.
 arboard = "3"
+command-group = { version = "=5.0.1", features = ["with-tokio"] }
