@@ -197,9 +197,34 @@ export function ShellNotebookTool() {
           pendingRuns.current.set(runId, resolve);
         });
         await executeShellNotebookCell(id, runId, cell.source);
+        setRuntime((previous) => {
+          const current = previous.cells[cell.id];
+          if (!current || current.runId !== runId || current.status !== "queued") {
+            return previous;
+          }
+          return {
+            ...previous,
+            cells: {
+              ...previous.cells,
+              [cell.id]: { ...current, status: "running" },
+            },
+          };
+        });
         return completion;
       } catch (reason) {
         const message = reason instanceof Error ? reason.message : String(reason);
+        pendingRuns.current.delete(runId);
+        runSources.current.delete(runId);
+        setRuntime((previous) => ({
+          ...previous,
+          cells: {
+            ...previous.cells,
+            [cell.id]: {
+              ...previous.cells[cell.id],
+              status: "failed",
+            },
+          },
+        }));
         setError(message);
         return false;
       }

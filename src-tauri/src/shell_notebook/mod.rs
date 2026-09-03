@@ -47,7 +47,11 @@ pub struct ShellNotebookSessionInfo {
 }
 
 #[derive(Debug, Clone, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 pub enum ShellNotebookEvent {
     Ready {
         session_id: String,
@@ -329,7 +333,7 @@ async fn spawn_process(
         ShellNotebookError::new(code, error.to_string())
     })?;
 
-    let mut stdin = child
+    let stdin = child
         .inner()
         .stdin
         .take()
@@ -353,14 +357,6 @@ async fn spawn_process(
         reader_sender.clone(),
     );
     spawn_reader(stderr, generation, "stderr", token, reader_sender);
-    stdin
-        .write_all(b"shopt -s expand_aliases\n")
-        .await
-        .map_err(|error| ShellNotebookError::new("stdin_write_failed", error.to_string()))?;
-    stdin
-        .flush()
-        .await
-        .map_err(|error| ShellNotebookError::new("stdin_write_failed", error.to_string()))?;
     Ok(SessionProcess {
         child,
         stdin,
@@ -430,7 +426,8 @@ fn completion_current_directory(frame: &CompletionFrame) -> ShellResult<String> 
 fn run_wrapper(token: &str, run_id: &str, script_path: &Path) -> String {
     let script = shell_quote(script_path);
     format!(
-        "source {script}\n\
+        "shopt -s expand_aliases\n\
+source {script}\n\
 __ltf_exit=$?\n\
 LTF_LAST_EXIT_CODE=$__ltf_exit\n\
 __ltf_dir_b64=$(pwd | tr -d '\\n' | base64 | tr -d '\\n')\n\
@@ -946,7 +943,8 @@ pub fn shell_notebook_export_markdown(path: String, contents: String) -> ShellRe
 mod tests {
     use super::{
         completion_current_directory, run_wrapper, spawn_process, write_script, CompletionFrame,
-        CompletionFrameParser, ReaderMessage, ShellNotebookError, FRAME_END, FRAME_START,
+        CompletionFrameParser, ReaderMessage, ShellNotebookError, ShellNotebookEvent, FRAME_END,
+        FRAME_START,
     };
     use std::time::Duration;
     use tokio::io::AsyncWriteExt;
@@ -962,6 +960,20 @@ mod tests {
 
         assert_eq!(value["code"], "session_busy");
         assert_eq!(value["message"], "a cell is already running");
+    }
+
+    #[test]
+    fn serializes_event_fields_with_the_frontend_camel_case_contract() {
+        let value = serde_json::to_value(ShellNotebookEvent::RunStarted {
+            run_id: "run-1".to_string(),
+            started_at: 42,
+        })
+        .expect("event should serialize");
+
+        assert_eq!(value["type"], "runStarted");
+        assert_eq!(value["runId"], "run-1");
+        assert_eq!(value["startedAt"], 42);
+        assert!(value.get("run_id").is_none());
     }
 
     #[test]
@@ -1086,6 +1098,59 @@ mod tests {
         let _ = tokio::fs::remove_file(script_path).await;
         let _ = process.child.kill().await;
         let _ = tokio::fs::remove_dir_all(process.temp_directory).await;
+    }
+
+    #[tokio::test]
+    async fn acknowledges_a_long_running_cell_then_stops_and_restarts_the_session() {
+        let (command_sender, command_receiver) = mpsc::unbounded_channel();
+        let (reader_sender, reader_receiver) = mpsc::unbounded_channel();
+        let (ready_sender, ready_receiver) = tokio::sync::oneshot::channel();
+        let events = tauri::ipc::Channel::new(|_| Ok(()));
+
+        tokio::spawn(super::run_session_actor(
+            "actor-stop".to_string(),
+            "test-token".to_string(),
+            super::ShellNotebookConfig {
+                start_directory: std::env::temp_dir().display().to_string(),
+            },
+            events,
+            ready_sender,
+            command_receiver,
+            reader_sender,
+            reader_receiver,
+        ));
+
+        tokio::time::timeout(Duration::from_secs(2), ready_receiver)
+            .await
+            .expect("session should start")
+            .expect("actor should report startup")
+            .expect("bash should start");
+
+        let (execute_sender, execute_receiver) = tokio::sync::oneshot::channel();
+        command_sender
+            .send(super::SessionCommand::Execute {
+                run_id: "long-run".to_string(),
+                source: "sleep 30\n".to_string(),
+                respond_to: execute_sender,
+            })
+            .expect("actor should accept execute");
+        tokio::time::timeout(Duration::from_secs(2), execute_receiver)
+            .await
+            .expect("execute acknowledgement should not wait for sleep")
+            .expect("actor should respond")
+            .expect("command should start");
+
+        let (stop_sender, stop_receiver) = tokio::sync::oneshot::channel();
+        command_sender
+            .send(super::SessionCommand::Stop {
+                respond_to: stop_sender,
+            })
+            .expect("actor should accept stop");
+        tokio::time::timeout(Duration::from_secs(2), stop_receiver)
+            .await
+            .expect("stop should not wait for the original sleep")
+            .expect("actor should respond")
+            .expect("session should restart");
     }
 
     struct TestRun {
