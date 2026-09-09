@@ -1,0 +1,3 @@
+# Raw spike artifacts — review/sanitize before committing anything from here.
+out/
+_probe.mts

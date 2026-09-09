@@ -708,3 +708,92 @@ const syncedCollectionStores = [...existingStores, usePromptStore];
 ```typescript
 useComposerAutoResize({ textareaRef, value: input, expanded });
 ```
+
+## Scenario: GPT-6 Astra Responses Tool Transport
+
+### 1. Scope / Trigger
+- Trigger: a built-in Pi agent run (ordinary chat with tools, DataAgent,
+  ResearchAgent) resolves function tools for the exact upstream model
+  `gpt-6-astra`, which rejects tool turns on `/v1/chat/completions`.
+- Apply this spec when changing Pi transport selection, the Responses payload
+  policy, the runtime tool-resolution order, or gateway Responses observation.
+
+### 2. Signatures
+- `resolveToolTransport(realModel, hasTools): "openai-completions" | "openai-responses"`
+  in `src/lib/agent/model.ts`.
+- `buildPiModel(exposed, { transport })` builds `Model<ModelTransport>`.
+- `createUnifiedRuntime(models, baseUrl, localKey, transport)` in
+  `src/lib/agent/provider.ts`.
+- `applyResponsesReplayPolicy(payload)` (the Responses `onPayload` hook).
+- Gateway: `protocolFor`, `ResponsesUsageParser`, `classifyResponsesOutcome`,
+  `responsesStreamErrorFrames` in `sidecar/gateway/wrapper/observability.ts`.
+
+### 3. Contracts
+- Select Responses ONLY for the exact upstream `realModel === "gpt-6-astra"`
+  when `resolved.tools.length > 0`. Match the upstream id, not the connection-
+  prefixed exposed id, and not a prefix/suffix/case variant. Everything else
+  (including `gpt-6-astra` without tools, and any other model with tools) uses
+  Chat Completions.
+- `createAgentRuntime` must resolve tools BEFORE selecting the API, then keep
+  the chosen transport fixed for the whole runtime (all tool continuations).
+- Keep `model.reasoning: false`. Request reasoning replay via the `onPayload`
+  hook: keep `store: false`, drop `previous_response_id`, and merge
+  `reasoning.encrypted_content` into `include`. Never inject `reasoning.effort`
+  (flipping `reasoning: true` would inject `effort: "none"`). Set `maxRetries: 0`.
+- No automatic protocol-switch retry, capability learning, or persistence. A
+  compatibility `400` for an unknown model surfaces once through the normal
+  error lifecycle; it must not trigger a second request or write capability state.
+- Gateway observes Responses without translating success: `protocolFor` labels
+  `/v1/responses` as `openai-responses`; map terminal `response.usage`
+  (input/output/total_tokens); `response.completed` = success,
+  `response.incomplete` / `response.failed` / semantic `error` / missing terminal
+  = 502 log outcome (not a header rewrite); downstream cancel = 499. On a
+  transport break after HTTP 200, emit a Responses `event: error` frame.
+- Do NOT add Responses to the generic Direct Chat adapter or its normalized
+  types; that path stays recording-only Chat Completions.
+
+### 4. Validation & Error Matrix
+- `gpt-6-astra` + tools -> Responses; tool executes once; continuation replays
+  `function_call` + `function_call_output` statelessly.
+- `gpt-6-astra` without tools -> Chat Completions.
+- GPT-5 / DeepSeek V4 / Kimi K3 / unknown + tools -> Chat Completions.
+- Responses HTTP rejection / `response.failed` / premature EOF -> error surfaced,
+  no tool executed from a partial/failed response, already-run tools not re-run.
+- No terminal event -> truncation 502 diagnostic, never logged as success.
+
+### 5. Good/Base/Bad Cases
+- Good: ResearchAgent tool turn on `gpt-6-astra` streams over Responses,
+  approves a checkpoint, executes the tool once, and completes after the result.
+- Base: a `gpt-6-astra` prompt with no attached tools stays on Chat Completions.
+- Bad: routing on the exposed id `Model-Hub/gpt-6-astra` (prefix) or on all
+  `gpt-*`; or flipping `reasoning: true` to enable replay (injects effort).
+- Bad: auto-retrying on a compatibility `400`, or logging a truncated Responses
+  stream as success.
+
+### 6. Tests Required
+- `src/lib/agent/tests/model-transport.test.ts` — routing matrix.
+- `src/lib/agent/tests/responses-provider.test.ts` — real SDK serialization
+  against captured fixtures (`tests/fixtures/responses/*.sse`).
+- `src/lib/agent/tests/responses-runtime.test.ts` — real Pi loop, callbacks,
+  failure lifecycle, later-turn/seed-history replay.
+- `sidecar/gateway/wrapper/tests/responses.test.ts` — protocol, usage, terminal
+  outcomes, error framing, OpenAPI. New frontend files need a
+  `vitest.config.ts` allowlist entry; sidecar changes need
+  `pnpm run sidecar:gateway:build`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+```typescript
+const piModel = buildPiModel(exposed, { baseUrl });        // always completions
+const runtime = createUnifiedRuntime([piModel], baseUrl, localKey);
+const resolved = await resolveAgent(def, deps);            // tools resolved too late
+```
+
+#### Correct
+```typescript
+const resolved = await resolveAgent(def, deps);
+const transport = resolveToolTransport(exposed.realModel, resolved.tools.length > 0);
+const piModel = buildPiModel(exposed, { baseUrl, transport });
+const { streamFn } = createUnifiedRuntime([piModel], baseUrl, localKey, transport);
+```

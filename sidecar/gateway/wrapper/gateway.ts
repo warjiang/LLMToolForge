@@ -39,6 +39,10 @@ import { buildSpec, REDOC_HTML } from './openapi.ts';
 import {
   formatGatewayDiagnostic,
   streamLogStatus,
+  protocolFor,
+  ResponsesUsageParser,
+  classifyResponsesOutcome,
+  responsesStreamErrorFrames,
   type StreamOutcome,
 } from './observability.ts';
 
@@ -461,14 +465,6 @@ app.post('/v1/*', async (c) => {
   return await instrumentResponse(upstream, meta);
 });
 
-function protocolFor(path: string): string {
-  if (path.includes('/chat/completions')) return 'openai-chat';
-  if (path.includes('/images/')) return 'openai-image';
-  if (path.includes('/embeddings')) return 'openai-embeddings';
-  if (path.includes('/completions')) return 'openai-complete';
-  return 'openai';
-}
-
 /** Pass a delegated response back to the client while capturing usage + logging. */
 async function instrumentResponse(
   upstream: Response,
@@ -476,8 +472,10 @@ async function instrumentResponse(
 ): Promise<Response> {
   const ct = upstream.headers.get('content-type') ?? '';
   const isStream = ct.includes('text/event-stream');
+  const isResponses = meta.protocol === 'openai-responses';
 
   if (isStream && upstream.body) {
+    if (isResponses) return instrumentResponsesStream(upstream, meta);
     const parser = new UsageParser();
     const decoder = new TextDecoder();
     const reader = upstream.body.getReader();
@@ -535,7 +533,7 @@ async function instrumentResponse(
   let error: string | undefined;
   try {
     const parsed = JSON.parse(bodyText);
-    tokens = usageFromJson(parsed);
+    tokens = isResponses ? usageFromResponsesJson(parsed) : usageFromJson(parsed);
   } catch {
     tokens = undefined;
   }
@@ -545,6 +543,115 @@ async function instrumentResponse(
   headers.delete('content-encoding');
   headers.delete('content-length');
   return new Response(buf, { status: upstream.status, headers });
+}
+
+/** Map a non-streaming Responses JSON body's `usage` block to call-log tokens. */
+function usageFromResponsesJson(
+  v: any
+): { prompt?: number; completion?: number; total?: number } | undefined {
+  const u = v?.usage;
+  if (!u) return undefined;
+  const prompt = typeof u.input_tokens === 'number' ? u.input_tokens : undefined;
+  const completion =
+    typeof u.output_tokens === 'number' ? u.output_tokens : undefined;
+  const total = typeof u.total_tokens === 'number' ? u.total_tokens : undefined;
+  if (prompt === undefined && completion === undefined && total === undefined) {
+    return undefined;
+  }
+  return { prompt, completion, total };
+}
+
+/**
+ * Stream a Responses SSE response back to the client while observing usage and
+ * the terminal semantic event.
+ *
+ * Outcome mapping (design.md "Gateway Observation and Documentation"):
+ *   - response.completed        -> success (upstream status)
+ *   - response.incomplete       -> 502 + reason/usage (Pi keeps output-limit
+ *                                   semantics; not disguised as a net error)
+ *   - response.failed / error   -> 502 + diagnostic, even after HTTP 200
+ *   - EOF without terminal event -> 502 + truncation diagnostic
+ *   - transport break            -> event: error frame + 502 (original message)
+ *   - downstream cancellation    -> 499
+ *
+ * These statuses describe the monitor/log record only; they never rewrite HTTP
+ * headers already sent to the client.
+ */
+function instrumentResponsesStream(
+  upstream: Response,
+  meta: LogMeta
+): Response {
+  const parser = new ResponsesUsageParser();
+  const decoder = new TextDecoder();
+  const reader = upstream.body!.getReader();
+  const respAcc = new BodyAccumulator();
+  let logged = false;
+  const finishSuccessOrTerminal = () => {
+    if (logged) return;
+    logged = true;
+    // Classify the terminal event from the observed body. A completed stream is
+    // success; incomplete/failed/absent-terminal is a non-success log outcome.
+    const result = classifyResponsesOutcome(respAcc.value());
+    const tokens = result.tokens ?? parser.tokens();
+    if (result.outcome === 'success') {
+      finishLog(meta, upstream.status, tokens, undefined, respAcc.value());
+    } else {
+      finishLog(
+        meta,
+        502,
+        tokens,
+        result.diagnostic,
+        streamErrorBody(respAcc.value(), result.diagnostic)
+      );
+    }
+  };
+  const finishBroken = (error: string) => {
+    if (logged) return;
+    logged = true;
+    finishLog(meta, 502, parser.tokens(), error, streamErrorBody(respAcc.value(), error));
+  };
+  const finishCancelled = () => {
+    if (logged) return;
+    logged = true;
+    finishLog(
+      meta,
+      streamLogStatus(upstream.status, 'client_cancelled'),
+      parser.tokens(),
+      'client closed',
+      streamErrorBody(respAcc.value(), 'client closed')
+    );
+  };
+  const out = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const { done: rdone, value } = await reader.read();
+        if (rdone) {
+          finishSuccessOrTerminal();
+          controller.close();
+          return;
+        }
+        const chunk = decoder.decode(value, { stream: true });
+        parser.feed(chunk);
+        respAcc.push(chunk);
+        controller.enqueue(value);
+      } catch (e) {
+        const msg = (e as Error).message;
+        // Responses clients (Pi SDK) parse a top-level `event: error` frame as a
+        // thrown stream error. Emit that instead of tearing the stream down.
+        const encoder = new TextEncoder();
+        for (const frame of responsesStreamErrorFrames(msg))
+          controller.enqueue(encoder.encode(frame));
+        finishBroken(msg);
+        controller.close();
+      }
+    },
+    cancel(reason) {
+      reader.cancel(reason).catch(() => {});
+      finishCancelled();
+    },
+  });
+  const headers = new Headers(upstream.headers);
+  return new Response(out, { status: upstream.status, headers });
 }
 
 /** Multipart image endpoints: extract + rewrite the `model` field, forward as-is. */
