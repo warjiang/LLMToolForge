@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/frontend/agent-chat-provider-contracts.md", "reason": "Check approval/cancellation, chat persistence, structured gateway errors, and unchanged Direct Chat contracts"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "Check real SDK serialization, full tool-result continuation, terminal stream outcomes, and usage mapping"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "Check that routing stays narrow and no retry/learning state, second tool loop, or unrelated abstractions were introduced"}

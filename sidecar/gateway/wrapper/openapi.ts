@@ -67,6 +67,39 @@ export function buildSpec(models: string[]): unknown {
             tool_choice: {},
           },
         },
+        ResponsesRequest: {
+          type: 'object',
+          required: ['model', 'input'],
+          description:
+            'OpenAI Responses 请求。内置 agent 仅对 gpt-6-astra 且带函数工具时选用此协议；采用无状态 item 回放（store=false，不使用 previous_response_id）。',
+          properties: {
+            model: { $ref: '#/components/schemas/Model' },
+            input: {
+              type: 'array',
+              description:
+                '有序输入项：system/user 消息，以及回放的 function_call / function_call_output / reasoning item。',
+              items: { type: 'object' },
+            },
+            stream: { type: 'boolean', default: true },
+            store: {
+              type: 'boolean',
+              default: false,
+              description: '固定为 false：网关不提供服务端会话存储。',
+            },
+            tools: {
+              type: 'array',
+              description: '函数工具定义（保留原始 description 与 JSON schema）。',
+              items: { type: 'object' },
+            },
+            include: {
+              type: 'array',
+              description:
+                '需要回放的推理状态，例如 reasoning.encrypted_content；不注入 reasoning.effort。',
+              items: { type: 'string' },
+            },
+            max_output_tokens: { type: 'integer' },
+          },
+        },
         AnthropicMessageRequest: {
           type: 'object',
           required: ['model', 'messages', 'max_tokens'],
@@ -145,6 +178,35 @@ export function buildSpec(models: string[]): unknown {
             '401': errorResponse('未授权'),
             '404': errorResponse('模型未找到'),
             '502': errorResponse('上游错误'),
+          },
+        },
+      },
+      '/v1/responses': {
+        post: {
+          summary: 'OpenAI Responses 端点（内置 agent 对 gpt-6-astra 工具轮次选用）',
+          description:
+            '语义化 SSE 事件流（response.created / output_item / function_call_arguments / response.completed 等）。采用无状态 item 回放：请求携带回放的 function_call、function_call_output 与 reasoning item，store=false，不提供服务端会话或 response 检索 API。',
+          operationId: 'responses',
+          requestBody: {
+            required: true,
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/ResponsesRequest' },
+              },
+            },
+          },
+          responses: {
+            '200': {
+              description:
+                'Responses 结果；当 stream=true 时为 text/event-stream（语义事件，以 response.completed 收尾）。传输中断时网关发出 event: error 帧。',
+              content: {
+                'application/json': { schema: { type: 'object' } },
+                'text/event-stream': { schema: { type: 'string' } },
+              },
+            },
+            '401': errorResponse('未授权'),
+            '404': errorResponse('模型未找到（非“端点不支持”）'),
+            '502': errorResponse('上游错误 / 输出不完整 / 流被截断'),
           },
         },
       },

@@ -18,7 +18,7 @@ import type { AgentDefinition } from "@/types";
 import type { AgentPromptImage } from "./images";
 import { useUnifiedStore } from "@/store/unified";
 import { useSkillStore, getEffectiveMcpServers } from "@/store";
-import { buildPiModel } from "./model";
+import { buildPiModel, resolveToolTransport } from "./model";
 import { createUnifiedRuntime } from "./provider";
 import { resolveAgent } from "./agentDefinition";
 import { ensureGatewayFetch } from "./gatewayFetch";
@@ -267,16 +267,12 @@ export async function createAgentRuntime(
 
   const baseUrl = gatewayBaseUrl(unified.config.port);
   await ensureGatewayFetch();
-  const piModel = buildPiModel(exposed, {
-    baseUrl,
-    maxTokens: def.maxTokens,
-  });
-  const { streamFn } = createUnifiedRuntime(
-    [piModel],
-    baseUrl,
-    unified.config.localKey
-  );
 
+  // Resolve tools BEFORE choosing the API: protocol selection depends on
+  // whether resolved function tools are present. `gpt-6-astra` tool turns must
+  // use Responses (Chat Completions rejects them); everything else stays on
+  // Chat Completions. Select once and keep the API fixed across all tool
+  // continuations in this runtime.
   const resolved = await resolveAgent(def, {
     skills: useSkillStore.getState().items,
     mcpServers: getEffectiveMcpServers(),
@@ -285,8 +281,27 @@ export async function createAgentRuntime(
     requestAsk: options.requestAsk,
   });
 
+  const transport = resolveToolTransport(
+    exposed.realModel,
+    resolved.tools.length > 0
+  );
+
+  const piModel = buildPiModel(exposed, {
+    baseUrl,
+    maxTokens: def.maxTokens,
+    transport,
+  });
+  const { streamFn } = createUnifiedRuntime(
+    [piModel],
+    baseUrl,
+    unified.config.localKey,
+    transport
+  );
+
   console.debug("[agent] runtime built", {
     modelId: def.modelId,
+    realModel: exposed.realModel,
+    transport,
     baseUrl,
     port: unified.config.port,
     statusRunning: unified.status?.running,
