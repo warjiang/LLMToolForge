@@ -46,7 +46,7 @@ export function Sidebar() {
 
   const allNavItems = [
     {
-      to: "/",
+      to: "/dashboard",
       label: t("dashboard"),
       icon: LayoutDashboard,
       end: true,

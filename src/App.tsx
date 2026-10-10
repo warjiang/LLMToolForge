@@ -59,7 +59,7 @@ const router = createBrowserRouter([
     path: "/",
     element: <AppLayout />,
     children: [
-      { index: true, element: page(<DashboardPage />) },
+      { index: true, element: <Navigate to={`/${AGENT_ROUTE_PATH}`} replace /> },
       { path: "api-keys", element: <Navigate to="/providers" replace /> },
       { path: "providers", element: page(<ProvidersPage />) },
       {
@@ -67,6 +67,7 @@ const router = createBrowserRouter([
         element: <Navigate to="/providers" replace />,
       },
       { path: AGENT_ROUTE_PATH, element: page(<DashboardPage />) },
+      { path: "dashboard", element: page(<DashboardPage />) },
       { path: "unified", element: page(<UnifiedApiPage />) },
       { path: "skills", element: page(<SkillsPage />) },
       { path: "mcp", element: page(<McpPage />) },
