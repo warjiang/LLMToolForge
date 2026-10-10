@@ -17,7 +17,7 @@ export function FormModeToggle() {
   const mode = useAppModeStore((s) => s.mode);
 
   const switchMode = (nextMode: AppMode) => {
-    navigate(nextMode === "agent" ? `/${AGENT_ROUTE_PATH}` : "/");
+    navigate(nextMode === "agent" ? `/${AGENT_ROUTE_PATH}` : "/dashboard");
   };
 
   const OPTIONS: {
