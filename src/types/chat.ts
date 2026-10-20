@@ -14,6 +14,11 @@ export type ToolRunStatus = "pending" | "running" | "success" | "error";
 /** Transient (in-memory) lifecycle of a session's agent turn. */
 export type SessionRunStatus = "running" | "done" | "error";
 export type SandboxMode = "read-only" | "workspace-write" | "danger-full-access";
+export type ReportDelivery = "chat" | "html";
+
+export function normalizeReportDelivery(value: unknown): ReportDelivery {
+  return value === "html" ? "html" : "chat";
+}
 
 export interface ChatSession {
   id: string;
@@ -39,6 +44,8 @@ export interface ChatSessionSettings {
   enabledMcpServerIds: string[];
   /** Grant the agent OpenConnector discovery/execute tools. Default false. */
   connectorEnabled: boolean;
+  /** General Agent report output; new sessions always start in chat mode. */
+  reportDelivery: ReportDelivery;
   sandboxMode: SandboxMode;
   autoApproveCheckpoints: boolean;
   /** Absolute execution root for local tools. Empty = managed temp sandbox. */
@@ -152,6 +159,7 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   enabledSkillIds: [],
   enabledMcpServerIds: [],
   connectorEnabled: false,
+  reportDelivery: "chat",
   sandboxMode: "workspace-write",
   autoApproveCheckpoints: false,
   workspacePath: "",

@@ -198,6 +198,8 @@ import {
   DATA_AGENT_ID,
   RESEARCH_AGENT_ID,
 } from "@/lib/agent/builtinAgents";
+import { agentRuntimeSignature } from "./agentRuntimeSignature";
+import { buildAdHocAgentDef } from "./generalAgentProfile";
 import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
@@ -307,7 +309,6 @@ const SHIMMER_TEXT_CLASS = "shimmer-text";
 const SCROLL_BOTTOM_THRESHOLD_PX = 96;
 const SCROLL_OVERFLOW_THRESHOLD_PX = 8;
 const VIDEO_FAILED_STATUSES = new Set(["failed", "expired", "cancelled"]);
-const ADHOC_AGENT_ID = "__adhoc__";
 const DATA_AGENT_PROMPT = [
   "You are DataAgent, a careful local-data analysis assistant.",
   "Use DuckDB for tabular analysis over local CSV, TSV, JSON, JSONL, and Parquet files.",
@@ -318,37 +319,6 @@ const DATA_AGENT_PROMPT = [
   "For every tool call whose schema includes goal, include a concise goal value so the UI timeline explains why the step is running.",
   "If the workspace path is missing or a file is outside the sandbox scope, explain exactly what must be configured.",
 ].join("\n");
-
-/**
- * Build an in-memory `AgentDefinition` from the current chat session settings.
- * Used to give the "direct chat" mode real tool execution via the Pi runtime
- * without forcing the user to create a named agent. With no workspace selected,
- * internal tools use the chat execution root; empty means the backend's
- * managed temporary sandbox directory.
- */
-function buildAdHocAgentDef(
-  settings: ChatSessionSettings,
-  unifiedModelId: string
-): AgentDefinition {
-  const now = new Date().toISOString();
-  return {
-    id: ADHOC_AGENT_ID,
-    createdAt: now,
-    updatedAt: now,
-    name: "",
-    description: "",
-    systemPrompt: settings.system ?? "",
-    modelId: unifiedModelId,
-    enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
-    enabledSkillIds: settings.enabledSkillIds,
-    enabledMcpServerIds: settings.enabledMcpServerIds,
-    connectorEnabled: settings.connectorEnabled,
-    sandboxMode: settings.sandboxMode,
-    workspacePath: settings.workspacePath,
-    temperature: Number(settings.temperature) || 0,
-    maxTokens: Number(settings.maxTokens) || 4096,
-  };
-}
 
 function buildDataAgentDef(
   settings: ChatSessionSettings,
@@ -423,23 +393,6 @@ function buildResearchAgentDef(
     temperature: Number(settings.temperature) || 0,
     maxTokens: Number(settings.maxTokens) || 4096,
   };
-}
-
-/** Stable signature so a cached runtime is reused until its config changes. */
-function agentRuntimeSignature(def: AgentDefinition, workspacePath: string): string {
-  return [
-    def.id,
-    def.modelId,
-    def.systemPrompt,
-    def.enabledInternalTools.join(","),
-    def.enabledSkillIds.join(","),
-    def.enabledMcpServerIds.join(","),
-    def.connectorEnabled ? "conn" : "",
-    def.sandboxMode,
-    workspacePath,
-    def.temperature,
-    def.maxTokens,
-  ].join("|");
 }
 
 function seedHistoryFromMessages(
@@ -3497,6 +3450,7 @@ export function AgentChatView() {
             >
               <ConfigRail
                 settings={settings}
+                isGeneralAgent={selectedAgentId === null}
                 isResearchAgent={isResearchAgent}
                 isVolc={isVolc}
                 usableKeys={usableKeys}
@@ -3753,6 +3707,7 @@ function MessageSkeletons() {
 
 function ConfigRail({
   settings,
+  isGeneralAgent,
   isResearchAgent,
   isVolc,
   usableKeys,
@@ -3762,6 +3717,7 @@ function ConfigRail({
   onClose,
 }: {
   settings: ChatSessionSettings | null;
+  isGeneralAgent: boolean;
   isResearchAgent: boolean;
   isVolc: boolean;
   usableKeys: { name: string; key?: string; arkId?: number }[];
@@ -3971,6 +3927,36 @@ function ConfigRail({
             />
           </div>
         </div>
+        {isGeneralAgent && (
+          <div className="flex items-center gap-3">
+            <Label className="shrink-0">
+              {t("agent_report_delivery")}
+            </Label>
+            <div className="min-w-0 flex-1">
+              <Select
+                value={settings.reportDelivery}
+                onValueChange={(reportDelivery) =>
+                  onSettings({
+                    reportDelivery:
+                      reportDelivery as ChatSessionSettings["reportDelivery"],
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="chat">
+                    {t("agent_report_delivery_chat")}
+                  </SelectItem>
+                  <SelectItem value="html">
+                    {t("agent_report_delivery_html")}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        )}
         {isResearchAgent && (
           <>
             <div className="flex items-center justify-between gap-3 rounded-md bg-secondary/60 px-3 py-2">
