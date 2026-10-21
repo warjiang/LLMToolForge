@@ -28,6 +28,7 @@ import { useLocaleStore, type Language } from "@/store/locale";
 import { useDeviceConfigStore } from "@/store/deviceConfig";
 import { useUpdater } from "@/lib/useUpdater";
 import { StorageSyncCard } from "@/pages/settings/StorageSyncCard";
+import { BuiltinWebSettingsCard } from "@/pages/settings/BuiltinWebSettingsCard";
 import {
   isFeatureEnabled,
   validateFeatureConfig,
@@ -54,6 +55,7 @@ export function SettingsPage() {
       {feature("settings.appearance") && <AppearanceSection />}
       {feature("settings.dataStorage") && <DataStorageSection />}
       {feature("settings.storageSync") && <StorageSyncCard />}
+      <BuiltinWebSettingsCard />
 
       <AboutSection
         update={update}

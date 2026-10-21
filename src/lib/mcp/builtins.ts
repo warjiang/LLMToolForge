@@ -10,8 +10,8 @@ import type { BuiltinMcpKind, McpServer } from "@/types";
  *
  * - `playwright` is a real stdio server (`npx @playwright/mcp`) that must be
  *   installed (a one-shot `npx` warm-up) before it can be enabled.
- * - `web-search` / `web-fetch` are local Rust implementations (no subprocess,
- *   no install) handled directly in `buildMcpTools`.
+ * Built-in Web Search/Web Fetch moved to the internal Web tools surface. Their
+ * legacy MCP ids remain readable for migration but are no longer exposed here.
  */
 
 export interface BuiltinInstallSpec {
@@ -47,26 +47,6 @@ export const BUILTIN_MCP_DEFS: BuiltinMcpDef[] = [
     command: "npx",
     args: ["-y", "@playwright/mcp@latest"],
     install: { manager: "npx", args: ["-y", "@playwright/mcp@latest", "--help"] },
-  },
-  {
-    kind: "web-search",
-    id: "builtin-web-search",
-    name: "Web Search",
-    description:
-      "本地网页搜索：抓取搜索引擎结果并返回标题、链接与摘要，无需 API Key。",
-    runtime: "local",
-    transport: "stdio",
-    args: [],
-  },
-  {
-    kind: "web-fetch",
-    id: "builtin-web-fetch",
-    name: "Web Fetch",
-    description:
-      "本地网页抓取：读取公开网页的正文与链接，支持在应用内浏览器渲染登录/JS 页面。",
-    runtime: "local",
-    transport: "stdio",
-    args: [],
   },
 ];
 

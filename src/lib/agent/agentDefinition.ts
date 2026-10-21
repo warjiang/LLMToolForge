@@ -14,6 +14,10 @@ import { buildMcpTools } from "./tools/mcp";
 import { buildConnectorTools } from "./tools/connector";
 import { buildLoadSkillTool, formatSkillsPrompt } from "./tools/skills";
 import { makeToolAbortable } from "./tools/shared";
+import {
+  LEGACY_BUILTIN_WEB_MCP_IDS,
+  normalizeAgentWebToolSource,
+} from "./webToolSource";
 
 export interface ResolveAgentDeps {
   /** All known skills (filtered to the definition's enabled set). */
@@ -48,10 +52,31 @@ function activeMcpServers(def: AgentDefinition, all: McpServer[]): McpServer[] {
     (s) =>
       s.enabled !== false &&
       enabled.has(s.id) &&
+      !LEGACY_BUILTIN_WEB_MCP_IDS.has(s.id) &&
       // Every server must be installed to activate. Legacy servers created
       // before the install lifecycle have `installed === undefined`, which we
       // treat as installed so they keep working.
       s.installed !== false
+  );
+}
+
+function uniqueMcpServers(servers: McpServer[]): McpServer[] {
+  const seen = new Set<string>();
+  return servers.filter((server) => {
+    if (seen.has(server.id)) return false;
+    seen.add(server.id);
+    return true;
+  });
+}
+
+function isAvailableWebToolSourceCandidate(
+  server: McpServer | undefined
+): server is McpServer {
+  return (
+    server !== undefined &&
+    server.webToolSourceCandidate === true &&
+    server.enabled !== false &&
+    server.installed !== false
   );
 }
 
@@ -72,7 +97,29 @@ export async function resolveAgent(
   deps: ResolveAgentDeps
 ): Promise<ResolvedAgent> {
   const skills = activeSkills(def, deps.skills);
-  const servers = activeMcpServers(def, deps.mcpServers);
+  const webToolSource = normalizeAgentWebToolSource(def, deps.mcpServers);
+  const genericMcpServers = activeMcpServers(def, deps.mcpServers).filter(
+    (server) => server.webToolSourceCandidate !== true
+  );
+  const mcpServers = [...genericMcpServers];
+  const sourceErrors: { server: string; error: string }[] = [];
+
+  if (webToolSource.kind === "mcp") {
+    const selected = deps.mcpServers.find(
+      (server) =>
+        server.id === webToolSource.serverId &&
+        isAvailableWebToolSourceCandidate(server)
+    );
+    if (isAvailableWebToolSourceCandidate(selected)) {
+      mcpServers.push(selected);
+    } else {
+      sourceErrors.push({
+        server: webToolSource.serverId,
+        error:
+          "Web tool source is unavailable: select an installed, enabled Web source candidate.",
+      });
+    }
+  }
 
   const tools: AgentTool[] = [];
 
@@ -80,7 +127,15 @@ export async function resolveAgent(
   // definition. The backend resolves an empty root to its managed temporary
   // sandbox directory.
   const root = deps.workspacePath?.trim() ?? "";
-  const enabledInternal = def.enabledInternalTools;
+  const ordinaryInternal: AgentDefinition["enabledInternalTools"] = [
+    ...new Set<AgentDefinition["enabledInternalTools"][number]>(
+      def.enabledInternalTools
+    ),
+  ].filter((tool) => tool !== "web_search" && tool !== "web_fetch");
+  const enabledInternal: AgentDefinition["enabledInternalTools"] =
+    webToolSource.kind === "builtin"
+      ? [...ordinaryInternal, "web_search", "web_fetch"]
+      : ordinaryInternal;
   if (enabledInternal.length > 0) {
     tools.push(
       ...buildInternalTools(enabledInternal, {
@@ -96,7 +151,9 @@ export async function resolveAgent(
     tools.push(buildLoadSkillTool(skills));
   }
 
-  const mcp = await buildMcpTools(servers, { screenshotDir: root || undefined });
+  const mcp = await buildMcpTools(uniqueMcpServers(mcpServers), {
+    screenshotDir: root || undefined,
+  });
   tools.push(...mcp.tools);
 
   // OpenConnector discovery/execute tools (opt-in per agent definition).
@@ -110,7 +167,7 @@ export async function resolveAgent(
     // after `execute` settles, so a tool that ignores the signal would otherwise
     // freeze the run and make the session impossible to stop mid-tool.
     tools: tools.map(makeToolAbortable),
-    mcpErrors: mcp.errors,
+    mcpErrors: [...sourceErrors, ...mcp.errors],
     mcpPending: mcp.pending,
   };
 }

@@ -1,4 +1,5 @@
 import type { ChatRole, ChatUsage, WireFormat } from "@/lib/providers/types";
+import type { WebToolSource } from "@/lib/agent/webToolSource";
 
 export type MessagePartKind =
   | "text"
@@ -42,6 +43,8 @@ export interface ChatSessionSettings {
   streaming: boolean;
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  /** Exclusive Web capability selection persisted with the session. */
+  webToolSource: WebToolSource;
   /** Grant the agent OpenConnector discovery/execute tools. Default false. */
   connectorEnabled: boolean;
   /** General Agent report output; new sessions always start in chat mode. */
@@ -158,6 +161,7 @@ export const DEFAULT_CHAT_SETTINGS: Omit<
   streaming: true,
   enabledSkillIds: [],
   enabledMcpServerIds: [],
+  webToolSource: { kind: "builtin" },
   connectorEnabled: false,
   reportDelivery: "chat",
   sandboxMode: "workspace-write",

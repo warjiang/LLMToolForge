@@ -797,3 +797,84 @@ const transport = resolveToolTransport(exposed.realModel, resolved.tools.length 
 const piModel = buildPiModel(exposed, { baseUrl, transport });
 const { streamFn } = createUnifiedRuntime([piModel], baseUrl, localKey, transport);
 ```
+
+## Scenario: Built-In Web Providers And Exclusive Web Sources
+
+### 1. Scope / Trigger
+- Trigger: an Agent/session needs Web search or page fetching through the
+  built-in provider chain or a specialized MCP server.
+
+### 2. Signatures
+- `BuiltinWebConfig { providerOrder, credentials }` is persisted only by
+  `useBuiltinWebStore`.
+- `WebToolSource` is `{ kind: "builtin" }`, `{ kind: "mcp", serverId }`, or
+  `{ kind: "off" }`.
+- `ChatSessionSettings.webToolSource` persists as JSON in
+  `session_settings.web_tool_source`; reusable definitions use optional
+  `AgentDefinition.webToolSource`.
+- `McpServer.webToolSourceCandidate?: boolean` explicitly identifies a
+  specialized external Web source.
+
+### 3. Contracts
+- Built-in `web_search` and `web_fetch` share one ordered provider configuration
+  and one credential value per catalog provider. Provider credentials never live
+  on legacy MCP Web cards or Agent/session records.
+- `resolveAgent` is the sole Web-source assembly point: built-in source injects
+  exactly the internal pair; MCP source injects exactly its installed/enabled
+  candidate; off injects neither. Candidates are excluded from generic MCP
+  assembly in all modes.
+- Legacy `builtin-web-search` / `builtin-web-fetch` ids normalize to the
+  built-in source and are removed from generic enabled-MCP ids. Do not re-add
+  these legacy cards to `BUILTIN_MCP_DEFS`.
+- A selected MCP candidate that is disabled, uninstalled, or missing must
+  surface an MCP configuration error without silently changing the selected
+  provider. The UI can reset its persisted selection to `off` once availability
+  changes.
+- General and Research sessions default to built-in Web; DataAgent and new
+  reusable agents default to off.
+
+### 4. Validation & Error Matrix
+- Missing DeepSeek/Tavily credential -> provider is omitted from the chain;
+  keyless local remains last fallback.
+- `render=true` -> local fetch path only; the URL must not reach external
+  providers.
+- Selected MCP source unavailable at runtime -> no Web tool injection plus a
+  structured entry in `mcpErrors`.
+- Candidate flag enabled -> server disappears from generic MCP selectors and is
+  available only through the Web source selector.
+
+### 5. Good/Base/Bad Cases
+- Good: a Research session selects built-in Web and receives one internal
+  `web_search` and one internal `web_fetch`.
+- Base: a user selects one marked MCP candidate; ordinary MCP tools remain
+  selected independently, while internal Web tools are absent.
+- Bad: enabling a Web candidate in both generic MCP ids and `webToolSource`, or
+  storing provider API keys inside a per-Agent definition.
+
+### 6. Tests Required
+- `webProviderCatalog.test.ts`, `searchProviders.test.ts`, and
+  `internal-web.test.ts` cover canonical order, gating, fallback, output caps,
+  render routing, and bounded error redaction.
+- `chat-web-tool-source.test.ts` covers browser fallback/SQLite-compatible
+  session settings defaults and source round trips.
+- `web-tool-source-resolution.test.ts` covers all three injection modes,
+  candidate filtering, unavailable source errors, and legacy migration.
+- UI changes require `builtin-web-settings.test.tsx`,
+  `web-tool-source-selector.test.tsx`, and
+  `web-source-candidate.test.tsx`, all registered in `vitest.config.ts`.
+
+### 7. Wrong vs Correct
+
+#### Wrong
+```typescript
+const tools = [...buildInternalTools(def.enabledInternalTools), ...allMcpTools];
+```
+
+#### Correct
+```typescript
+const source = normalizeAgentWebToolSource(def, servers);
+const internal = source.kind === "builtin"
+  ? [...ordinaryInternal, "web_search", "web_fetch"]
+  : ordinaryInternal;
+const mcp = source.kind === "mcp" ? [selectedCandidate] : [];
+```

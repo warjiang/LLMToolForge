@@ -101,7 +101,7 @@ import {
   useBuiltinMcpStore,
   usePromptStore,
 } from "@/store";
-import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
+import { builtinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
 import { useMessageActionsStore } from "@/store/messageActions";
 import { useUnifiedStore } from "@/store/unified";
@@ -200,6 +200,7 @@ import {
 } from "@/lib/agent/builtinAgents";
 import { agentRuntimeSignature } from "./agentRuntimeSignature";
 import { buildAdHocAgentDef } from "./generalAgentProfile";
+import { WebToolSourceSelector } from "./WebToolSourceSelector";
 import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
@@ -349,6 +350,7 @@ function buildDataAgentDef(
     ],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
+    webToolSource: { kind: "off" },
     connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
@@ -362,31 +364,19 @@ function buildResearchAgentDef(
   unifiedModelId: string
 ): AgentDefinition {
   const now = new Date().toISOString();
-  // Market research depends on web search, which is provided by MCP servers
-  // (Tavily / AskEcho / AnySearch, etc.). Auto-enable every configured,
-  // non-disabled MCP server so the agent always has its search/extract tools,
-  // even if the session composer didn't explicitly toggle them on.
-  const allMcpServerIds = [
-    ...useMcpStore.getState().items.filter((s) => s.installed !== false),
-    ...getAllBuiltinServers().filter((s) => s.installed),
-  ]
-    .filter((s) => s.enabled !== false)
-    .map((s) => s.id);
-  const enabledMcpServerIds = Array.from(
-    new Set([...settings.enabledMcpServerIds, ...allMcpServerIds])
-  );
   return {
     id: RESEARCH_AGENT_ID,
     createdAt: now,
     updatedAt: now,
     name: "ResearchAgent",
     description:
-      "Autonomously research a market or topic using web search plus the built-in web_fetch reader to collect per-channel evidence, and deliver an evidence-cited HTML report.",
+      "Autonomously research a market or topic using the configured Web tools to collect per-channel evidence, and deliver an evidence-cited HTML report.",
     systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
     modelId: unifiedModelId,
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
-    enabledMcpServerIds,
+    enabledMcpServerIds: settings.enabledMcpServerIds,
+    webToolSource: settings.webToolSource,
     connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
@@ -850,6 +840,26 @@ export function AgentChatView() {
       ...builtinServers(builtinMcp.states).filter((s) => s.installed),
     ],
     [mcp.items, builtinMcp.states]
+  );
+  const webMcpCandidates = useMemo(
+    () =>
+      mcpItems.filter(
+        (server) =>
+          server.webToolSourceCandidate === true &&
+          server.enabled !== false &&
+          server.installed !== false
+      ),
+    [mcpItems]
+  );
+  const genericMcpItems = useMemo(
+    () =>
+      mcpItems.filter(
+        (server) =>
+          server.webToolSourceCandidate !== true &&
+          server.id !== "builtin-web-search" &&
+          server.id !== "builtin-web-fetch"
+      ),
+    [mcpItems]
   );
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
@@ -1319,9 +1329,18 @@ export function AgentChatView() {
   const activeSkills = skills.items.filter(
     (s) => s.enabled !== false && settings?.enabledSkillIds.includes(s.id)
   );
-  const activeMcp = mcpItems.filter(
-    (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
-  );
+  const activeMcp = [
+    ...genericMcpItems.filter(
+      (server) =>
+        server.enabled !== false &&
+        settings?.enabledMcpServerIds.includes(server.id)
+    ),
+    ...webMcpCandidates.filter(
+      (server) =>
+        settings?.webToolSource.kind === "mcp" &&
+        settings.webToolSource.serverId === server.id
+    ),
+  ];
   const isResearchAgent = selectedAgentId === RESEARCH_AGENT_ID;
   useEffect(() => {
     autoApproveCheckpointsRef.current =
@@ -3337,7 +3356,7 @@ export function AgentChatView() {
                     />
                   </div>
 
-                  {settings && (
+                  {settings && selectedAgentId !== DATA_AGENT_ID && (
                     <SandboxModeSelect
                       value={settings.sandboxMode}
                       onChange={(sandboxMode) => updateSettings({ sandboxMode })}
@@ -3368,12 +3387,24 @@ export function AgentChatView() {
                     icon={Server}
                     label="MCP"
                     empty={t("agent_no_mcp")}
-                    items={mcpItems}
+                    items={genericMcpItems}
                     activeIds={settings?.enabledMcpServerIds ?? []}
                     onChange={(enabledMcpServerIds) =>
                       updateSettings({ enabledMcpServerIds })
                     }
                   />
+                  {settings && (
+                    <div className="w-[188px] max-w-full">
+                      <WebToolSourceSelector
+                        value={settings.webToolSource}
+                        candidates={webMcpCandidates}
+                        showHint={false}
+                        onChange={(webToolSource) =>
+                          updateSettings({ webToolSource })
+                        }
+                      />
+                    </div>
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
