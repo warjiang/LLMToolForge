@@ -101,7 +101,7 @@ import {
   useBuiltinMcpStore,
   usePromptStore,
 } from "@/store";
-import { builtinServers, getAllBuiltinServers } from "@/store/builtinMcp";
+import { builtinServers } from "@/store/builtinMcp";
 import { useDebugStore } from "@/store/debug";
 import { useMessageActionsStore } from "@/store/messageActions";
 import { useUnifiedStore } from "@/store/unified";
@@ -200,6 +200,8 @@ import {
 } from "@/lib/agent/builtinAgents";
 import { agentRuntimeSignature } from "./agentRuntimeSignature";
 import { buildAdHocAgentDef } from "./generalAgentProfile";
+import { WebToolSourceSelector } from "./WebToolSourceSelector";
+import { webToolProviderLabel } from "./toolCallProvider";
 import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
@@ -349,6 +351,7 @@ function buildDataAgentDef(
     ],
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
+    webToolSource: { kind: "off" },
     connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
@@ -362,31 +365,19 @@ function buildResearchAgentDef(
   unifiedModelId: string
 ): AgentDefinition {
   const now = new Date().toISOString();
-  // Market research depends on web search, which is provided by MCP servers
-  // (Tavily / AskEcho / AnySearch, etc.). Auto-enable every configured,
-  // non-disabled MCP server so the agent always has its search/extract tools,
-  // even if the session composer didn't explicitly toggle them on.
-  const allMcpServerIds = [
-    ...useMcpStore.getState().items.filter((s) => s.installed !== false),
-    ...getAllBuiltinServers().filter((s) => s.installed),
-  ]
-    .filter((s) => s.enabled !== false)
-    .map((s) => s.id);
-  const enabledMcpServerIds = Array.from(
-    new Set([...settings.enabledMcpServerIds, ...allMcpServerIds])
-  );
   return {
     id: RESEARCH_AGENT_ID,
     createdAt: now,
     updatedAt: now,
     name: "ResearchAgent",
     description:
-      "Autonomously research a market or topic using web search plus the built-in web_fetch reader to collect per-channel evidence, and deliver an evidence-cited HTML report.",
+      "Autonomously research a market or topic using the configured Web tools to collect per-channel evidence, and deliver an evidence-cited HTML report.",
     systemPrompt: buildResearchSystemPrompt(settings.system ?? ""),
     modelId: unifiedModelId,
     enabledInternalTools: [...AGENT_INTERNAL_TOOL_IDS],
     enabledSkillIds: settings.enabledSkillIds,
-    enabledMcpServerIds,
+    enabledMcpServerIds: settings.enabledMcpServerIds,
+    webToolSource: settings.webToolSource,
     connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,
@@ -850,6 +841,26 @@ export function AgentChatView() {
       ...builtinServers(builtinMcp.states).filter((s) => s.installed),
     ],
     [mcp.items, builtinMcp.states]
+  );
+  const webMcpCandidates = useMemo(
+    () =>
+      mcpItems.filter(
+        (server) =>
+          server.webToolSourceCandidate === true &&
+          server.enabled !== false &&
+          server.installed !== false
+      ),
+    [mcpItems]
+  );
+  const genericMcpItems = useMemo(
+    () =>
+      mcpItems.filter(
+        (server) =>
+          server.webToolSourceCandidate !== true &&
+          server.id !== "builtin-web-search" &&
+          server.id !== "builtin-web-fetch"
+      ),
+    [mcpItems]
   );
   const chat = useChatStore();
   const agentDefs = useAgentDefStore();
@@ -1319,9 +1330,18 @@ export function AgentChatView() {
   const activeSkills = skills.items.filter(
     (s) => s.enabled !== false && settings?.enabledSkillIds.includes(s.id)
   );
-  const activeMcp = mcpItems.filter(
-    (s) => s.enabled !== false && settings?.enabledMcpServerIds.includes(s.id)
-  );
+  const activeMcp = [
+    ...genericMcpItems.filter(
+      (server) =>
+        server.enabled !== false &&
+        settings?.enabledMcpServerIds.includes(server.id)
+    ),
+    ...webMcpCandidates.filter(
+      (server) =>
+        settings?.webToolSource.kind === "mcp" &&
+        settings.webToolSource.serverId === server.id
+    ),
+  ];
   const isResearchAgent = selectedAgentId === RESEARCH_AGENT_ID;
   useEffect(() => {
     autoApproveCheckpointsRef.current =
@@ -3368,12 +3388,22 @@ export function AgentChatView() {
                     icon={Server}
                     label="MCP"
                     empty={t("agent_no_mcp")}
-                    items={mcpItems}
+                    items={genericMcpItems}
                     activeIds={settings?.enabledMcpServerIds ?? []}
                     onChange={(enabledMcpServerIds) =>
                       updateSettings({ enabledMcpServerIds })
                     }
                   />
+                  {settings && selectedAgentId !== DATA_AGENT_ID && (
+                    <WebToolSourceSelector
+                      value={settings.webToolSource}
+                      candidates={webMcpCandidates}
+                      layout="toolbar"
+                      onChange={(webToolSource) =>
+                        updateSettings({ webToolSource })
+                      }
+                    />
+                  )}
                   <Button
                     type="button"
                     variant="ghost"
@@ -4037,8 +4067,10 @@ function ConfigRail({
 }
 
 function ToolRecordItem({ call }: { call: ToolCallRecord }) {
+  const { t } = useTranslation("pages");
   const [open, setOpen] = useState(false);
   const parsed = parseToolName(call.toolName || call.title);
+  const provider = webToolProviderLabel(call.toolName, call.resultJson);
   const goal = toolCallGoal(call.argumentsJson);
   const resultRaw =
     call.resultText && call.resultText.trim().length > 0
@@ -4076,6 +4108,11 @@ function ToolRecordItem({ call }: { call: ToolCallRecord }) {
           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground">
             <Server className="h-3 w-3" />
             {parsed.server}
+          </span>
+        )}
+        {provider && (
+          <span className="inline-flex shrink-0 rounded-sm bg-secondary px-1.5 py-px text-label-12 text-muted-foreground">
+            {t("agent_tool_provider", { provider })}
           </span>
         )}
         <Badge
@@ -5725,6 +5762,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const isPending = call.status === "pending";
   const isError = call.status === "error";
   const parsed = parseToolName(call.toolName || call.title);
+  const provider = webToolProviderLabel(call.toolName, call.resultJson);
 
   const args = formatMaybeJson(call.argumentsJson || "");
   const resultRaw =
@@ -5803,6 +5841,11 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                 <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
                   <Server className="h-3 w-3" />
                   {parsed.server}
+                </span>
+              )}
+              {provider && (
+                <span className="shrink-0 rounded-sm bg-secondary px-1.5 py-px text-label-12 text-muted-foreground">
+                  {t("agent_tool_provider", { provider })}
                 </span>
               )}
             </span>

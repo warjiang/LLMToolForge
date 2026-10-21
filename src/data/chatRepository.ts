@@ -14,6 +14,12 @@ import {
   DEFAULT_CHAT_SETTINGS,
   normalizeReportDelivery,
 } from "@/types/chat";
+import {
+  defaultWebToolSourceForSessionAgent,
+  normalizeEnabledMcpServerIds,
+  normalizeWebToolSourceConfig,
+  type WebToolSource,
+} from "@/lib/agent/webToolSource";
 import { isTauri, uid } from "@/lib/utils";
 
 const DB_URL = "sqlite:llmtoolforge.db";
@@ -58,9 +64,13 @@ function stringify(value: unknown): string | null {
   return value == null ? null : JSON.stringify(value);
 }
 
-function defaultSettings(sessionId: string): ChatSessionSettings {
+function defaultSettings(
+  sessionId: string,
+  agentId: string | null | undefined = null
+): ChatSessionSettings {
   return {
     ...DEFAULT_CHAT_SETTINGS,
+    webToolSource: defaultWebToolSourceForSessionAgent(agentId),
     sessionId,
     updatedAt: nowIso(),
   };
@@ -68,10 +78,14 @@ function defaultSettings(sessionId: string): ChatSessionSettings {
 
 function settingsForNewSession(
   sessionId: string,
-  seed?: ChatSessionSettings | null
+  seed?: ChatSessionSettings | null,
+  agentId?: string | null
 ): ChatSessionSettings {
-  if (!seed) return defaultSettings(sessionId);
-  const normalized = normalizeSettings(seed);
+  if (!seed) return defaultSettings(sessionId, agentId);
+  const normalized = normalizeSettings(
+    seed,
+    defaultWebToolSourceForSessionAgent(agentId)
+  );
   return {
     connKey: normalized.connKey,
     modelId: normalized.modelId,
@@ -83,6 +97,7 @@ function settingsForNewSession(
     streaming: normalized.streaming,
     enabledSkillIds: [...normalized.enabledSkillIds],
     enabledMcpServerIds: [...normalized.enabledMcpServerIds],
+    webToolSource: normalized.webToolSource,
     sandboxMode: normalized.sandboxMode,
     connectorEnabled: normalized.connectorEnabled,
     reportDelivery: "chat",
@@ -93,9 +108,26 @@ function settingsForNewSession(
   };
 }
 
-function normalizeSettings(settings: ChatSessionSettings): ChatSessionSettings {
+type SettingsWithUntrustedWebToolSource = Omit<
+  ChatSessionSettings,
+  "webToolSource"
+> & {
+  webToolSource?: unknown;
+};
+
+function normalizeSettings(
+  settings: SettingsWithUntrustedWebToolSource,
+  missingWebToolSourceFallback: WebToolSource = { kind: "off" }
+): ChatSessionSettings {
   return {
     ...settings,
+    enabledMcpServerIds: normalizeEnabledMcpServerIds(
+      settings.enabledMcpServerIds
+    ),
+    webToolSource: normalizeWebToolSourceConfig(
+      settings,
+      missingWebToolSourceFallback
+    ),
     reportDelivery: normalizeReportDelivery(settings.reportDelivery),
     autoApproveCheckpoints: settings.autoApproveCheckpoints ?? false,
     workspacePath: settings.workspacePath ?? "",
@@ -168,6 +200,7 @@ const migrations = [
     streaming INTEGER NOT NULL DEFAULT 1,
     enabled_skill_ids TEXT NOT NULL DEFAULT '[]',
     enabled_mcp_server_ids TEXT NOT NULL DEFAULT '[]',
+    web_tool_source TEXT,
     report_delivery TEXT NOT NULL DEFAULT 'chat',
     sandbox_mode TEXT NOT NULL DEFAULT 'read-only',
     auto_approve_checkpoints INTEGER NOT NULL DEFAULT 0,
@@ -283,6 +316,7 @@ class ChatRepository {
       { table: "session_settings", column: "auto_approve_checkpoints", ddl: "ALTER TABLE session_settings ADD COLUMN auto_approve_checkpoints INTEGER NOT NULL DEFAULT 0" },
       { table: "session_settings", column: "connector_enabled", ddl: "ALTER TABLE session_settings ADD COLUMN connector_enabled INTEGER NOT NULL DEFAULT 0" },
       { table: "session_settings", column: "report_delivery", ddl: "ALTER TABLE session_settings ADD COLUMN report_delivery TEXT NOT NULL DEFAULT 'chat'" },
+      { table: "session_settings", column: "web_tool_source", ddl: "ALTER TABLE session_settings ADD COLUMN web_tool_source TEXT" },
       { table: "sessions", column: "agent_id", ddl: "ALTER TABLE sessions ADD COLUMN agent_id TEXT" },
     ];
     for (const { table, column, ddl } of wanted) {
@@ -343,7 +377,7 @@ class ChatRepository {
       createdAt: timestamp,
       updatedAt: timestamp,
     };
-    const settings = settingsForNewSession(session.id, settingsSeed);
+    const settings = settingsForNewSession(session.id, settingsSeed, agentId);
     if (!isTauri()) {
       const state = readFallback();
       state.sessions.unshift(session);
@@ -386,7 +420,8 @@ class ChatRepository {
         session,
         settings: normalizeSettings(
           state.settings.find((s) => s.sessionId === sessionId) ??
-            defaultSettings(sessionId)
+            defaultSettings(sessionId, session.agentId),
+          defaultWebToolSourceForSessionAgent(session.agentId)
         ),
         messages,
         toolCalls: state.toolCalls.filter((t) => t.sessionId === sessionId),
@@ -435,8 +470,8 @@ class ChatRepository {
     return {
       session: rowToSession(sessions[0]),
       settings: settingsRows[0]
-        ? rowToSettings(settingsRows[0])
-        : defaultSettings(sessionId),
+        ? rowToSettings(settingsRows[0], sessions[0].agent_id as string | null)
+        : defaultSettings(sessionId, sessions[0].agent_id as string | null),
       messages: messageRows.map((r) =>
         rowToMessage(
           r,
@@ -520,17 +555,29 @@ class ChatRepository {
     await this.ensureInit();
     if (!isTauri()) {
       const state = readFallback();
+      const session = state.sessions.find((s) => s.id === sessionId);
       return normalizeSettings(
         state.settings.find((s) => s.sessionId === sessionId) ??
-          defaultSettings(sessionId)
+          defaultSettings(sessionId, session?.agentId),
+        defaultWebToolSourceForSessionAgent(session?.agentId)
       );
     }
     const db = await this.db();
     const rows = await db.select<Record<string, unknown>[]>(
-      "SELECT * FROM session_settings WHERE session_id = $1",
+      `SELECT session_settings.*, sessions.agent_id AS session_agent_id
+       FROM sessions
+       LEFT JOIN session_settings ON session_settings.session_id = sessions.id
+       WHERE sessions.id = $1`,
       [sessionId]
     );
-    return rows[0] ? rowToSettings(rows[0]) : defaultSettings(sessionId);
+    return rows[0]
+      ? rows[0].session_id == null
+        ? defaultSettings(
+            sessionId,
+            rows[0].session_agent_id as string | null | undefined
+          )
+        : rowToSettings(rows[0], rows[0].session_agent_id as string | null)
+      : defaultSettings(sessionId);
   }
 
   async updateSettings(
@@ -539,11 +586,11 @@ class ChatRepository {
   ): Promise<ChatSessionSettings> {
     const current =
       (await this.getSessionBundle(sessionId))?.settings ?? defaultSettings(sessionId);
-    const next: ChatSessionSettings = {
+    const next = normalizeSettings({
       ...current,
       ...patch,
       updatedAt: nowIso(),
-    };
+    });
     await this.upsertSettings(next);
     return next;
   }
@@ -565,9 +612,10 @@ class ChatRepository {
       `INSERT INTO session_settings (
         session_id, conn_key, model_id, key_idx, wire_format, system,
         temperature, max_tokens, streaming, enabled_skill_ids,
-        enabled_mcp_server_ids, sandbox_mode, auto_approve_checkpoints,
-        workspace_path, connector_enabled, report_delivery, updated_at
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)
+        enabled_mcp_server_ids, web_tool_source, sandbox_mode,
+        auto_approve_checkpoints, workspace_path, connector_enabled,
+        report_delivery, updated_at
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
       ON CONFLICT(session_id) DO UPDATE SET
         conn_key = excluded.conn_key,
         model_id = excluded.model_id,
@@ -579,6 +627,7 @@ class ChatRepository {
         streaming = excluded.streaming,
         enabled_skill_ids = excluded.enabled_skill_ids,
         enabled_mcp_server_ids = excluded.enabled_mcp_server_ids,
+        web_tool_source = excluded.web_tool_source,
         sandbox_mode = excluded.sandbox_mode,
         auto_approve_checkpoints = excluded.auto_approve_checkpoints,
         workspace_path = excluded.workspace_path,
@@ -597,6 +646,7 @@ class ChatRepository {
         settings.streaming ? 1 : 0,
         JSON.stringify(settings.enabledSkillIds),
         JSON.stringify(settings.enabledMcpServerIds),
+        JSON.stringify(settings.webToolSource),
         settings.sandboxMode,
         settings.autoApproveCheckpoints ? 1 : 0,
         settings.workspacePath,
@@ -1128,8 +1178,21 @@ function rowToSession(row: Record<string, unknown>): ChatSession {
   };
 }
 
-function rowToSettings(row: Record<string, unknown>): ChatSessionSettings {
-  return {
+function rowToSettings(
+  row: Record<string, unknown>,
+  agentId: string | null | undefined = null
+): ChatSessionSettings {
+  const persistedSource =
+    row.web_tool_source == null
+      ? {}
+      : {
+          webToolSource: parseJson<unknown>(
+            String(row.web_tool_source),
+            undefined
+          ),
+        };
+  return normalizeSettings(
+    {
     sessionId: String(row.session_id),
     connKey: row.conn_key ? String(row.conn_key) : null,
     modelId: String(row.model_id ?? ""),
@@ -1148,7 +1211,10 @@ function rowToSettings(row: Record<string, unknown>): ChatSessionSettings {
     workspacePath: String(row.workspace_path ?? ""),
     connectorEnabled: Number(row.connector_enabled ?? 0) === 1,
     updatedAt: String(row.updated_at),
-  };
+      ...persistedSource,
+    },
+    defaultWebToolSourceForSessionAgent(agentId)
+  );
 }
 
 function rowToPart(row: Record<string, unknown>): MessagePart {

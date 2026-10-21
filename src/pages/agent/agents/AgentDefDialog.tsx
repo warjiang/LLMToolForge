@@ -26,6 +26,11 @@ import { useAgentDefStore, useSkillStore, useMcpStore, useBuiltinMcpStore } from
 import { builtinServers } from "@/store/builtinMcp";
 import { useUnifiedStore } from "@/store/unified";
 import {
+  normalizeAgentWebToolSource,
+  type WebToolSource,
+} from "@/lib/agent/webToolSource";
+import { WebToolSourceSelector } from "../WebToolSourceSelector";
+import {
   AGENT_INTERNAL_TOOL_IDS,
   type AgentDefinition,
   type AgentInternalToolId,
@@ -46,6 +51,7 @@ interface FormState {
   enabledInternalTools: AgentInternalToolId[];
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  webToolSource: WebToolSource;
   connectorEnabled: boolean;
   sandboxMode: AgentSandboxMode;
   temperature: string;
@@ -60,6 +66,7 @@ const EMPTY: FormState = {
   enabledInternalTools: [],
   enabledSkillIds: [],
   enabledMcpServerIds: [],
+  webToolSource: { kind: "off" },
   connectorEnabled: false,
   sandboxMode: "read-only",
   temperature: "0.7",
@@ -89,6 +96,18 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
     ...userMcpServers.filter((s) => s.installed !== false),
     ...builtinServers(builtinStates).filter((s) => s.installed),
   ];
+  const webMcpCandidates = mcpServers.filter(
+    (server) =>
+      server.webToolSourceCandidate === true &&
+      server.enabled !== false &&
+      server.installed !== false
+  );
+  const genericMcpServers = mcpServers.filter(
+    (server) =>
+      server.webToolSourceCandidate !== true &&
+      server.id !== "builtin-web-search" &&
+      server.id !== "builtin-web-fetch"
+  );
   const unifiedModels = useUnifiedStore((s) => s.models);
   const unifiedConfig = useUnifiedStore((s) => s.config);
 
@@ -107,7 +126,10 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
             modelId: editing.modelId,
             enabledInternalTools: [...editing.enabledInternalTools],
             enabledSkillIds: [...editing.enabledSkillIds],
-            enabledMcpServerIds: [...editing.enabledMcpServerIds],
+            enabledMcpServerIds: editing.enabledMcpServerIds.filter((id) =>
+              genericMcpServers.some((server) => server.id === id)
+            ),
+            webToolSource: normalizeAgentWebToolSource(editing, mcpServers),
             connectorEnabled: editing.connectorEnabled ?? false,
             sandboxMode: editing.sandboxMode,
             temperature: String(editing.temperature),
@@ -134,6 +156,7 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
       enabledInternalTools: form.enabledInternalTools,
       enabledSkillIds: form.enabledSkillIds,
       enabledMcpServerIds: form.enabledMcpServerIds,
+      webToolSource: form.webToolSource,
       connectorEnabled: form.connectorEnabled,
       sandboxMode: form.sandboxMode,
       workspacePath: "",
@@ -225,7 +248,9 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
           <div className="grid gap-1.5">
             <Label>{t("agents_internal_tools_label")}</Label>
             <div className="flex flex-wrap gap-1.5">
-              {AGENT_INTERNAL_TOOL_IDS.map((id) => {
+              {AGENT_INTERNAL_TOOL_IDS.filter(
+                (id) => id !== "web_search" && id !== "web_fetch"
+              ).map((id) => {
                 const active = form.enabledInternalTools.includes(id);
                 return (
                   <button
@@ -309,11 +334,17 @@ export function AgentDefDialog({ open, onOpenChange, editing }: Props) {
             </div>
           )}
 
-          {mcpServers.length > 0 && (
+          <WebToolSourceSelector
+            value={form.webToolSource}
+            candidates={webMcpCandidates}
+            onChange={(webToolSource) => setForm({ ...form, webToolSource })}
+          />
+
+          {genericMcpServers.length > 0 && (
             <div className="grid gap-1.5">
               <Label>{t("agents_mcp_label")}</Label>
               <div className="flex flex-wrap gap-1.5">
-                {mcpServers.map((s) => {
+                {genericMcpServers.map((s) => {
                   const active = form.enabledMcpServerIds.includes(s.id);
                   return (
                     <button

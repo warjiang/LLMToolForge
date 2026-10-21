@@ -396,7 +396,7 @@ export async function createExternalAgentRuntime(
     },
     waitForIdle: () => idlePromise,
     dispose,
-    mcpErrors: [],
-    mcpPending: [],
+    mcpErrors: resolved.mcpErrors,
+    mcpPending: resolved.mcpPending,
   };
 }

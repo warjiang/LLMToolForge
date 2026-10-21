@@ -83,6 +83,7 @@ export function buildAdHocAgentDef(
     enabledInternalTools: profile.enabledInternalTools,
     enabledSkillIds: settings.enabledSkillIds,
     enabledMcpServerIds: settings.enabledMcpServerIds,
+    webToolSource: settings.webToolSource,
     connectorEnabled: settings.connectorEnabled,
     sandboxMode: settings.sandboxMode,
     workspacePath: settings.workspacePath,

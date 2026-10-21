@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/frontend/index.md", "reason": "Frontend pre-dev checklist + quality gate entry point"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Provider interfaces + normalization must stay type-safe (no any)"}
+{"file": ".trellis/spec/frontend/agent-chat-provider-contracts.md", "reason": "Existing provider-contract conventions to mirror for the new adapters"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Dedicated built-in Web store and Agent/session source persistence conventions"}
+{"file": ".trellis/tasks/10-21-search-provider-abstraction/research/provider-apis.md", "reason": "DeepSeek/Tavily API shapes used for adapter normalization"}
+{"file": ".trellis/spec/frontend/component-guidelines.md", "reason": "Built-in Web settings and mutually exclusive source controls must follow component conventions"}

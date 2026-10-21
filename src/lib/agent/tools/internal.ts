@@ -15,6 +15,22 @@ import type { Static, TSchema } from "@earendil-works/pi-ai";
 import type { AgentTool, AgentToolResult } from "@earendil-works/pi-agent-core";
 import type { SandboxMode } from "@/types/chat";
 import type { AgentInternalToolId } from "@/types";
+import { useBuiltinWebStore } from "@/store/builtinWeb";
+import { stripAnsi } from "@/lib/utils";
+import {
+  capFetchText,
+  capSearchText,
+  clampSearchResultCount,
+} from "./webProviderCatalog";
+import {
+  createProviderAdapters,
+  isFetchSoftMiss,
+  isSearchSoftMiss,
+  resolveChain,
+  runChain,
+  type WebFetchResponse,
+  type WebSearchResponse,
+} from "./searchProviders";
 import { invoke, textResult } from "./shared";
 
 export type InternalToolId = AgentInternalToolId;
@@ -58,6 +74,7 @@ export const INTERNAL_TOOL_IDS: InternalToolId[] = [
   "data_report_html",
   "html_artifact_create",
   "html_artifact_block",
+  "web_search",
   "web_fetch",
 ];
 
@@ -860,20 +877,47 @@ function htmlArtifactBlockTool(deps: InternalToolDeps): AgentTool {
   });
 }
 
-interface WebFetchLink {
-  text: string;
-  href: string;
-}
-
-interface WebFetchResponse {
-  url: string;
-  finalUrl: string;
-  status: number;
-  title: string;
-  text: string;
-  links: WebFetchLink[];
-  truncated: boolean;
-  mode: string;
+function webSearchTool(_deps: InternalToolDeps): AgentTool {
+  return defineTool({
+    name: "web_search",
+    label: "Search the web",
+    description:
+      "Search the web through configured built-in providers in priority order and return titles, URLs, and snippets. Use this to discover relevant sources before fetching a specific page. Returns at most 20 results and 20,000 characters of model-facing text.",
+    parameters: Type.Object({
+      goal: goalParam(),
+      query: Type.String({
+        description: "Search terms describing the information to find.",
+      }),
+      limit: Type.Optional(
+        Type.Number({
+          description: "Maximum results to return (default 8, hard maximum 20).",
+        })
+      ),
+    }),
+    execute: async (_id, params, signal) => {
+      const config = useBuiltinWebStore.getState().config;
+      const adapters = createProviderAdapters();
+      const result = await runChain({
+        chain: resolveChain("search", config),
+        operation: "search",
+        signal,
+        attempt: async (provider, context) => {
+          const search = adapters[provider].search;
+          if (!search) {
+            throw new Error(`Web provider ${provider} does not support search`);
+          }
+          return search({
+            query: params.query,
+            limit: clampSearchResultCount(params.limit),
+            credentials: config.credentials,
+            signal: context.signal,
+          });
+        },
+        isSoftMiss: isSearchSoftMiss,
+      });
+      return textResult(formatWebSearchResult(result), result);
+    },
+  });
 }
 
 function webFetchTool(_deps: InternalToolDeps): AgentTool {
@@ -881,7 +925,7 @@ function webFetchTool(_deps: InternalToolDeps): AgentTool {
     name: "web_fetch",
     label: "Fetch web page",
     description:
-      "Fetch a public web page and return its readable text plus links. Use this to read the actual content of a search result, article, thread, or review page. Headless HTTP by default (no proxy or login). Set render=true for JavaScript-rendered or login-walled pages (e.g. zhihu, xiaohongshu, wechat): it loads the URL in the in-app browser using your real logged-in session, then extracts the rendered content. Render is slower; prefer the default unless the plain fetch returns a login wall or empty content.",
+      "Fetch a web page through configured built-in providers in priority order and return readable text plus links. Use this to read a search result, article, thread, or review page. Set render=true only for JavaScript-rendered or login-walled pages: it forces the authenticated local in-app browser with local HTTP fallback and never uses an external provider. Page text is capped at 40,000 characters and model-facing output at 48,000 characters.",
     parameters: Type.Object({
       goal: goalParam(),
       url: Type.String({
@@ -902,30 +946,63 @@ function webFetchTool(_deps: InternalToolDeps): AgentTool {
         Type.Number({ description: "Request timeout in milliseconds." })
       ),
     }),
-    execute: async (_id, params) => {
-      const res = await invoke<WebFetchResponse>("web_fetch", {
-        req: {
-          url: params.url,
-          render: params.render ?? false,
-          maxChars: params.maxChars,
-          timeoutMs: params.timeoutMs,
+    execute: async (_id, params, signal) => {
+      const config = useBuiltinWebStore.getState().config;
+      const adapters = createProviderAdapters();
+      const res = await runChain({
+        chain: resolveChain("fetch", config, { render: params.render }),
+        operation: "fetch",
+        signal,
+        timeoutMs: params.timeoutMs,
+        attempt: async (provider, context) => {
+          const fetch = adapters[provider].fetch;
+          if (!fetch) {
+            throw new Error(`Web provider ${provider} does not support fetch`);
+          }
+          return fetch({
+            url: params.url,
+            render: params.render ?? false,
+            maxChars: params.maxChars,
+            timeoutMs: context.timeoutMs,
+            credentials: config.credentials,
+            signal: context.signal,
+          });
         },
+        isSoftMiss: isFetchSoftMiss,
       });
-      const header =
-        `# ${res.title || "(untitled)"}\n` +
-        `URL: ${res.finalUrl} (HTTP ${res.status}, mode=${res.mode})\n`;
-      const linkLines =
-        res.links.length > 0
-          ? "\n\nLinks:\n" +
-            res.links
-              .slice(0, 40)
-              .map((l) => `- ${l.text || l.href} -> ${l.href}`)
-              .join("\n")
-          : "";
-      const suffix = res.truncated ? "\n…(内容已截断)" : "";
-      return textResult(header + "\n" + res.text + suffix + linkLines, res);
+      return textResult(formatWebFetchResult(res), res);
     },
   });
+}
+
+function formatWebSearchResult(res: WebSearchResponse): string {
+  if (res.results.length === 0) {
+    return `未找到与「${stripAnsi(res.query)}」相关的结果。`;
+  }
+  const body = res.results
+    .map(
+      (result, index) =>
+        `${index + 1}. ${stripAnsi(result.title) || result.url}\n   ${result.url}` +
+        (result.snippet ? `\n   ${stripAnsi(result.snippet)}` : "")
+    )
+    .join("\n\n");
+  return capSearchText(`「${stripAnsi(res.query)}」的搜索结果：\n\n${body}`);
+}
+
+function formatWebFetchResult(res: WebFetchResponse): string {
+  const header =
+    `# ${res.title || "(untitled)"}\n` +
+    `URL: ${res.finalUrl} (HTTP ${res.status}, mode=${res.mode})\n`;
+  const linkLines =
+    res.links.length > 0
+      ? "\n\nLinks:\n" +
+        res.links
+          .slice(0, 40)
+          .map((link) => `- ${link.text || link.href} -> ${link.href}`)
+          .join("\n")
+      : "";
+  const suffix = res.truncated ? "\n…(内容已截断)" : "";
+  return capFetchText(header + "\n" + res.text + suffix + linkLines);
 }
 
 const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = {
@@ -942,6 +1019,7 @@ const BUILDERS: Record<InternalToolId, (deps: InternalToolDeps) => AgentTool> = 
   data_report_html: dataReportHtmlTool,
   html_artifact_create: htmlArtifactCreateTool,
   html_artifact_block: htmlArtifactBlockTool,
+  web_search: webSearchTool,
   web_fetch: webFetchTool,
 };
 

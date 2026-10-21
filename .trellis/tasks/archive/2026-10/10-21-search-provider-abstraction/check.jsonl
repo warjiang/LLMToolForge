@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/frontend/quality-guidelines.md", "reason": "Quality gate for the check pass"}
+{"file": ".trellis/spec/frontend/type-safety.md", "reason": "Type-safety review of provider interfaces/normalization"}
+{"file": ".trellis/spec/frontend/state-management.md", "reason": "Review built-in Web config and Agent/session source persistence"}
+{"file": ".trellis/spec/frontend/agent-chat-provider-contracts.md", "reason": "Review tool-source assembly and Agent runtime compatibility"}
+{"file": ".trellis/tasks/10-21-search-provider-abstraction/research/provider-apis.md", "reason": "Verify normalization matches documented payloads"}

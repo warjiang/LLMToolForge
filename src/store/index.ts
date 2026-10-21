@@ -32,6 +32,7 @@ export { useMarketSettingsStore } from "./marketSettings";
 export { useSshSessionStore } from "./sshSessions";
 export type { TerminalTab } from "./sshSessions";
 export { useBuiltinMcpStore, getActiveBuiltinServers } from "./builtinMcp";
+export { useBuiltinWebStore } from "./builtinWeb";
 export {
   projectRecentPrompts,
   recordRecentPromptId,

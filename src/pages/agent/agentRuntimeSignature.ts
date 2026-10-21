@@ -12,6 +12,9 @@ export function agentRuntimeSignature(
     def.enabledInternalTools.join(","),
     def.enabledSkillIds.join(","),
     def.enabledMcpServerIds.join(","),
+    def.webToolSource?.kind === "mcp"
+      ? `mcp:${def.webToolSource.serverId}`
+      : def.webToolSource?.kind ?? "",
     def.connectorEnabled ? "conn" : "",
     def.sandboxMode,
     workspacePath,

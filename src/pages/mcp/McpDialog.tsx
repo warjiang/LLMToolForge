@@ -38,6 +38,7 @@ const empty = {
   url: "",
   env: "",
   enabled: true,
+  webToolSourceCandidate: false,
 };
 
 function parseArgs(raw: string): string[] {
@@ -91,6 +92,8 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
               url: editing.url ?? "",
               env: stringifyEnv(editing.env),
               enabled: editing.enabled,
+              webToolSourceCandidate:
+                editing.webToolSourceCandidate === true,
             }
           : empty
       );
@@ -119,6 +122,7 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
       url: !isStdio ? form.url.trim() : undefined,
       env: parseEnv(form.env),
       enabled: form.enabled,
+      webToolSourceCandidate: form.webToolSourceCandidate,
     };
 
     // Built-ins are not stored in the synced repo; persist edits as overrides
@@ -261,6 +265,24 @@ export function McpDialog({ open, onOpenChange, editing }: Props) {
               onCheckedChange={(v) => setForm({ ...form, enabled: v })}
             />
           </div>
+
+          {!isBuiltin && (
+            <div className="flex items-center justify-between rounded-sm border border-border px-3 py-2.5">
+              <div className="space-y-0.5">
+                <Label>{t("mcp_web_source_candidate_label")}</Label>
+                <p className="text-label-12 text-muted-foreground">
+                  {t("mcp_web_source_candidate_hint")}
+                </p>
+              </div>
+              <Switch
+                aria-label={t("mcp_web_source_candidate_label")}
+                checked={form.webToolSourceCandidate}
+                onCheckedChange={(v) =>
+                  setForm({ ...form, webToolSourceCandidate: v })
+                }
+              />
+            </div>
+          )}
 
           {error && <p className="text-label-13 text-destructive">{error}</p>}
         </div>

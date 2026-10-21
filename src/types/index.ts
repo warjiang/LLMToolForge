@@ -1,4 +1,7 @@
 import type { ModelInfo } from "@/lib/providers/types";
+import type { WebToolSource } from "@/lib/agent/webToolSource";
+
+export type { WebToolSource } from "@/lib/agent/webToolSource";
 
 export interface BaseEntity {
   id: string;
@@ -222,6 +225,8 @@ export interface McpServer extends BaseEntity {
   enabled: boolean;
   /** Set for the three ship-with-the-app tools; user servers leave it unset. */
   builtin?: BuiltinMcpKind;
+  /** Marks a user-defined MCP server as an eligible exclusive Web source. */
+  webToolSourceCandidate?: boolean;
   /**
    * True once a builtin that needs external tooling (e.g. playwright's npm
    * package) has been installed. Local builtins (web-search/web-fetch) are
@@ -357,6 +362,7 @@ export type AgentInternalToolId =
   | "data_report_html"
   | "html_artifact_create"
   | "html_artifact_block"
+  | "web_search"
   | "web_fetch";
 
 export type AgentSandboxMode =
@@ -415,6 +421,8 @@ export interface AgentDefinition extends BaseEntity {
   enabledInternalTools: AgentInternalToolId[];
   enabledSkillIds: string[];
   enabledMcpServerIds: string[];
+  /** Exclusive Web capability selection. Absent definitions use migration. */
+  webToolSource?: WebToolSource;
   /** Grant the agent OpenConnector discovery/execute tools. Default off. */
   connectorEnabled?: boolean;
   sandboxMode: AgentSandboxMode;
@@ -448,5 +456,6 @@ export const AGENT_INTERNAL_TOOL_IDS: AgentInternalToolId[] = [
   "data_report_html",
   "html_artifact_create",
   "html_artifact_block",
+  "web_search",
   "web_fetch",
 ];
