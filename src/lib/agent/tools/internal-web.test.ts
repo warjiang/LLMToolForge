@@ -178,6 +178,7 @@ describe("internal built-in Web tools", () => {
     expect(result.details).toEqual({
       query: "no local result",
       results: [],
+      provider: "local",
     });
   });
 

@@ -1046,6 +1046,7 @@
   "agent_tool_result": "结果",
   "agent_tool_no_result": "无返回内容",
   "agent_tool_error": "错误",
+  "agent_tool_provider": "后端 · {{provider}}",
   "agent_open_in_browser": "打开",
   "agent_open_report": "打开报告",
   "agent_preview_media": "预览",

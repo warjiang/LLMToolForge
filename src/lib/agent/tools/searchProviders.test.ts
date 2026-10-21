@@ -114,7 +114,11 @@ describe("provider runner", () => {
 
   it("falls through ordinary errors and returns the last soft miss when none succeed", async () => {
     const firstError = new Error("first failed");
-    const softMiss: WebSearchResponse = { query: "q", results: [] };
+    const softMiss: WebSearchResponse = {
+      query: "q",
+      results: [],
+      provider: "local",
+    };
     const result = await runChain<WebSearchResponse>({
       chain: ["deepseek", "tavily", "local"],
       operation: "search",
@@ -287,6 +291,7 @@ describe("provider adapters", () => {
         url: "https://deepseek.test/search",
         snippet: "preferred summary",
       }],
+      provider: "deepseek",
     });
     await expect(adapters.deepseek.fetch!({
       url: "https://deepseek.test/page",
@@ -333,7 +338,11 @@ describe("provider adapters", () => {
       limit: 1,
       credentials: deepseekConfig.credentials,
       signal,
-    })).resolves.toEqual({ query: "none", results: [] });
+    })).resolves.toEqual({
+      query: "none",
+      results: [],
+      provider: "deepseek",
+    });
     await expect(adapters.deepseek.fetch!({
       url: "https://deepseek.test/empty",
       credentials: deepseekConfig.credentials,
@@ -732,6 +741,7 @@ describe("normalized provider results", () => {
         url: `https://example.test/${'"'.repeat(10_000)}`,
         snippet: '"'.repeat(10_000),
       })),
+      provider: "local",
     });
 
     expect(result.results).toHaveLength(20);
@@ -751,6 +761,7 @@ describe("normalized provider results", () => {
       })),
       truncated: false,
       mode: "provider".repeat(1_000),
+      provider: "local",
     });
 
     expect(result.text.length).toBeLessThanOrEqual(40_000);
@@ -781,6 +792,7 @@ describe("normalized provider results", () => {
         links: [],
         truncated: false,
         mode: "provider",
+        provider: "local",
       });
     } finally {
       unicodeTraversalGuard.mockRestore();
@@ -808,6 +820,7 @@ describe("normalized provider results", () => {
       }],
       truncated: false,
       mode: "provider".repeat(9),
+      provider: "local",
     });
 
     expect(result.truncated).toBe(true);

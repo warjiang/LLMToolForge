@@ -1046,6 +1046,7 @@
   "agent_tool_result": "Result",
   "agent_tool_no_result": "No result",
   "agent_tool_error": "Error",
+  "agent_tool_provider": "Provider · {{provider}}",
   "agent_open_in_browser": "Open",
   "agent_open_report": "Open report",
   "agent_preview_media": "Preview",

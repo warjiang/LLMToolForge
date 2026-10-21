@@ -26,6 +26,7 @@ export interface WebSearchItem {
 export interface WebSearchResponse {
   query: string;
   results: WebSearchItem[];
+  provider: ProviderId;
 }
 
 export interface WebFetchLink {
@@ -42,6 +43,7 @@ export interface WebFetchResponse {
   links: WebFetchLink[];
   truncated: boolean;
   mode: string;
+  provider: ProviderId;
 }
 
 export interface ProviderConfig {
@@ -240,10 +242,13 @@ export function createProviderAdapters(
       search: async (request) => {
         const credentials = request.credentials ?? {};
         try {
-          const response = await localInvoke<WebSearchResponse>("web_search", {
+          const response = await localInvoke<Omit<WebSearchResponse, "provider">>(
+            "web_search",
+            {
             req: { query: request.query, limit: request.limit },
-          });
-          return redactSearchResponse(response, credentials);
+            }
+          );
+          return redactSearchResponse({ ...response, provider: "local" }, credentials);
         } catch (error) {
           throw localInvocationError(error, credentials);
         }
@@ -251,15 +256,22 @@ export function createProviderAdapters(
       fetch: async (request) => {
         const credentials = request.credentials ?? {};
         try {
-          const response = await localInvoke<WebFetchResponse>("web_fetch", {
+          const response = await localInvoke<Omit<WebFetchResponse, "provider">>(
+            "web_fetch",
+            {
             req: {
               url: request.url,
               render: request.render ?? false,
               maxChars: clampFetchBodyChars(request.maxChars),
               timeoutMs: request.timeoutMs,
             },
-          });
-          return redactFetchResponse(response, credentials, request.maxChars);
+            }
+          );
+          return redactFetchResponse(
+            { ...response, provider: "local" },
+            credentials,
+            request.maxChars
+          );
         } catch (error) {
           throw localInvocationError(error, credentials);
         }
@@ -299,6 +311,7 @@ export function createProviderAdapters(
               snippet: stringValue(item.summary) || stringValue(item.snippet),
             }];
           }),
+          provider: "deepseek",
         }, credentials);
       },
       fetch: async (request) => {
@@ -326,6 +339,7 @@ export function createProviderAdapters(
           links: [],
           truncated: false,
           mode: "deepseek",
+          provider: "deepseek",
         }, credentials, request.maxChars);
       },
     },
@@ -365,6 +379,7 @@ export function createProviderAdapters(
               snippet: stringValue(item.content),
             }];
           }),
+          provider: "tavily",
         }, credentials);
       },
       fetch: async (request) => {
@@ -418,6 +433,7 @@ export function createProviderAdapters(
           links: [],
           truncated: false,
           mode: "tavily",
+          provider: "tavily",
         }, credentials, request.maxChars);
       },
     },
@@ -431,7 +447,7 @@ export function normalizeSearchResponse(value: WebSearchResponse): WebSearchResp
     url: truncateUnicode(result.url, 512),
     snippet: truncateUnicode(result.snippet, 128),
   }));
-  const normalized = { query, results };
+  const normalized = { query, results, provider: value.provider };
 
   // The field caps above preserve the full 20-item contract within the details
   // ceiling. The final loop covers JSON escaping overhead from arbitrary input.
@@ -474,6 +490,7 @@ export function normalizeFetchResponse(
   const title = truncateUnicode(value.title, 512);
   const text = truncateUnicode(value.text, bodyLimit);
   const mode = truncateUnicode(value.mode, 64);
+  const provider = value.provider;
   const normalized: WebFetchResponse = {
     url,
     finalUrl,
@@ -490,6 +507,7 @@ export function normalizeFetchResponse(
       mode !== value.mode ||
       bounded.truncated,
     mode,
+    provider,
   };
 
   while (serializedDetailsLength(normalized) > FETCH_DETAILS_HARD_LIMIT) {
@@ -734,6 +752,7 @@ function redactSearchResponse(
       url: redactCredentialValues(result.url, credentials),
       snippet: redactCredentialValues(result.snippet, credentials),
     })),
+    provider: response.provider,
   });
 }
 
@@ -754,6 +773,7 @@ function redactFetchResponse(
     })),
     truncated: response.truncated,
     mode: redactCredentialValues(response.mode, credentials),
+    provider: response.provider,
   }, clampFetchBodyChars(maxChars));
 }
 

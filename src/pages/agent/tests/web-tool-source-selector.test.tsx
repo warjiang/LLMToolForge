@@ -53,4 +53,20 @@ describe("WebToolSourceSelector", () => {
 
     expect(onChange).toHaveBeenCalledWith({ kind: "off" });
   });
+
+  it("uses an inline control without a visible form label in the toolbar", () => {
+    render(
+      <WebToolSourceSelector
+        value={{ kind: "builtin" }}
+        candidates={[]}
+        layout="toolbar"
+        onChange={vi.fn()}
+      />
+    );
+
+    expect(
+      screen.getByRole("combobox", { name: "Web tool source" })
+    ).toBeTruthy();
+    expect(screen.queryByText("Web tool source")).toBeNull();
+  });
 });

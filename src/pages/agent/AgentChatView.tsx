@@ -201,6 +201,7 @@ import {
 import { agentRuntimeSignature } from "./agentRuntimeSignature";
 import { buildAdHocAgentDef } from "./generalAgentProfile";
 import { WebToolSourceSelector } from "./WebToolSourceSelector";
+import { webToolProviderLabel } from "./toolCallProvider";
 import { INTERNAL_TOOL_IDS } from "@/lib/agent/tools/internal";
 import { sanitizeLeakedToolCallText } from "@/lib/agent/leakedToolCallText";
 
@@ -3356,7 +3357,7 @@ export function AgentChatView() {
                     />
                   </div>
 
-                  {settings && selectedAgentId !== DATA_AGENT_ID && (
+                  {settings && (
                     <SandboxModeSelect
                       value={settings.sandboxMode}
                       onChange={(sandboxMode) => updateSettings({ sandboxMode })}
@@ -3393,17 +3394,15 @@ export function AgentChatView() {
                       updateSettings({ enabledMcpServerIds })
                     }
                   />
-                  {settings && (
-                    <div className="w-[188px] max-w-full">
-                      <WebToolSourceSelector
-                        value={settings.webToolSource}
-                        candidates={webMcpCandidates}
-                        showHint={false}
-                        onChange={(webToolSource) =>
-                          updateSettings({ webToolSource })
-                        }
-                      />
-                    </div>
+                  {settings && selectedAgentId !== DATA_AGENT_ID && (
+                    <WebToolSourceSelector
+                      value={settings.webToolSource}
+                      candidates={webMcpCandidates}
+                      layout="toolbar"
+                      onChange={(webToolSource) =>
+                        updateSettings({ webToolSource })
+                      }
+                    />
                   )}
                   <Button
                     type="button"
@@ -4068,8 +4067,10 @@ function ConfigRail({
 }
 
 function ToolRecordItem({ call }: { call: ToolCallRecord }) {
+  const { t } = useTranslation("pages");
   const [open, setOpen] = useState(false);
   const parsed = parseToolName(call.toolName || call.title);
+  const provider = webToolProviderLabel(call.toolName, call.resultJson);
   const goal = toolCallGoal(call.argumentsJson);
   const resultRaw =
     call.resultText && call.resultText.trim().length > 0
@@ -4107,6 +4108,11 @@ function ToolRecordItem({ call }: { call: ToolCallRecord }) {
           <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground">
             <Server className="h-3 w-3" />
             {parsed.server}
+          </span>
+        )}
+        {provider && (
+          <span className="inline-flex shrink-0 rounded-sm bg-secondary px-1.5 py-px text-label-12 text-muted-foreground">
+            {t("agent_tool_provider", { provider })}
           </span>
         )}
         <Badge
@@ -5756,6 +5762,7 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
   const isPending = call.status === "pending";
   const isError = call.status === "error";
   const parsed = parseToolName(call.toolName || call.title);
+  const provider = webToolProviderLabel(call.toolName, call.resultJson);
 
   const args = formatMaybeJson(call.argumentsJson || "");
   const resultRaw =
@@ -5834,6 +5841,11 @@ function ToolCallCard({ call }: { call: ToolCallRecord }) {
                 <span className="hidden shrink-0 items-center gap-1 rounded-sm bg-secondary px-1.5 py-px font-mono text-label-12 text-muted-foreground sm:inline-flex">
                   <Server className="h-3 w-3" />
                   {parsed.server}
+                </span>
+              )}
+              {provider && (
+                <span className="shrink-0 rounded-sm bg-secondary px-1.5 py-px text-label-12 text-muted-foreground">
+                  {t("agent_tool_provider", { provider })}
                 </span>
               )}
             </span>
